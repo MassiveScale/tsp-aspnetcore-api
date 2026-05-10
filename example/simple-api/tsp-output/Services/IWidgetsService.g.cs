@@ -11,7 +11,8 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-namespace MassiveScale.Simple.Api.Example.Services
+
+namespace MassiveScale.Simple.Api.Example
 {
     public interface IWidgetsService
     {

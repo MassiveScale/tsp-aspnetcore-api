@@ -14,6 +14,7 @@ using System.Reflection;
 using System.Runtime.Serialization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
 namespace MassiveScale.Simple.Api.Example.Helpers
 {
     /// <summary>

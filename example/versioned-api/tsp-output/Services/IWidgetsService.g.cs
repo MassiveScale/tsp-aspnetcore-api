@@ -11,6 +11,8 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using MassiveScale.Versioned.Api.Example.Models;
+
 namespace MassiveScale.Versioned.Api.Example.Services
 {
     public interface IWidgetsService

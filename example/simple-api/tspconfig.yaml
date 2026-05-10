@@ -4,7 +4,7 @@ options:
   "@massivescale/tsp-aspnetcore-api":
     emitter-output-dir: "{output-dir}"
     #root-namespace: "MassiveScale.Api.Example" 
-    #namespace-from-path: true
+    namespace-from-path: false
     #file-extension: ".g.cs"
     #models-output-dir: "Models"
     #interfaces-output-dir: "Interfaces"

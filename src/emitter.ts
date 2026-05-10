@@ -177,6 +177,18 @@ interface ResolvedOptions {
   helpersNamespace: string;
 }
 
+/** Inferred enum derived from a string-literal union property. */
+interface InferredEnum {
+  /** Enum type name. */
+  name: string;
+  /** C# namespace where the enum file is emitted. */
+  namespace: string;
+  /** Folder under models output dir. */
+  folder: string[];
+  /** Literal member wire values (e.g. ["red", "blue"]). */
+  values: string[];
+}
+
 /**
  * TypeSpec emitter entry point.  Called once per emit run by the TypeSpec
  * compiler.
@@ -215,6 +227,7 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
   });
 
   const hasMergePatchUpdateModels = models.some(isMergePatchUpdateModel);
+  const inferredEnums = collectInferredEnums(models, enums, options);
 
   for (const model of models) {
     const isMergePatchModel = isMergePatchUpdateModel(model);
@@ -311,6 +324,19 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     });
   }
 
+  for (const inferred of inferredEnums) {
+    const enumFileName = `${inferred.name}${options.fileExtension}`;
+    await emitFile(program, {
+      path: resolvePath(options.modelsOutputDir, ...inferred.folder, enumFileName),
+      content: renderer.renderFile({
+        fileName: enumFileName,
+        namespace: inferred.namespace,
+        usings: collectEnumUsings(inferred.namespace, options),
+        body: renderer.renderEnum(buildInferredEnumView(inferred)),
+      }),
+    });
+  }
+
   // ── Controllers & services ──────────────────────────────────────────────────
   const controllerOptions: ControllerOptions = {
     routePrefix: options.routePrefix,
@@ -369,12 +395,17 @@ async function emitControllerGroup(
 
   if (options.emitControllers) {
     const controllerFileName = `${controllerView.controllerName}${options.fileExtension}`;
+    const ctrlUsings = buildControllerUsings(
+      options,
+      group.references,
+      ctrlNamespace,
+    );
     await emitFile(program, {
       path: resolvePath(options.controllersOutputDir, ...folder, controllerFileName),
       content: renderer.renderFile({
         fileName: controllerFileName,
         namespace: ctrlNamespace,
-        usings: sortUsings(new Set(CONTROLLER_USINGS)),
+        usings: ctrlUsings,
         body: renderer.renderController(controllerView),
       }),
     });
@@ -382,12 +413,17 @@ async function emitControllerGroup(
 
   if (options.emitServices) {
     const serviceInterfaceFileName = `${serviceView.interfaceName}${options.fileExtension}`;
+    const svcUsings = buildServiceUsings(
+      options,
+      group.references,
+      svcNamespace,
+    );
     await emitFile(program, {
       path: resolvePath(options.servicesOutputDir, ...folder, serviceInterfaceFileName),
       content: renderer.renderFile({
         fileName: serviceInterfaceFileName,
         namespace: svcNamespace,
-        usings: sortUsings(new Set(["System", "System.Collections.Generic", "System.Threading.Tasks"])),
+        usings: svcUsings,
         body: renderer.renderServiceInterface(serviceView),
       }),
     });
@@ -443,6 +479,72 @@ async function emitEnumMemberConverter(
       body: renderer.renderEnumMemberConverter(),
     }),
   });
+}
+
+/**
+ * Builds the sorted list of `using` namespaces for a generated controller file.
+ *
+ * Includes {@link CONTROLLER_USINGS}, any `additional-usings` from options,
+ * and namespaces for all types referenced by the operations.
+ *
+ * @param options - Resolved emitter options (additional usings).
+ * @param references - TypeSpec types referenced by controller operations.
+ * @param ownNamespace - The C# namespace of the controller file being emitted.
+ * @returns Sorted, deduplicated array of `using` namespace strings.
+ */
+function buildControllerUsings(
+  options: ResolvedOptions,
+  references: Type[],
+  ownNamespace: string,
+): string[] {
+  const usings = new Set<string>(CONTROLLER_USINGS);
+  for (const u of options.additionalUsings) usings.add(u);
+  for (const ref of references) {
+    for (const type of collectReferencedTypes(ref)) {
+      const typespecNs = csharpNamespaceFor(type.namespace, options);
+      // When namespace-from-path is enabled, apply the appropriate directory suffix
+      // (modelsDirSuffix for models/enums that go in the models output dir)
+      const ns =
+        options.namespaceFromPath && options.modelsDirSuffix && typespecNs
+          ? `${typespecNs}.${options.modelsDirSuffix}`
+          : typespecNs;
+      if (ns && ns !== ownNamespace) usings.add(ns);
+    }
+  }
+  return sortUsings(usings);
+}
+
+/**
+ * Builds the sorted list of `using` namespaces for a generated service interface file.
+ *
+ * Includes base service usings (System, System.Collections.Generic, System.Threading.Tasks),
+ * any `additional-usings` from options, and namespaces for all types referenced by operations.
+ *
+ * @param options - Resolved emitter options (additional usings).
+ * @param references - TypeSpec types referenced by service operations.
+ * @param ownNamespace - The C# namespace of the service file being emitted.
+ * @returns Sorted, deduplicated array of `using` namespace strings.
+ */
+function buildServiceUsings(
+  options: ResolvedOptions,
+  references: Type[],
+  ownNamespace: string,
+): string[] {
+  const usings = new Set<string>(["System", "System.Collections.Generic", "System.Threading.Tasks"]);
+  for (const u of options.additionalUsings) usings.add(u);
+  for (const ref of references) {
+    for (const type of collectReferencedTypes(ref)) {
+      const typespecNs = csharpNamespaceFor(type.namespace, options);
+      // When namespace-from-path is enabled, apply the appropriate directory suffix
+      // (modelsDirSuffix for models/enums that go in the models output dir)
+      const ns =
+        options.namespaceFromPath && options.modelsDirSuffix && typespecNs
+          ? `${typespecNs}.${options.modelsDirSuffix}`
+          : typespecNs;
+      if (ns && ns !== ownNamespace) usings.add(ns);
+    }
+  }
+  return sortUsings(usings);
 }
 
 /**
@@ -600,8 +702,11 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
   const namespaceMap = Object.entries(map)
     .map(([key, value]) => ({ key, value }))
     .sort((a, b) => b.key.length - a.key.length);
-  const modelsDir = raw["models-output-dir"] ?? "";
-  const interfacesDir = raw["interfaces-output-dir"] ?? "";
+  // Default output directories are "Models" for models/interfaces, and "Controllers"/"Services"/"Helpers" for others.
+  // When namespace-from-path is enabled, the dir suffixes are always applied to the namespace
+  // to reflect the output directory path (e.g., "MyApp.Models", "MyApp.Controllers").
+  const modelsDir = raw["models-output-dir"] ?? "Models";
+  const interfacesDir = raw["interfaces-output-dir"] ?? "Models";
   const controllersDir = raw["controllers-output-dir"] ?? "Controllers";
   const servicesDir = raw["services-output-dir"] ?? "Services";
   const helpersDir = raw["helpers-output-dir"] ?? "Helpers";
@@ -611,13 +716,19 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
   // receive a properly-qualified namespace (e.g. "MyApp.Controllers" rather
   // than just "Controllers").
   const effectiveRootNs = rootNs ?? inferRootNamespace(context.program);
+  // Determine if we should use namespace-from-path mode
+  const useNamespaceFromPath = raw["namespace-from-path"] ?? true;
+  // When namespace-from-path is enabled, always compute the dir suffixes
+  // to include output directories in namespaces. Otherwise, leave them empty.
+  const modelsDirSuffix = useNamespaceFromPath ? pathNamespace(undefined, modelsDir) : "";
+  const interfacesDirSuffix = useNamespaceFromPath ? pathNamespace(undefined, interfacesDir) : "";
   return {
     rootNamespace: rootNs,
     namespaceMap,
     fileExtension: raw["file-extension"] ?? ".g.cs",
-    modelsOutputDir: modelsDir ? resolvePath(baseDir, modelsDir) : baseDir,
+    modelsOutputDir: resolvePath(baseDir, modelsDir),
     emitInterfaces: raw["emit-interfaces"] ?? true,
-    interfacesOutputDir: interfacesDir ? resolvePath(baseDir, interfacesDir) : baseDir,
+    interfacesOutputDir: resolvePath(baseDir, interfacesDir),
     emitControllers: raw["emit-controllers"] ?? true,
     controllersOutputDir: resolvePath(baseDir, controllersDir),
     emitServices: raw["emit-services"] ?? true,
@@ -625,9 +736,9 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     emitHelpers: raw["emit-helpers"] ?? false,
     helpersOutputDir: resolvePath(baseDir, helpersDir),
     routePrefix: raw["route-prefix"] ?? "api",
-    namespaceFromPath: raw["namespace-from-path"] ?? true,
-    modelsDirSuffix: pathNamespace(undefined, modelsDir),
-    interfacesDirSuffix: pathNamespace(undefined, interfacesDir),
+    namespaceFromPath: useNamespaceFromPath,
+    modelsDirSuffix,
+    interfacesDirSuffix,
     controllersPathNamespace: pathNamespace(effectiveRootNs, controllersDir),
     servicesPathNamespace: pathNamespace(effectiveRootNs, servicesDir),
     helpersNamespace: pathNamespace(effectiveRootNs, helpersDir),
@@ -978,7 +1089,13 @@ function buildPropertyViews(
   isMergePatchModel: boolean,
 ): PropertyView[] {
   return [...model.properties.values()].map((prop) => {
-    const type = propertyTypeName(program, prop, options, isMergePatchModel);
+    const type = propertyTypeName(
+      program,
+      model,
+      prop,
+      options,
+      isMergePatchModel,
+    );
     return {
       doc: docFor(program, prop),
       type,
@@ -1019,6 +1136,7 @@ function docFor(program: Program, target: Model | ModelProperty): string | undef
  */
 function propertyTypeName(
   program: Program,
+  model: Model,
   prop: ModelProperty,
   options: ResolvedOptions,
   isMergePatchModel: boolean,
@@ -1031,7 +1149,12 @@ function propertyTypeName(
   if (format && FORMAT_MAP[format.toLowerCase()]) {
     type = FORMAT_MAP[format.toLowerCase()];
   } else {
-    type = typeReference(prop.type);
+    const inferredEnumType = inferredEnumTypeNameForProperty(
+      model,
+      prop,
+      isMergePatchModel,
+    );
+    type = inferredEnumType ?? typeReference(prop.type);
   }
   const nullable = prop.optional || options.nullableProperties;
   const nullableType = nullable && !type.endsWith("?") ? `${type}?` : type;
@@ -1039,6 +1162,107 @@ function propertyTypeName(
     return `MergePatchValue<${nullableType}>`;
   }
   return nullableType;
+}
+
+/**
+ * Returns the inferred enum type name for a string-literal union property.
+ *
+ * For MergePatchUpdate models, uses the base model stem so
+ * `WidgetMergePatchUpdate.color` resolves to `WidgetColor`.
+ */
+function inferredEnumTypeNameForProperty(
+  model: Model,
+  prop: ModelProperty,
+  isMergePatchModel: boolean,
+): string | undefined {
+  if (!getStringLiteralUnionValues(prop.type)) return undefined;
+
+  const modelStem = isMergePatchModel
+    ? model.name.replace(/MergePatchUpdate$/i, "")
+    : model.name;
+  return `${pascalCase(modelStem)}${pascalCase(prop.name)}`;
+}
+
+/**
+ * Returns string literal values from a union type (excluding null), or undefined.
+ */
+function getStringLiteralUnionValues(type: Type): string[] | undefined {
+  if (type.kind !== "Union") return undefined;
+
+  const values: string[] = [];
+  for (const variant of type.variants.values()) {
+    if (variant.type.kind === "Intrinsic" && variant.type.name === "null") {
+      continue;
+    }
+    if (variant.type.kind !== "String") return undefined;
+    if (typeof variant.type.value !== "string") return undefined;
+    values.push(variant.type.value);
+  }
+
+  return values.length > 0 ? values : undefined;
+}
+
+/**
+ * Collects inferred enums from model properties defined as string-literal unions.
+ */
+function collectInferredEnums(
+  models: Model[],
+  explicitEnums: Enum[],
+  options: ResolvedOptions,
+): InferredEnum[] {
+  const byKey = new Map<string, InferredEnum>();
+  const explicitEnumKeys = new Set(
+    explicitEnums.map((en) => {
+      const typespecNs = csharpNamespaceFor(en.namespace, options);
+      const ns =
+        options.namespaceFromPath && options.modelsDirSuffix
+          ? `${typespecNs}.${options.modelsDirSuffix}`
+          : typespecNs;
+      return `${ns}.${pascalCase(en.name)}`;
+    }),
+  );
+
+  for (const model of models) {
+    const isMergePatchModel = isMergePatchUpdateModel(model);
+    const typespecNs = csharpNamespaceFor(model.namespace, options);
+    const ns =
+      options.namespaceFromPath && options.modelsDirSuffix
+        ? `${typespecNs}.${options.modelsDirSuffix}`
+        : typespecNs;
+    const folder =
+      options.namespaceFromPath && options.modelsDirSuffix
+        ? []
+        : folderSegments(options.rootNamespace, typespecNs);
+
+    for (const prop of model.properties.values()) {
+      const values = getStringLiteralUnionValues(prop.type);
+      if (!values) continue;
+
+      const name = inferredEnumTypeNameForProperty(model, prop, isMergePatchModel);
+      if (!name) continue;
+
+      const key = `${ns}.${name}`;
+      if (explicitEnumKeys.has(key)) continue;
+      if (!byKey.has(key)) {
+        byKey.set(key, { name, namespace: ns, folder, values });
+      }
+    }
+  }
+
+  return [...byKey.values()];
+}
+
+/**
+ * Builds an {@link EnumView} for an inferred enum.
+ */
+function buildInferredEnumView(inferred: InferredEnum): EnumView {
+  return {
+    enumName: inferred.name,
+    members: inferred.values.map((value) => ({
+      name: pascalCase(value),
+      memberValue: value,
+    })),
+  };
 }
 
 /**

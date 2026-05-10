@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file.
 - Corrected versioned route templates to preserve operation path parameters (for example, `{id}` is now included in generated method routes when applicable).
 - Fixed availability filtering for versioned routes when version enum names differ from their route values (for example, `v1_1` with value `"1.1"`).
 - Updated generated `MergePatchUpdate<T>` model/interface properties to use `MergePatchValue<T?>` wrappers so JSON Merge Patch can distinguish absent fields from explicit `null` values.
+- Service interface files now include `using` directives for all model namespaces referenced by operation parameters and return types.
+- Controller files now include `using` directives for all model namespaces referenced by operation parameters and return types.
+- When `namespace-from-path` is enabled, all generated files (models, interfaces, enums, controllers, services, and helpers) now correctly include their output directory in their C# namespace (e.g., `MyApp.Models`, `MyApp.Controllers`), and reference correct model namespaces with path-derived suffixes.
+- Models and interfaces now respect the `namespace-from-path` option and include output directory names in their namespaces (e.g., models in `Models/` → `RootNamespace.Models`).
 
 ### Changed
 
@@ -20,6 +24,10 @@ All notable changes to this project will be documented in this file.
 - Added regression tests covering merge patch wrapper typing and helper emission.
 - Added a `pretest` build step and a VS Code-friendly test shim (`test/aspnetcore.api.test.mjs`) to improve test discovery and execution in the VS Code Testing panel.
 - Added workspace extension recommendations for VS Code test discovery and test UI integration (`hbenl.vscode-test-explorer`, `connor4312.nodejs-testing`).
+- Default value for `models-output-dir` changed from `emitter-output-dir` to `"Models"`.
+- Default value for `interfaces-output-dir` changed from `emitter-output-dir` to `"Models"`.
+- Service interface and controller files now include any `additional-usings` specified in the emitter configuration.
+- When `namespace-from-path` is true (the default), output directory paths are now always included in namespaces, even for default directories. This ensures consistent path-based namespace derivation across all generated file types.
 
 
 ### Added
