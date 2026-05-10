@@ -1,5 +1,9 @@
 .DS_Store
-tsp-output/
 dist/
 node_modules/
 settings.local.json
+
+# Exclude tsp-output everywhere except in examples
+tsp-output/
+!example/**/tsp-output/
+!example/**/tsp-output/**

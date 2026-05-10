@@ -202,6 +202,42 @@ describe("csharp emitter", () => {
       ok(file.includes("public IDictionary<string, int>? Scores { get; set; }"));
     });
 
+    it("emits MergePatchUpdate properties as MergePatchValue wrappers", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        namespace Demo;
+
+        model Widget {
+          id: string;
+          weight: int32;
+          color: string | null;
+        }
+
+        model WidgetMergePatchUpdate is MergePatchUpdate<Widget>;
+      `);
+
+      const file =
+        results["WidgetMergePatchUpdate.g.cs"] ??
+        results["Models/WidgetMergePatchUpdate.g.cs"];
+      ok(file, `expected WidgetMergePatchUpdate.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(file.includes("using Demo.Helpers;"), `expected helper namespace using in:\n${file}`);
+      ok(file.includes("public MergePatchValue<string?> Id { get; set; } = MergePatchValue<string?>.Absent;"), `expected wrapped id property in:\n${file}`);
+      ok(file.includes("public MergePatchValue<int?> Weight { get; set; } = MergePatchValue<int?>.Absent;"), `expected wrapped weight property in:\n${file}`);
+      ok(file.includes("public MergePatchValue<string?> Color { get; set; } = MergePatchValue<string?>.Absent;"), `expected wrapped color property in:\n${file}`);
+
+      const iface =
+        results["IWidgetMergePatchUpdate.g.cs"] ??
+        results["Interfaces/IWidgetMergePatchUpdate.g.cs"];
+      ok(iface, `expected IWidgetMergePatchUpdate.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(iface.includes("using Demo.Helpers;"), `expected helper namespace using in interface:\n${iface}`);
+      ok(iface.includes("MergePatchValue<string?> Id { get; set; }"), `expected wrapped id in interface:\n${iface}`);
+
+      const helper = results["Helpers/MergePatchValue.g.cs"];
+      ok(helper, "expected MergePatchValue helper when MergePatchUpdate model is emitted");
+    });
+
     it("emits enums with numeric values", async () => {
       const results = await emit(`
         namespace Demo;
@@ -1135,6 +1171,107 @@ namespace {{namespace}}
       strictEqual(verbCount, 2, `expected 2 [HttpGet] attributes, got ${verbCount} in:\n${ctrl}`);
     });
 
+    it("includes path parameters in versioned operation routes", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+
+        @service(#{title: "API" })
+        @versioned(Versions)
+        namespace Demo;
+
+        enum Versions { v1, v2 }
+
+        model Widget { id: string; }
+
+        @route("/widgets")
+        interface Widgets {
+          @get read(@path id: string): Widget;
+        }
+      `);
+
+      const ctrl = results["Controllers/WidgetsControllerBase.g.cs"];
+      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(ctrl.includes('[HttpGet("/api/v1/widgets/{id}")]'), `expected v1 id route in:\n${ctrl}`);
+      ok(ctrl.includes('[HttpGet("/api/v2/widgets/{id}")]'), `expected v2 id route in:\n${ctrl}`);
+    });
+
+    it("emits versioned routes only for versions where each operation exists", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+
+        @service(#{title: "API" })
+        @versioned(Versions)
+        namespace Demo;
+
+        enum Versions { v1, v2, v3 }
+
+        model Widget { id: string; }
+
+        @route("/widgets")
+        interface Widgets {
+          @get list(): Widget[];
+
+          @added(Versions.v2)
+          @get @route("{id}/audit")
+          audit(@path id: string): Widget;
+
+          @removed(Versions.v3)
+          @get @route("{id}/legacy")
+          legacy(@path id: string): Widget;
+        }
+      `);
+
+      const ctrl = results["Controllers/WidgetsControllerBase.g.cs"];
+      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+
+      ok(ctrl.includes('[HttpGet("/api/v2/widgets/{id}/audit")]'), `expected v2 audit route in:\n${ctrl}`);
+      ok(ctrl.includes('[HttpGet("/api/v3/widgets/{id}/audit")]'), `expected v3 audit route in:\n${ctrl}`);
+      ok(!ctrl.includes('[HttpGet("/api/v1/widgets/{id}/audit")]'), `did not expect v1 audit route in:\n${ctrl}`);
+
+      ok(ctrl.includes('[HttpGet("/api/v1/widgets/{id}/legacy")]'), `expected v1 legacy route in:\n${ctrl}`);
+      ok(ctrl.includes('[HttpGet("/api/v2/widgets/{id}/legacy")]'), `expected v2 legacy route in:\n${ctrl}`);
+      ok(!ctrl.includes('[HttpGet("/api/v3/widgets/{id}/legacy")]'), `did not expect v3 legacy route in:\n${ctrl}`);
+    });
+
+    it("respects operation availability when version values differ from version names", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+
+        @service(#{title: "API" })
+        @versioned(Versions)
+        namespace Demo;
+
+        enum Versions {
+          v1: "1.0",
+          v1_1: "1.1",
+          v2: "2.0",
+        }
+
+        model Widget { id: string; }
+
+        @route("/widgets")
+        interface Widgets {
+          @added(Versions.v1_1)
+          @post create(@body widget: Widget): Widget;
+        }
+      `);
+
+      const ctrl = results["Controllers/WidgetsControllerBase.g.cs"];
+      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(!ctrl.includes('[HttpPost("/api/1.0/widgets")]'), `did not expect v1.0 create route in:\n${ctrl}`);
+      ok(ctrl.includes('[HttpPost("/api/1.1/widgets")]'), `expected v1.1 create route in:\n${ctrl}`);
+      ok(ctrl.includes('[HttpPost("/api/2.0/widgets")]'), `expected v2.0 create route in:\n${ctrl}`);
+    });
+
     it("respects route-prefix option", async () => {
       const results = await emit(
         `
@@ -1237,10 +1374,10 @@ namespace {{namespace}}
       const results = await emit(`
         namespace Demo;
         model M { x: int32; }
-      `);
+      `, { "emit-helpers": true });
 
-      const helper = results["Helpers/MergePatchValue.g.cs"];
-      ok(helper, `expected Helpers/MergePatchValue.g.cs, got ${Object.keys(results).join(", ")}`);
+      const helper = results["Helpers/EnumMemberConverter.g.cs"];
+      ok(helper, `expected Helpers/EnumMemberConverter.g.cs, got ${Object.keys(results).join(", ")}`);
       ok(helper.includes("namespace Demo.Helpers"), `expected 'namespace Demo.Helpers' in:\n${helper}`);
     });
 
@@ -1248,10 +1385,10 @@ namespace {{namespace}}
       const results = await emit(`
         namespace Demo;
         model M { x: int32; }
-      `, { "root-namespace": "MyApp" });
+      `, { "emit-helpers": true, "root-namespace": "MyApp" });
 
-      const helper = results["Helpers/MergePatchValue.g.cs"];
-      ok(helper, `expected Helpers/MergePatchValue.g.cs`);
+      const helper = results["Helpers/EnumMemberConverter.g.cs"];
+      ok(helper, `expected Helpers/EnumMemberConverter.g.cs`);
       ok(helper.includes("namespace MyApp.Helpers"), `expected 'namespace MyApp.Helpers' in:\n${helper}`);
     });
   });

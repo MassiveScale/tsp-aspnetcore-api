@@ -54,6 +54,8 @@ export interface PropertyView {
   jsonName: string;
   /** `true` when the type is nullable (ends with `?`); drives `[JsonIgnore]`. */
   nullable: boolean;
+  /** Optional C# expression used to initialize the property. */
+  initializer?: string;
 }
 
 /** View model for a C# class (`public partial class`). */

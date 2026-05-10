@@ -214,7 +214,10 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     },
   });
 
+  const hasMergePatchUpdateModels = models.some(isMergePatchUpdateModel);
+
   for (const model of models) {
+    const isMergePatchModel = isMergePatchUpdateModel(model);
     const typespecNs = csharpNamespaceFor(model.namespace, options);
     // When `namespaceFromPath` is enabled and an output-dir is configured,
     // append the PascalCased dir segments to the TypeSpec namespace so the C#
@@ -243,8 +246,20 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     const refs = modelReferences(model);
     // Pass modelsDirSuffix so that usings for referenced types also resolve to
     // the correct suffixed namespace.
-    const classUsings = collectUsings(classNs, refs, options, options.modelsDirSuffix);
-    const interfaceUsings = collectUsings(interfaceNs, refs, options, options.modelsDirSuffix);
+    const classUsings = collectUsings(
+      classNs,
+      refs,
+      options,
+      options.modelsDirSuffix,
+      isMergePatchModel,
+    );
+    const interfaceUsings = collectUsings(
+      interfaceNs,
+      refs,
+      options,
+      options.modelsDirSuffix,
+      isMergePatchModel,
+    );
 
     const classFileName = `${pascalCase(model.name)}${options.fileExtension}`;
     await emitFile(program, {
@@ -253,7 +268,7 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
         fileName: classFileName,
         namespace: classNs,
         usings: classUsings,
-        body: renderer.renderClass(buildClassView(program, model, options)),
+        body: renderer.renderClass(buildClassView(program, model, options, isMergePatchModel)),
       }),
     });
 
@@ -265,7 +280,9 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
           fileName: interfaceFileName,
           namespace: interfaceNs,
           usings: interfaceUsings,
-          body: renderer.renderInterface(buildInterfaceView(program, model, options)),
+          body: renderer.renderInterface(
+            buildInterfaceView(program, model, options, isMergePatchModel),
+          ),
         }),
       });
     }
@@ -312,8 +329,14 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     await emitControllerGroup(program, group, renderer, options);
   }
 
+  // Emit MergePatchValue helper when any MergePatchUpdate models exist (required).
+  if (hasMergePatchUpdateModels) {
+    await emitMergePatchValue(program, renderer, options);
+  }
+
+  // Emit EnumMemberConverter helper only when emit-helpers is true (optional).
   if (options.emitHelpers) {
-    await emitHelpers(program, renderer, options);
+    await emitEnumMemberConverter(program, renderer, options);
   }
 }
 
@@ -373,13 +396,14 @@ async function emitControllerGroup(
 
 /**
  * Writes the static `MergePatchValue<T>` helper class to the helpers output
- * directory.
+ * directory. This is emitted automatically when any `MergePatchUpdate<T>` models
+ * are generated, as they require this helper to function.
  *
  * @param program - The compiled TypeSpec program (needed by `emitFile`).
  * @param renderer - Pre-compiled renderer instance.
  * @param options - Resolved emitter options.
  */
-async function emitHelpers(
+async function emitMergePatchValue(
   program: Program,
   renderer: Renderer,
   options: ResolvedOptions,
@@ -394,7 +418,21 @@ async function emitHelpers(
       body: renderer.renderMergePatchValue(),
     }),
   });
+}
 
+/**
+ * Writes the `EnumMemberConverter` helper class to the helpers output
+ * directory. This is only emitted when the `emit-helpers` option is enabled.
+ *
+ * @param program - The compiled TypeSpec program (needed by `emitFile`).
+ * @param renderer - Pre-compiled renderer instance.
+ * @param options - Resolved emitter options.
+ */
+async function emitEnumMemberConverter(
+  program: Program,
+  renderer: Renderer,
+  options: ResolvedOptions,
+): Promise<void> {
   const enumConverterFileName = `EnumMemberConverter${options.fileExtension}`;
   await emitFile(program, {
     path: resolvePath(options.helpersOutputDir, enumConverterFileName),
@@ -562,8 +600,8 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
   const namespaceMap = Object.entries(map)
     .map(([key, value]) => ({ key, value }))
     .sort((a, b) => b.key.length - a.key.length);
-  const modelsDir = raw["models-output-dir"] ?? "Models";
-  const interfacesDir = raw["interfaces-output-dir"] ?? "Interfaces";
+  const modelsDir = raw["models-output-dir"] ?? "";
+  const interfacesDir = raw["interfaces-output-dir"] ?? "";
   const controllersDir = raw["controllers-output-dir"] ?? "Controllers";
   const servicesDir = raw["services-output-dir"] ?? "Services";
   const helpersDir = raw["helpers-output-dir"] ?? "Helpers";
@@ -812,6 +850,7 @@ function collectUsings(
   options: ResolvedOptions,
   /** The dir-suffix currently applied to the emitting file's namespace. */
   dirSuffix = "",
+  usesMergePatchValue = false,
 ): string[] {
   const usings = new Set<string>(SYSTEM_USINGS);
   for (const u of options.additionalUsings) usings.add(u);
@@ -827,6 +866,9 @@ function collectUsings(
           : typespecNs;
       if (ns && ns !== ownNamespace) usings.add(ns);
     }
+  }
+  if (usesMergePatchValue && options.helpersNamespace !== ownNamespace) {
+    usings.add(options.helpersNamespace);
   }
   return sortUsings(usings);
 }
@@ -862,6 +904,7 @@ function buildClassView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  isMergePatchModel: boolean,
 ): ClassView {
   const className = pascalCase(model.name);
   return {
@@ -869,7 +912,7 @@ function buildClassView(
     className,
     interfaceName: `I${className}`,
     baseClass: model.baseModel ? typeReference(model.baseModel) : undefined,
-    properties: buildPropertyViews(program, model, options),
+    properties: buildPropertyViews(program, model, options, isMergePatchModel),
   };
 }
 
@@ -885,12 +928,13 @@ function buildInterfaceView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  isMergePatchModel: boolean,
 ): InterfaceView {
   return {
     doc: docFor(program, model),
     interfaceName: `I${pascalCase(model.name)}`,
     baseInterface: model.baseModel ? `I${pascalCase(model.baseModel.name)}` : undefined,
-    properties: buildPropertyViews(program, model, options),
+    properties: buildPropertyViews(program, model, options, isMergePatchModel),
   };
 }
 
@@ -931,15 +975,20 @@ function buildPropertyViews(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  isMergePatchModel: boolean,
 ): PropertyView[] {
   return [...model.properties.values()].map((prop) => {
-    const type = propertyTypeName(program, prop, options);
+    const type = propertyTypeName(program, prop, options, isMergePatchModel);
     return {
       doc: docFor(program, prop),
       type,
       name: pascalCase(prop.name),
       jsonName: camelCase(prop.name),
       nullable: type.endsWith("?"),
+      initializer:
+        isMergePatchModel && type.startsWith("MergePatchValue<")
+          ? `${type}.Absent`
+          : undefined,
     };
   });
 }
@@ -972,6 +1021,7 @@ function propertyTypeName(
   program: Program,
   prop: ModelProperty,
   options: ResolvedOptions,
+  isMergePatchModel: boolean,
 ): string {
   const propFormat = getFormat(program, prop);
   const scalarFormat =
@@ -984,7 +1034,32 @@ function propertyTypeName(
     type = typeReference(prop.type);
   }
   const nullable = prop.optional || options.nullableProperties;
-  return nullable && !type.endsWith("?") ? `${type}?` : type;
+  const nullableType = nullable && !type.endsWith("?") ? `${type}?` : type;
+  if (isMergePatchModel) {
+    return `MergePatchValue<${nullableType}>`;
+  }
+  return nullableType;
+}
+
+/**
+ * Returns true when a generated model represents TypeSpec MergePatchUpdate.
+ */
+/**
+ * Detects whether a TypeSpec model is a MergePatchUpdate<T> (RFC 7396 merge patch).
+ *
+ * This detection requires the model to follow the standard TypeSpec @typespec/http
+ * naming convention: the model name must end with "MergePatchUpdate" (case-insensitive).
+ * The @typespec/http library automatically generates models named `{ResourceName}MergePatchUpdate`
+ * when you use `MergePatchUpdate<ResourceType>` in your TypeSpec definitions.
+ *
+ * For merge-patch models, properties are automatically wrapped in `MergePatchValue<T>`
+ * to distinguish between "not provided" (absent) and "explicitly set to null" semantics.
+ *
+ * @param model - The TypeSpec model to check.
+ * @returns `true` if the model's name ends with "MergePatchUpdate".
+ */
+function isMergePatchUpdateModel(model: Model): boolean {
+  return /MergePatchUpdate$/i.test(model.name);
 }
 
 /**

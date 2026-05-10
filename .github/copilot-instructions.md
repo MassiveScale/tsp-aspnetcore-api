@@ -9,5 +9,8 @@
 - Always annotate code with JSDOC comments.
 - Add inline comments to explain any complex logic.
 
-
+# Specifications / Description
+- This is an C# emitter for TypeSpec. 
+- TypeSpec can be found at https://typespec.io
+- TypeSpec Repo can be found at https://github.com/microsoft/typespec
   
