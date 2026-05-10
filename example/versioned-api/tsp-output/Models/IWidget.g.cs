@@ -26,7 +26,7 @@ namespace MassiveScale.Versioned.Api.Example.Models
 
         [JsonPropertyName("color")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        object? Color { get; set; }
+        WidgetColor? Color { get; set; }
 
     }
 

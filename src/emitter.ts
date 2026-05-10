@@ -177,6 +177,18 @@ interface ResolvedOptions {
   helpersNamespace: string;
 }
 
+/** Inferred enum derived from a string-literal union property. */
+interface InferredEnum {
+  /** Enum type name. */
+  name: string;
+  /** C# namespace where the enum file is emitted. */
+  namespace: string;
+  /** Folder under models output dir. */
+  folder: string[];
+  /** Literal member wire values (e.g. ["red", "blue"]). */
+  values: string[];
+}
+
 /**
  * TypeSpec emitter entry point.  Called once per emit run by the TypeSpec
  * compiler.
@@ -215,6 +227,7 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
   });
 
   const hasMergePatchUpdateModels = models.some(isMergePatchUpdateModel);
+  const inferredEnums = collectInferredEnums(models, enums, options);
 
   for (const model of models) {
     const isMergePatchModel = isMergePatchUpdateModel(model);
@@ -307,6 +320,19 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
         namespace: ns,
         usings: collectEnumUsings(ns, options),
         body: renderer.renderEnum(buildEnumView(program, en)),
+      }),
+    });
+  }
+
+  for (const inferred of inferredEnums) {
+    const enumFileName = `${inferred.name}${options.fileExtension}`;
+    await emitFile(program, {
+      path: resolvePath(options.modelsOutputDir, ...inferred.folder, enumFileName),
+      content: renderer.renderFile({
+        fileName: enumFileName,
+        namespace: inferred.namespace,
+        usings: collectEnumUsings(inferred.namespace, options),
+        body: renderer.renderEnum(buildInferredEnumView(inferred)),
       }),
     });
   }
@@ -1063,7 +1089,13 @@ function buildPropertyViews(
   isMergePatchModel: boolean,
 ): PropertyView[] {
   return [...model.properties.values()].map((prop) => {
-    const type = propertyTypeName(program, prop, options, isMergePatchModel);
+    const type = propertyTypeName(
+      program,
+      model,
+      prop,
+      options,
+      isMergePatchModel,
+    );
     return {
       doc: docFor(program, prop),
       type,
@@ -1104,6 +1136,7 @@ function docFor(program: Program, target: Model | ModelProperty): string | undef
  */
 function propertyTypeName(
   program: Program,
+  model: Model,
   prop: ModelProperty,
   options: ResolvedOptions,
   isMergePatchModel: boolean,
@@ -1116,7 +1149,12 @@ function propertyTypeName(
   if (format && FORMAT_MAP[format.toLowerCase()]) {
     type = FORMAT_MAP[format.toLowerCase()];
   } else {
-    type = typeReference(prop.type);
+    const inferredEnumType = inferredEnumTypeNameForProperty(
+      model,
+      prop,
+      isMergePatchModel,
+    );
+    type = inferredEnumType ?? typeReference(prop.type);
   }
   const nullable = prop.optional || options.nullableProperties;
   const nullableType = nullable && !type.endsWith("?") ? `${type}?` : type;
@@ -1124,6 +1162,107 @@ function propertyTypeName(
     return `MergePatchValue<${nullableType}>`;
   }
   return nullableType;
+}
+
+/**
+ * Returns the inferred enum type name for a string-literal union property.
+ *
+ * For MergePatchUpdate models, uses the base model stem so
+ * `WidgetMergePatchUpdate.color` resolves to `WidgetColor`.
+ */
+function inferredEnumTypeNameForProperty(
+  model: Model,
+  prop: ModelProperty,
+  isMergePatchModel: boolean,
+): string | undefined {
+  if (!getStringLiteralUnionValues(prop.type)) return undefined;
+
+  const modelStem = isMergePatchModel
+    ? model.name.replace(/MergePatchUpdate$/i, "")
+    : model.name;
+  return `${pascalCase(modelStem)}${pascalCase(prop.name)}`;
+}
+
+/**
+ * Returns string literal values from a union type (excluding null), or undefined.
+ */
+function getStringLiteralUnionValues(type: Type): string[] | undefined {
+  if (type.kind !== "Union") return undefined;
+
+  const values: string[] = [];
+  for (const variant of type.variants.values()) {
+    if (variant.type.kind === "Intrinsic" && variant.type.name === "null") {
+      continue;
+    }
+    if (variant.type.kind !== "String") return undefined;
+    if (typeof variant.type.value !== "string") return undefined;
+    values.push(variant.type.value);
+  }
+
+  return values.length > 0 ? values : undefined;
+}
+
+/**
+ * Collects inferred enums from model properties defined as string-literal unions.
+ */
+function collectInferredEnums(
+  models: Model[],
+  explicitEnums: Enum[],
+  options: ResolvedOptions,
+): InferredEnum[] {
+  const byKey = new Map<string, InferredEnum>();
+  const explicitEnumKeys = new Set(
+    explicitEnums.map((en) => {
+      const typespecNs = csharpNamespaceFor(en.namespace, options);
+      const ns =
+        options.namespaceFromPath && options.modelsDirSuffix
+          ? `${typespecNs}.${options.modelsDirSuffix}`
+          : typespecNs;
+      return `${ns}.${pascalCase(en.name)}`;
+    }),
+  );
+
+  for (const model of models) {
+    const isMergePatchModel = isMergePatchUpdateModel(model);
+    const typespecNs = csharpNamespaceFor(model.namespace, options);
+    const ns =
+      options.namespaceFromPath && options.modelsDirSuffix
+        ? `${typespecNs}.${options.modelsDirSuffix}`
+        : typespecNs;
+    const folder =
+      options.namespaceFromPath && options.modelsDirSuffix
+        ? []
+        : folderSegments(options.rootNamespace, typespecNs);
+
+    for (const prop of model.properties.values()) {
+      const values = getStringLiteralUnionValues(prop.type);
+      if (!values) continue;
+
+      const name = inferredEnumTypeNameForProperty(model, prop, isMergePatchModel);
+      if (!name) continue;
+
+      const key = `${ns}.${name}`;
+      if (explicitEnumKeys.has(key)) continue;
+      if (!byKey.has(key)) {
+        byKey.set(key, { name, namespace: ns, folder, values });
+      }
+    }
+  }
+
+  return [...byKey.values()];
+}
+
+/**
+ * Builds an {@link EnumView} for an inferred enum.
+ */
+function buildInferredEnumView(inferred: InferredEnum): EnumView {
+  return {
+    enumName: inferred.name,
+    members: inferred.values.map((value) => ({
+      name: pascalCase(value),
+      memberValue: value,
+    })),
+  };
 }
 
 /**

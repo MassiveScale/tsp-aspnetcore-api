@@ -24,7 +24,7 @@ namespace MassiveScale.Versioned.Api.Example.Models
         public MergePatchValue<int?> Weight { get; set; } = MergePatchValue<int?>.Absent;
     
         [JsonPropertyName("color")]
-        public MergePatchValue<object?> Color { get; set; } = MergePatchValue<object?>.Absent;
+        public MergePatchValue<WidgetColor?> Color { get; set; } = MergePatchValue<WidgetColor?>.Absent;
     
     }
 

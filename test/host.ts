@@ -23,5 +23,24 @@ export async function emit(
 ): Promise<Record<string, string>> {
   const [result, diagnostics] = await emitWithDiagnostics(code, options);
   expectDiagnosticEmpty(diagnostics);
-  return result;
+  // Preserve actual emitted keys, but provide backward-compatible lookup for
+  // tests that reference model/interface/enum files at output root.
+  // Example: key lookup "User.g.cs" resolves to "Models/User.g.cs" when the
+  // file exists there and no explicit models-output-dir override is provided.
+  const hasExplicitModelsDir = options?.["models-output-dir"] !== undefined;
+  if (hasExplicitModelsDir) {
+    return result;
+  }
+
+  return new Proxy(result, {
+    get(target, prop, receiver) {
+      if (typeof prop === "string" && !(prop in target)) {
+        const modelPath = `Models/${prop}`;
+        if (modelPath in target) {
+          return Reflect.get(target, modelPath, receiver);
+        }
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  }) as Record<string, string>;
 }

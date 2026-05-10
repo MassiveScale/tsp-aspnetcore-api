@@ -26,7 +26,10 @@ describe("csharp emitter", () => {
       // Helpers are always emitted to a Helpers/ subdir — exclude them from the
       // flat-layout check, which only concerns model and interface files.
       const nonHelperKeys = Object.keys(results).filter((k) => !k.startsWith("Helpers/"));
-      ok(!nonHelperKeys.some((k) => k.includes("/")), "no subdirectories expected for model files");
+      ok(
+        nonHelperKeys.every((k) => k.startsWith("Models/")),
+        "expected model/interface files under Models/",
+      );
     });
 
     it("uses default namespace for top-level models", async () => {
@@ -57,9 +60,9 @@ describe("csharp emitter", () => {
         { "root-namespace": "App" },
       );
 
-      const file = results["Users/User.g.cs"];
-      ok(file, `expected Users/User.cs, got ${Object.keys(results).join(", ")}`);
-      ok(file.includes("namespace App.Users"));
+      const file = results["Models/User.g.cs"];
+      ok(file, `expected Models/User.cs, got ${Object.keys(results).join(", ")}`);
+      ok(file.includes("namespace App.Users.Models"));
     });
 
     it("places models at root when their namespace equals the root namespace", async () => {
@@ -109,9 +112,9 @@ describe("csharp emitter", () => {
         { "root-namespace": "App.Api" },
       );
 
-      const file = results["V1/Users/User.g.cs"];
-      ok(file, `expected V1/Users/User.cs, got ${Object.keys(results).join(", ")}`);
-      ok(file.includes("namespace App.Api.V1.Users"));
+      const file = results["Models/User.g.cs"];
+      ok(file, `expected Models/User.cs, got ${Object.keys(results).join(", ")}`);
+      ok(file.includes("namespace App.Api.V1.Users.Models"));
     });
   });
 
@@ -238,6 +241,52 @@ describe("csharp emitter", () => {
       ok(helper, "expected MergePatchValue helper when MergePatchUpdate model is emitted");
     });
 
+    it("resolves inferred enum types in versioned models and merge patch models", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+
+        @versioned(Versions)
+        @service(#{ title: "Widget Service" })
+        namespace Demo;
+
+        enum Versions {
+          v1_0: "1.0",
+          v2_0: "2.0",
+        }
+
+        model Widget {
+          color: "red" | "blue";
+        }
+
+        model WidgetMergePatchUpdate is MergePatchUpdate<Widget>;
+      `);
+
+      const widget = results["Models/Widget.g.cs"];
+      ok(widget, `expected Models/Widget.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(widget.includes("public WidgetColor? Color { get; set; }"), `expected WidgetColor in:\n${widget}`);
+      ok(!widget.includes("public object? Color { get; set; }"), `did not expect object for Color in:\n${widget}`);
+
+      const mergePatch = results["Models/WidgetMergePatchUpdate.g.cs"];
+      ok(mergePatch, `expected Models/WidgetMergePatchUpdate.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        mergePatch.includes("public MergePatchValue<WidgetColor?> Color { get; set; } = MergePatchValue<WidgetColor?>.Absent;"),
+        `expected MergePatchValue<WidgetColor?> in:\n${mergePatch}`,
+      );
+      ok(
+        !mergePatch.includes("public MergePatchValue<object?> Color { get; set; } = MergePatchValue<object?>.Absent;"),
+        `did not expect MergePatchValue<object?> in:\n${mergePatch}`,
+      );
+
+      const inferredEnum = results["Models/WidgetColor.g.cs"];
+      ok(inferredEnum, `expected inferred enum Models/WidgetColor.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(inferredEnum.includes("public enum WidgetColor"), `expected WidgetColor enum in:\n${inferredEnum}`);
+      ok(inferredEnum.includes('EnumMember(Value = "red")'), `expected red member value in:\n${inferredEnum}`);
+      ok(inferredEnum.includes('EnumMember(Value = "blue")'), `expected blue member value in:\n${inferredEnum}`);
+    });
+
     it("emits enums with numeric values", async () => {
       const results = await emit(`
         namespace Demo;
@@ -315,8 +364,8 @@ describe("csharp emitter", () => {
         .filter((k) => !k.startsWith("Helpers/"))
         .sort();
       strictEqual(modelFiles.length, 2);
-      strictEqual(modelFiles[0], "IX.g.cs");
-      strictEqual(modelFiles[1], "X.g.cs");
+      strictEqual(modelFiles[0], "Models/IX.g.cs");
+      strictEqual(modelFiles[1], "Models/X.g.cs");
     });
   });
 
@@ -338,8 +387,8 @@ describe("csharp emitter", () => {
         namespace App.Users { model User { home: App.Common.Address; } }
       `);
       const file = results["User.g.cs"];
-      ok(file.includes("namespace App.Users"));
-      ok(file.includes("using App.Common;"), `expected using App.Common; in:\n${file}`);
+      ok(file.includes("namespace App.Users.Models"));
+      ok(file.includes("using App.Common.Models;"), `expected using App.Common.Models; in:\n${file}`);
       ok(file.includes("public Address? Home { get; set; }"));
     });
 
@@ -354,7 +403,7 @@ describe("csharp emitter", () => {
         }
       `);
       const file = results["User.g.cs"];
-      ok(file.includes("using App.Common;"));
+      ok(file.includes("using App.Common.Models;"));
       ok(file.includes("public IList<Tag>? Tags { get; set; }"));
       ok(file.includes("public IDictionary<string, Tag>? ScoresByTag { get; set; }"));
     });
@@ -365,7 +414,7 @@ describe("csharp emitter", () => {
         namespace App.Users { model User extends App.Base.Entity { name: string; } }
       `);
       const file = results["User.g.cs"];
-      ok(file.includes("using App.Base;"));
+      ok(file.includes("using App.Base.Models;"));
       ok(file.includes("public partial class User : Entity"));
     });
   });
@@ -422,12 +471,12 @@ describe("csharp emitter", () => {
         { "namespace-map": { "Legacy.Common": "Acme.Common" } },
       );
       const file = results["User.g.cs"];
-      ok(file.includes("namespace App.Users"));
+      ok(file.includes("namespace App.Users.Models"));
       ok(
-        file.includes("using Acme.Common;"),
-        `expected mapped using Acme.Common; in:\n${file}`,
+        file.includes("using Acme.Common.Models;"),
+        `expected mapped using Acme.Common.Models; in:\n${file}`,
       );
-      ok(!file.includes("using Legacy.Common;"));
+      ok(!file.includes("using Legacy.Common.Models;"));
       ok(file.includes("public Address? Home { get; set; }"));
     });
 
@@ -442,9 +491,9 @@ describe("csharp emitter", () => {
           "namespace-map": { "Legacy.Common": "Acme.Common" },
         },
       );
-      const file = results["Common/Address.g.cs"];
-      ok(file, `expected Common/Address.cs, got ${Object.keys(results).join(", ")}`);
-      ok(file.includes("namespace Acme.Common"));
+      const file = results["Models/Address.g.cs"];
+      ok(file, `expected Models/Address.cs, got ${Object.keys(results).join(", ")}`);
+      ok(file.includes("namespace Acme.Common.Models"));
     });
 
     it("does not add a using when the mapped namespace equals the consumer's namespace", async () => {
@@ -529,7 +578,7 @@ describe("csharp emitter", () => {
       );
 
       ok(results["models/User.g.cs"], `expected models/User.cs, got ${Object.keys(results).join(", ")}`);
-      ok(results["IUser.g.cs"], "interface should still be at default emitter-output-dir");
+      ok(results["Models/IUser.g.cs"], "interface should still be at default Models output dir");
       ok(!results["User.g.cs"], "class should not be at default location when override is set");
     });
 
