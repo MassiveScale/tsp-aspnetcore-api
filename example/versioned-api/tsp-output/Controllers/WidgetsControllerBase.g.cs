@@ -11,7 +11,9 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using MassiveScale.Versioned.Api.Example.Models;
 using Microsoft.AspNetCore.Mvc;
+
 namespace MassiveScale.Versioned.Api.Example.Controllers
 {
     [ApiController]
@@ -25,7 +27,7 @@ namespace MassiveScale.Versioned.Api.Example.Controllers
         [HttpGet("/api/2.0/widgets")]
         public abstract Task<IActionResult> List();
 
-        /// <summary> 
+        /// <summary>
         /// Read widgets
         /// </summary>
         [HttpGet("/api/1.0/widgets/{id}")]

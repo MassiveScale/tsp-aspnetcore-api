@@ -369,12 +369,17 @@ async function emitControllerGroup(
 
   if (options.emitControllers) {
     const controllerFileName = `${controllerView.controllerName}${options.fileExtension}`;
+    const ctrlUsings = buildControllerUsings(
+      options,
+      group.references,
+      ctrlNamespace,
+    );
     await emitFile(program, {
       path: resolvePath(options.controllersOutputDir, ...folder, controllerFileName),
       content: renderer.renderFile({
         fileName: controllerFileName,
         namespace: ctrlNamespace,
-        usings: sortUsings(new Set(CONTROLLER_USINGS)),
+        usings: ctrlUsings,
         body: renderer.renderController(controllerView),
       }),
     });
@@ -382,12 +387,17 @@ async function emitControllerGroup(
 
   if (options.emitServices) {
     const serviceInterfaceFileName = `${serviceView.interfaceName}${options.fileExtension}`;
+    const svcUsings = buildServiceUsings(
+      options,
+      group.references,
+      svcNamespace,
+    );
     await emitFile(program, {
       path: resolvePath(options.servicesOutputDir, ...folder, serviceInterfaceFileName),
       content: renderer.renderFile({
         fileName: serviceInterfaceFileName,
         namespace: svcNamespace,
-        usings: sortUsings(new Set(["System", "System.Collections.Generic", "System.Threading.Tasks"])),
+        usings: svcUsings,
         body: renderer.renderServiceInterface(serviceView),
       }),
     });
@@ -443,6 +453,72 @@ async function emitEnumMemberConverter(
       body: renderer.renderEnumMemberConverter(),
     }),
   });
+}
+
+/**
+ * Builds the sorted list of `using` namespaces for a generated controller file.
+ *
+ * Includes {@link CONTROLLER_USINGS}, any `additional-usings` from options,
+ * and namespaces for all types referenced by the operations.
+ *
+ * @param options - Resolved emitter options (additional usings).
+ * @param references - TypeSpec types referenced by controller operations.
+ * @param ownNamespace - The C# namespace of the controller file being emitted.
+ * @returns Sorted, deduplicated array of `using` namespace strings.
+ */
+function buildControllerUsings(
+  options: ResolvedOptions,
+  references: Type[],
+  ownNamespace: string,
+): string[] {
+  const usings = new Set<string>(CONTROLLER_USINGS);
+  for (const u of options.additionalUsings) usings.add(u);
+  for (const ref of references) {
+    for (const type of collectReferencedTypes(ref)) {
+      const typespecNs = csharpNamespaceFor(type.namespace, options);
+      // When namespace-from-path is enabled, apply the appropriate directory suffix
+      // (modelsDirSuffix for models/enums that go in the models output dir)
+      const ns =
+        options.namespaceFromPath && options.modelsDirSuffix && typespecNs
+          ? `${typespecNs}.${options.modelsDirSuffix}`
+          : typespecNs;
+      if (ns && ns !== ownNamespace) usings.add(ns);
+    }
+  }
+  return sortUsings(usings);
+}
+
+/**
+ * Builds the sorted list of `using` namespaces for a generated service interface file.
+ *
+ * Includes base service usings (System, System.Collections.Generic, System.Threading.Tasks),
+ * any `additional-usings` from options, and namespaces for all types referenced by operations.
+ *
+ * @param options - Resolved emitter options (additional usings).
+ * @param references - TypeSpec types referenced by service operations.
+ * @param ownNamespace - The C# namespace of the service file being emitted.
+ * @returns Sorted, deduplicated array of `using` namespace strings.
+ */
+function buildServiceUsings(
+  options: ResolvedOptions,
+  references: Type[],
+  ownNamespace: string,
+): string[] {
+  const usings = new Set<string>(["System", "System.Collections.Generic", "System.Threading.Tasks"]);
+  for (const u of options.additionalUsings) usings.add(u);
+  for (const ref of references) {
+    for (const type of collectReferencedTypes(ref)) {
+      const typespecNs = csharpNamespaceFor(type.namespace, options);
+      // When namespace-from-path is enabled, apply the appropriate directory suffix
+      // (modelsDirSuffix for models/enums that go in the models output dir)
+      const ns =
+        options.namespaceFromPath && options.modelsDirSuffix && typespecNs
+          ? `${typespecNs}.${options.modelsDirSuffix}`
+          : typespecNs;
+      if (ns && ns !== ownNamespace) usings.add(ns);
+    }
+  }
+  return sortUsings(usings);
 }
 
 /**
@@ -600,8 +676,11 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
   const namespaceMap = Object.entries(map)
     .map(([key, value]) => ({ key, value }))
     .sort((a, b) => b.key.length - a.key.length);
-  const modelsDir = raw["models-output-dir"] ?? "";
-  const interfacesDir = raw["interfaces-output-dir"] ?? "";
+  // Default output directories are "Models" for models/interfaces, and "Controllers"/"Services"/"Helpers" for others.
+  // When namespace-from-path is enabled, the dir suffixes are always applied to the namespace
+  // to reflect the output directory path (e.g., "MyApp.Models", "MyApp.Controllers").
+  const modelsDir = raw["models-output-dir"] ?? "Models";
+  const interfacesDir = raw["interfaces-output-dir"] ?? "Models";
   const controllersDir = raw["controllers-output-dir"] ?? "Controllers";
   const servicesDir = raw["services-output-dir"] ?? "Services";
   const helpersDir = raw["helpers-output-dir"] ?? "Helpers";
@@ -611,13 +690,19 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
   // receive a properly-qualified namespace (e.g. "MyApp.Controllers" rather
   // than just "Controllers").
   const effectiveRootNs = rootNs ?? inferRootNamespace(context.program);
+  // Determine if we should use namespace-from-path mode
+  const useNamespaceFromPath = raw["namespace-from-path"] ?? true;
+  // When namespace-from-path is enabled, always compute the dir suffixes
+  // to include output directories in namespaces. Otherwise, leave them empty.
+  const modelsDirSuffix = useNamespaceFromPath ? pathNamespace(undefined, modelsDir) : "";
+  const interfacesDirSuffix = useNamespaceFromPath ? pathNamespace(undefined, interfacesDir) : "";
   return {
     rootNamespace: rootNs,
     namespaceMap,
     fileExtension: raw["file-extension"] ?? ".g.cs",
-    modelsOutputDir: modelsDir ? resolvePath(baseDir, modelsDir) : baseDir,
+    modelsOutputDir: resolvePath(baseDir, modelsDir),
     emitInterfaces: raw["emit-interfaces"] ?? true,
-    interfacesOutputDir: interfacesDir ? resolvePath(baseDir, interfacesDir) : baseDir,
+    interfacesOutputDir: resolvePath(baseDir, interfacesDir),
     emitControllers: raw["emit-controllers"] ?? true,
     controllersOutputDir: resolvePath(baseDir, controllersDir),
     emitServices: raw["emit-services"] ?? true,
@@ -625,9 +710,9 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     emitHelpers: raw["emit-helpers"] ?? false,
     helpersOutputDir: resolvePath(baseDir, helpersDir),
     routePrefix: raw["route-prefix"] ?? "api",
-    namespaceFromPath: raw["namespace-from-path"] ?? true,
-    modelsDirSuffix: pathNamespace(undefined, modelsDir),
-    interfacesDirSuffix: pathNamespace(undefined, interfacesDir),
+    namespaceFromPath: useNamespaceFromPath,
+    modelsDirSuffix,
+    interfacesDirSuffix,
     controllersPathNamespace: pathNamespace(effectiveRootNs, controllersDir),
     servicesPathNamespace: pathNamespace(effectiveRootNs, servicesDir),
     helpersNamespace: pathNamespace(effectiveRootNs, helpersDir),

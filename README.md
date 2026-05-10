@@ -86,8 +86,8 @@ namespace MyCompany.Api.Users
 | `emit-services`          | `boolean`                | `true`               | When `false`, no service interface files are emitted. |
 | `file-extension`         | `string`                 | `".g.cs"`            | File extension for all generated files. |
 | `helpers-output-dir`     | `string`                 | `"Helpers"`          | Destination for generated helper files (`EnumMemberConverterFactory`, `MergePatchValue`). |
-| `interfaces-output-dir`  | `string`                 | `emitter-output-dir` | Destination for generated interface files. |
-| `models-output-dir`      | `string`                 | `emitter-output-dir` | Destination for generated class and enum files. Relative paths resolve against `emitter-output-dir`. |
+| `interfaces-output-dir`  | `string`                 | `"Models"`           | Destination for generated interface files. |
+| `models-output-dir`      | `string`                 | `"Models"`           | Destination for generated class and enum files. Relative paths resolve against `emitter-output-dir`. |
 | `namespace-from-path`    | `boolean`                | `true`               | When `true`, output-dir path segments are appended to the TypeSpec namespace for models/interfaces/enums, and are used as the namespace for controllers/services/helpers. See [Namespace resolution](#namespace-resolution). |
 | `namespace-map`          | `Record<string, string>` | `{}`                 | Rewrites TypeSpec namespaces to C# namespaces. Longest-prefix match wins; sub-namespaces inherit the rewrite automatically. |
 | `nullable-properties`    | `boolean`                | `true`               | When `true`, all properties are emitted as nullable (`string?`, `int?`). When `false`, only TypeSpec-optional properties and `T \| null` unions are nullable. |

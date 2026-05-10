@@ -11,14 +11,15 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
-namespace MassiveScale.Versioned.Api.Example
+
+namespace MassiveScale.Simple.Api.Example
 {
     public partial class WidgetList : IWidgetList
     {
         [JsonPropertyName("items")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public IList<Widget>? Items { get; set; }
-
+    
     }
 
 }

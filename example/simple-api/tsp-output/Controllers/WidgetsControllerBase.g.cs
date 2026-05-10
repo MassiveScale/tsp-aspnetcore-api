@@ -12,7 +12,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-namespace MassiveScale.Simple.Api.Example.Controllers
+
+namespace MassiveScale.Simple.Api.Example
 {
     [ApiController]
     public abstract class WidgetsControllerBase : ControllerBase
