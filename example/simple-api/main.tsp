@@ -3,10 +3,17 @@ import "@typespec/http";
 using Http;
 @service(#{ title: "Widget Service" })
 namespace MassiveScale.Simple.Api.Example {
+  /** Supported widget colors. */
+  enum WidgetColor {
+    red,
+    blue,
+  }
+
   model Widget {
     id: string;
     weight: int32;
-    color: "red" | "blue";
+    /** The widget color. */
+    color: WidgetColor;
   }
 
   model WidgetList {
