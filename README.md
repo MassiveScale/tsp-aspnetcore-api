@@ -294,7 +294,7 @@ The emitter automatically generates support for [RFC 7396 Merge Patch](https://t
 For models that implement `MergePatchUpdate<T>`, all properties are wrapped in `MergePatchValue<T>` to distinguish between:
 
 - **Property not provided** — `MergePatchValue<T>.Absent` (omitted from JSON)
-- **Property explicitly set to null** — `MergePatchValue<T>(null)` (serialized as JSON `null`)
+- **Property explicitly set to null** — `MergePatchValue<T>.Of(null)` (serialized as JSON `null`)
 
 This distinction is necessary because RFC 7396 treats missing properties differently from null values during merge operations.
 
