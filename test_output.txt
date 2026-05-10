@@ -1,0 +1,229 @@
+
+> @massivescale/tsp-aspnetcore-api@1.0.0 pretest
+> npm run build
+
+
+> @massivescale/tsp-aspnetcore-api@1.0.0 build
+> tsc && tsc -p tsconfig.test.json && node scripts/copy-templates.mjs
+
+
+> @massivescale/tsp-aspnetcore-api@1.0.0 test
+> cd dist && node --test
+
+Γû╢ csharp emitter
+  Γû╢ default layout (no root-namespace)
+    Γ£ö emits each model flat at the root of the output dir (218.5364ms)
+    Γ£ö uses default namespace for top-level models (22.9054ms)
+    Γ£ö uses original TypeSpec namespace as the C# namespace (12.2718ms)
+  Γ£ö default layout (no root-namespace) (254.3816ms)
+  Γû╢ root-namespace option
+    Γ£ö strips root namespace from folder paths (16.621ms)
+    Γ£ö places models at root when their namespace equals the root namespace (11.0933ms)
+    Γ£ö places top-level models at root with the root namespace as their C# namespace (10.9969ms)
+    Γ£ö places models outside the root namespace at the output root, keeping their namespace (14.8242ms)
+    Γ£ö supports nested root namespace prefixes (19.8872ms)
+  Γ£ö root-namespace option (73.7602ms)
+  Γû╢ @format-based type mapping
+    Γ£ö maps uuid to Guid (9.2603ms)
+    Γ£ö maps guid (alias) to Guid (10.6745ms)
+    Γ£ö maps uri to Uri (9.833ms)
+    Γ£ö maps date-time format to DateTimeOffset (13.1249ms)
+    Γ£ö preserves nullable on optional formatted properties (8.1291ms)
+    Γ£ö falls back to the underlying type when the format is unknown (9.0165ms)
+  Γ£ö @format-based type mapping (60.3146ms)
+  Γû╢ type mapping
+    Γ£ö emits a simple model with primitive properties (8.6557ms)
+    Γ£ö treats optional properties as nullable (12.2006ms)
+    Γ£ö maps array and record types (10.907ms)
+    Γ£û emits MergePatchUpdate properties as MergePatchValue wrappers (21.9349ms)
+    Γ£û detects aliased MergePatchUpdate models with different names (18.6955ms)
+    Γ£ö emits enums with numeric values (8.9468ms)
+    Γ£ö emits inheritance via extends (10.1044ms)
+    Γ£ö treats nullable unions as nullable C# types (10.8409ms)
+    Γ£ö maps date and duration scalars (18.2254ms)
+    Γ£ö emits doc comments as XML summary (8.1973ms)
+    Γ£ö ignores standard library types (7.8663ms)
+  Γ£û type mapping (137.0544ms)
+  Γû╢ using statements
+    Γ£ö does not add a using for the model's own namespace (8.4516ms)
+    Γ£ö adds a using for a referenced type in another namespace (9.7125ms)
+    Γ£ö adds usings for referenced array element and record value types (9.2852ms)
+    Γ£ö adds a using for a base model in another namespace (9.5372ms)
+  Γ£ö using statements (37.162ms)
+  Γû╢ namespace-map option
+    Γ£ö rewrites the C# namespace for a model in a mapped namespace (9.6029ms)
+    Γ£ö applies the mapping as a prefix replacement to nested namespaces (20.6234ms)
+    Γ£ö uses the longest matching key when multiple mappings could apply (13.1027ms)
+    Γ£ö emits using statements that reflect the mapped namespace of referenced types (11.1455ms)
+    Γ£ö places mapped models in folders that match the mapped C# namespace under the root (9.3201ms)
+    Γ£ö does not add a using when the mapped namespace equals the consumer's namespace (10.7613ms)
+  Γ£ö namespace-map option (74.7976ms)
+  Γû╢ interface generation
+    Γ£ö emits a corresponding I<Model> interface alongside each class (10.76ms)
+    Γ£ö includes the interface alongside the base class on extends (9.1345ms)
+    Γ£ö does not generate interfaces for enums (7.9053ms)
+    Γ£ö preserves nullable formatting on interface members (8.1669ms)
+  Γ£ö interface generation (36.1381ms)
+  Γû╢ models-output-dir / interfaces-output-dir
+    Γ£ö routes class files into models-output-dir (10.1518ms)
+    Γ£ö routes interface files into interfaces-output-dir (13.8291ms)
+    Γ£ö routes both when both overrides are provided (8.0631ms)
+    Γ£ö appends output-dir segments to TypeSpec namespace when namespace-from-path is enabled (default) (9.8449ms)
+    Γ£ö uses subfolder layout (not dir-suffix) when namespace-from-path is disabled (8.6414ms)
+    Γ£ö routes enums to models-output-dir (9.2777ms)
+  Γ£ö models-output-dir / interfaces-output-dir (60.0257ms)
+  Γû╢ additional-usings option
+    Γ£ö appends configured usings to every emitted file (8.7501ms)
+    Γ£ö places System namespaces before non-System ones (9.171ms)
+    Γ£ö does not duplicate a using already implied by a cross-namespace reference (8.3146ms)
+  Γ£ö additional-usings option (26.3635ms)
+  Γû╢ nullable-properties option
+    Γ£ö renders all properties as nullable by default (17.4157ms)
+    Γ£ö only marks optional properties as nullable when disabled (7.748ms)
+    Γ£ö still treats null-union properties as nullable when disabled (7.8986ms)
+    Γ£ö does not double up the nullability marker on already-nullable types (8.8619ms)
+  Γ£ö nullable-properties option (42.1036ms)
+  Γû╢ JSON serialization attributes
+    Γ£ö adds [JsonPropertyName] with camelCase key to every class property (8.1028ms)
+    Γ£ö converts snake_case property names to camelCase JSON keys (8.0883ms)
+    Γ£ö adds [JsonIgnore] to nullable properties but not non-nullable (9.3405ms)
+    Γ£ö adds [JsonPropertyName] and [JsonIgnore] to interface properties (8.9176ms)
+    Γ£ö adds [JsonConverter(typeof(EnumMemberConverterFactory))] to enums (13.6824ms)
+    Γ£ö includes using System.Text.Json.Serialization in model files (8.2415ms)
+  Γ£ö JSON serialization attributes (56.5898ms)
+  Γû╢ templates option
+    Γ£ö uses a custom class template when provided (9.1943ms)
+    Γ£ö uses a custom interface template when provided (9.9249ms)
+    Γ£ö uses a custom enum template when provided (9.1427ms)
+    Γ£ö uses a custom file template when provided (10.057ms)
+    Γ£ö falls back to defaults for templates that are not overridden (9.248ms)
+    Γ£ö reports a diagnostic when a custom template cannot be loaded (6.7107ms)
+  Γ£ö templates option (54.5002ms)
+  Γû╢ controller generation
+    Γ£ö emits a controller and service interface pair for an HTTP interface (29.1869ms)
+    Γ£ö controller has ApiController and ControllerBase; route is on each method (15.9222ms)
+    Γ£ö controller is abstract and the service interface file is emitted (14.681ms)
+    Γ£ö emits action methods with correct HTTP verb attributes (15.7297ms)
+    Γ£ö emits path and query parameters with correct binding attributes (21.5583ms)
+    Γ£ö emits a body parameter with [FromBody] (15.1473ms)
+    Γ£ö service interface has Task<T> method signatures (14.7984ms)
+    Γ£ö service interface declares abstract Task methods (14.9502ms)
+    Γ£ö generates one route attribute per API version on each method (29.5796ms)
+    Γ£ö includes path parameters in versioned operation routes (16.7547ms)
+    Γ£ö emits versioned routes only for versions where each operation exists (28.1631ms)
+    Γ£ö respects operation availability when version values differ from version names (19.5997ms)
+    Γ£ö respects route-prefix option (26.55ms)
+    Γ£ö routes controllers and services to separate dirs when configured (13.6471ms)
+    Γ£ö infers controller namespace from the TypeSpec namespace when root-namespace is not set (13.385ms)
+    Γ£ö infers a multi-segment controller namespace when the TypeSpec namespace is multi-segment (14.1575ms)
+  Γ£ö controller generation (304.3932ms)
+  Γû╢ helpers generation
+    Γ£ö infers helper namespace from the TypeSpec namespace when root-namespace is not set (15.0551ms)
+    Γ£ö uses explicit root-namespace for helpers when provided (8.092ms)
+  Γ£ö helpers generation (23.241ms)
+Γ£û csharp emitter (1241.7179ms)
+Γ£ö test\host.js (322.4155ms)
+Γä╣ tests 83
+Γä╣ suites 15
+Γä╣ pass 81
+Γä╣ fail 2
+Γä╣ cancelled 0
+Γä╣ skipped 0
+Γä╣ todo 0
+Γä╣ duration_ms 1630.3159
+
+Γ£û failing tests:
+
+test at test\aspnetcore.api.test.js:165:9
+Γ£û emits MergePatchUpdate properties as MergePatchValue wrappers (21.9349ms)
+  AssertionError [ERR_ASSERTION]: expected helper namespace using in:
+  //-----------------------------------------------------------------------
+  // <copyright file="WidgetMergePatchUpdate.g.cs" />
+  //
+  // This file is AUTO-GENERATED. Do not edit this file directly.
+  // <auto-generated />
+  //-----------------------------------------------------------------------
+  #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+  #pragma warning disable CS0612 // Type or member is obsolete
+  #nullable enable
+  
+  using System;
+  using System.Collections.Generic;
+  using System.Text.Json.Serialization;
+  namespace Demo
+  {
+      public partial class WidgetMergePatchUpdate : IWidgetMergePatchUpdate
+      {
+          [JsonPropertyName("id")]
+          [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+          public string? Id { get; set; }
+  
+          [JsonPropertyName("weight")]
+          [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+          public int? Weight { get; set; }
+  
+          [JsonPropertyName("color")]
+          [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+          public string? Color { get; set; }
+  
+      }
+  
+  }
+  
+  #pragma warning restore CS0612 // Type or member is obsolete
+  #pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
+      at TestContext.<anonymous> (file:///E:/tsp-aspnetcore-api/dist/test/aspnetcore.api.test.js:183:13)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test\aspnetcore.api.test.js:195:9
+Γ£û detects aliased MergePatchUpdate models with different names (18.6955ms)
+  AssertionError [ERR_ASSERTION]: expected helper namespace using in:
+  //-----------------------------------------------------------------------
+  // <copyright file="Patch.g.cs" />
+  //
+  // This file is AUTO-GENERATED. Do not edit this file directly.
+  // <auto-generated />
+  //-----------------------------------------------------------------------
+  #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+  #pragma warning disable CS0612 // Type or member is obsolete
+  #nullable enable
+  
+  using System;
+  using System.Collections.Generic;
+  using System.Text.Json.Serialization;
+  namespace Demo
+  {
+      public partial class Patch : IPatch
+      {
+          [JsonPropertyName("id")]
+          [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+          public string? Id { get; set; }
+  
+          [JsonPropertyName("weight")]
+          [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+          public int? Weight { get; set; }
+  
+      }
+  
+  }
+  
+  #pragma warning restore CS0612 // Type or member is obsolete
+  #pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
+      at TestContext.<anonymous> (file:///E:/tsp-aspnetcore-api/dist/test/aspnetcore.api.test.js:212:13)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

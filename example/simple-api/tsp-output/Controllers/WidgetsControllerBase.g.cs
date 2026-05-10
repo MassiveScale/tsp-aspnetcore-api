@@ -12,7 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-namespace MassiveScale.Versioned.Api.Example.Controllers
+namespace MassiveScale.Simple.Api.Example.Controllers
 {
     [ApiController]
     public abstract class WidgetsControllerBase : ControllerBase
@@ -20,43 +20,37 @@ namespace MassiveScale.Versioned.Api.Example.Controllers
         /// <summary>
         /// List widgets
         /// </summary>
-        [HttpGet("/api/1.0/widgets")]
-        [HttpGet("/api/1.1/widgets")]
-        [HttpGet("/api/2.0/widgets")]
+        [HttpGet("/api/widgets")]
         public abstract Task<IActionResult> List();
 
-        /// <summary> 
+        /// <summary>
         /// Read widgets
         /// </summary>
-        [HttpGet("/api/1.0/widgets/{id}")]
-        [HttpGet("/api/1.1/widgets/{id}")]
-        [HttpGet("/api/2.0/widgets/{id}")]
+        [HttpGet("/api/widgets/{id}")]
         public abstract Task<IActionResult> Read([FromRoute] string id);
 
         /// <summary>
         /// Create a widget
         /// </summary>
-        [HttpPost("/api/1.1/widgets")]
-        [HttpPost("/api/2.0/widgets")]
+        [HttpPost("/api/widgets")]
         public abstract Task<IActionResult> Create([FromBody] Widget body);
 
         /// <summary>
         /// Update a widget
         /// </summary>
-        [HttpPatch("/api/1.1/widgets/{id}")]
-        [HttpPatch("/api/2.0/widgets/{id}")]
+        [HttpPatch("/api/widgets/{id}")]
         public abstract Task<IActionResult> Update([FromRoute] string id, [FromBody] WidgetMergePatchUpdate body);
 
         /// <summary>
         /// Delete a widget
         /// </summary>
-        [HttpDelete("/api/2.0/widgets/{id}")]
+        [HttpDelete("/api/widgets/{id}")]
         public abstract Task<IActionResult> Delete([FromRoute] string id);
 
         /// <summary>
         /// Analyze a widget
         /// </summary>
-        [HttpPost("/api/2.0/widgets/{id}/analyze")]
+        [HttpPost("/api/widgets/{id}/analyze")]
         public abstract Task<IActionResult> Analyze([FromRoute] string id);
 
     }

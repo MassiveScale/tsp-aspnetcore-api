@@ -329,8 +329,14 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     await emitControllerGroup(program, group, renderer, options);
   }
 
-  if (options.emitHelpers || hasMergePatchUpdateModels) {
-    await emitHelpers(program, renderer, options);
+  // Emit MergePatchValue helper when any MergePatchUpdate models exist (required).
+  if (hasMergePatchUpdateModels) {
+    await emitMergePatchValue(program, renderer, options);
+  }
+
+  // Emit EnumMemberConverter helper only when emit-helpers is true (optional).
+  if (options.emitHelpers) {
+    await emitEnumMemberConverter(program, renderer, options);
   }
 }
 
@@ -390,13 +396,14 @@ async function emitControllerGroup(
 
 /**
  * Writes the static `MergePatchValue<T>` helper class to the helpers output
- * directory.
+ * directory. This is emitted automatically when any `MergePatchUpdate<T>` models
+ * are generated, as they require this helper to function.
  *
  * @param program - The compiled TypeSpec program (needed by `emitFile`).
  * @param renderer - Pre-compiled renderer instance.
  * @param options - Resolved emitter options.
  */
-async function emitHelpers(
+async function emitMergePatchValue(
   program: Program,
   renderer: Renderer,
   options: ResolvedOptions,
@@ -411,7 +418,21 @@ async function emitHelpers(
       body: renderer.renderMergePatchValue(),
     }),
   });
+}
 
+/**
+ * Writes the `EnumMemberConverter` helper class to the helpers output
+ * directory. This is only emitted when the `emit-helpers` option is enabled.
+ *
+ * @param program - The compiled TypeSpec program (needed by `emitFile`).
+ * @param renderer - Pre-compiled renderer instance.
+ * @param options - Resolved emitter options.
+ */
+async function emitEnumMemberConverter(
+  program: Program,
+  renderer: Renderer,
+  options: ResolvedOptions,
+): Promise<void> {
   const enumConverterFileName = `EnumMemberConverter${options.fileExtension}`;
   await emitFile(program, {
     path: resolvePath(options.helpersOutputDir, enumConverterFileName),
@@ -1022,6 +1043,20 @@ function propertyTypeName(
 
 /**
  * Returns true when a generated model represents TypeSpec MergePatchUpdate.
+ */
+/**
+ * Detects whether a TypeSpec model is a MergePatchUpdate<T> (RFC 7396 merge patch).
+ *
+ * This detection requires the model to follow the standard TypeSpec @typespec/http
+ * naming convention: the model name must end with "MergePatchUpdate" (case-insensitive).
+ * The @typespec/http library automatically generates models named `{ResourceName}MergePatchUpdate`
+ * when you use `MergePatchUpdate<ResourceType>` in your TypeSpec definitions.
+ *
+ * For merge-patch models, properties are automatically wrapped in `MergePatchValue<T>`
+ * to distinguish between "not provided" (absent) and "explicitly set to null" semantics.
+ *
+ * @param model - The TypeSpec model to check.
+ * @returns `true` if the model's name ends with "MergePatchUpdate".
  */
 function isMergePatchUpdateModel(model: Model): boolean {
   return /MergePatchUpdate$/i.test(model.name);

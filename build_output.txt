@@ -1,0 +1,4 @@
+
+> @massivescale/tsp-aspnetcore-api@1.0.0 build
+> tsc && tsc -p tsconfig.test.json && node scripts/copy-templates.mjs
+

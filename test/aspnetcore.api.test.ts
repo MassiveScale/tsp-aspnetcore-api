@@ -1376,8 +1376,8 @@ namespace {{namespace}}
         model M { x: int32; }
       `, { "emit-helpers": true });
 
-      const helper = results["Helpers/MergePatchValue.g.cs"];
-      ok(helper, `expected Helpers/MergePatchValue.g.cs, got ${Object.keys(results).join(", ")}`);
+      const helper = results["Helpers/EnumMemberConverter.g.cs"];
+      ok(helper, `expected Helpers/EnumMemberConverter.g.cs, got ${Object.keys(results).join(", ")}`);
       ok(helper.includes("namespace Demo.Helpers"), `expected 'namespace Demo.Helpers' in:\n${helper}`);
     });
 
@@ -1387,8 +1387,8 @@ namespace {{namespace}}
         model M { x: int32; }
       `, { "emit-helpers": true, "root-namespace": "MyApp" });
 
-      const helper = results["Helpers/MergePatchValue.g.cs"];
-      ok(helper, `expected Helpers/MergePatchValue.g.cs`);
+      const helper = results["Helpers/EnumMemberConverter.g.cs"];
+      ok(helper, `expected Helpers/EnumMemberConverter.g.cs`);
       ok(helper.includes("namespace MyApp.Helpers"), `expected 'namespace MyApp.Helpers' in:\n${helper}`);
     });
   });

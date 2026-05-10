@@ -17,4 +17,4 @@ options:
     #emit-interfaces: true
     #emit-controllers: true
     #emit-services: true
-    #emit-helpers: true
+    emit-helpers: true
