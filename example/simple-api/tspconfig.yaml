@@ -1,0 +1,20 @@
+emit:
+  - "@massivescale/tsp-aspnetcore-api"
+options:
+  "@massivescale/tsp-aspnetcore-api":
+    emitter-output-dir: "{output-dir}"
+    #root-namespace: "MassiveScale.Api.Example" 
+    #namespace-from-path: true
+    #file-extension: ".g.cs"
+    #models-output-dir: "Models"
+    #interfaces-output-dir: "Interfaces"
+    #controllers-output-dir: "Controllers"
+    #services-output-dir: "Services"
+    #helpers-output-dir: "Helpers"
+    #route-prefix: "api"
+    #abstract-suffix: "Base"
+    #nullable-properties: true
+    #emit-interfaces: true
+    #emit-controllers: true
+    #emit-services: true
+    #emit-helpers: true
