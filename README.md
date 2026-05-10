@@ -81,7 +81,7 @@ namespace MyCompany.Api.Users
 | `additional-usings`      | `string[]`               | `[]`                 | Extra `using` directives added to every generated file. |
 | `controllers-output-dir` | `string`                 | `"Controllers"`      | Destination for generated controller files. |
 | `emit-controllers`       | `boolean`                | `true`               | When `false`, no controller base class files are emitted. |
-| `emit-helpers`           | `boolean`                | `false`              | When `false`, no helper files (`MergePatchValue`, `EnumMemberConverter`) are emitted. |
+| `emit-helpers`           | `boolean`                | `false`              | When `false`, helper files are skipped unless required by generated output. `MergePatchValue` is emitted automatically when any `MergePatchUpdate<T>` model is generated; enum converter helpers still follow this option. |
 | `emit-interfaces`        | `boolean`                | `true`               | When `false`, no `I<Model>` interface files are emitted. |
 | `emit-services`          | `boolean`                | `true`               | When `false`, no service interface files are emitted. |
 | `file-extension`         | `string`                 | `".g.cs"`            | File extension for all generated files. |
@@ -223,7 +223,7 @@ For each HTTP `interface` (or `namespace`) that carries routes, the emitter writ
 | `<Name>ControllerBase.cs` | Abstract ASP.NET Core controller inheriting `ControllerBase`. Injects `I<Name>Service` and delegates every action to the service. |
 | `I<Name>Service.cs` | Service interface with one `Task<T>` method per operation. |
 
-**Routes** — one `[Route]` attribute is emitted per API version defined via `@typespec/versioning`. Without versioning a single attribute is emitted using the TypeSpec route path.
+**Routes** — one `[Http<Verb>("...")]` attribute is emitted per available API version of each operation. Without versioning a single attribute is emitted using the resolved operation path.
 
 **Parameter binding** — path parameters get `[FromRoute]`, query parameters get `[FromQuery]`, headers get `[FromHeader]`, and request bodies get `[FromBody]`.
 
@@ -329,7 +329,19 @@ Templates are compiled with `noEscape: true` (so `<`, `>`, and `&` pass through 
 ```bash
 npm install
 npm run build   # tsc src/ + tsc test/ + copy templates
-npm test        # node --test on dist/
+npm test        # builds first, then runs node --test on dist/
+npm run test:vscode  # VS Code-friendly test entrypoint (test/*.test.mjs)
 npm run format  # prettier
 npm run lint    # eslint
 ```
+
+### VS Code testing
+
+The repository includes `test/aspnetcore.api.test.mjs` as a Node test entrypoint so the VS Code Testing panel can discover tests reliably.
+
+`npm test` runs `pretest` automatically, so compiled tests in `dist/test` are refreshed before execution.
+
+Recommended VS Code extensions for test discovery and test UI integration:
+
+- `hbenl.vscode-test-explorer`
+- `connor4312.nodejs-testing`

@@ -11,21 +11,19 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using MassiveScale.Versioned.Api.Example.Helpers;
 namespace MassiveScale.Versioned.Api.Example.Interfaces
 {
     public partial interface IWidgetMergePatchUpdate
     {
         [JsonPropertyName("id")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string? Id { get; set; }
+        MergePatchValue<string?> Id { get; set; }
 
         [JsonPropertyName("weight")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        int? Weight { get; set; }
+        MergePatchValue<int?> Weight { get; set; }
 
         [JsonPropertyName("color")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        object? Color { get; set; }
+        MergePatchValue<object?> Color { get; set; }
 
     }
 

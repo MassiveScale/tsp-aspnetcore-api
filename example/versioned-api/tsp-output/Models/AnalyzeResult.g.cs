@@ -17,11 +17,11 @@ namespace MassiveScale.Versioned.Api.Example.Models
     {
         [JsonPropertyName("id")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? Id { get; set; }
+        public string? Id { get; set; };
 
         [JsonPropertyName("analysis")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? Analysis { get; set; }
+        public string? Analysis { get; set; };
 
     }
 

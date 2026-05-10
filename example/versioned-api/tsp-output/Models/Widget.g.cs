@@ -17,15 +17,15 @@ namespace MassiveScale.Versioned.Api.Example.Models
     {
         [JsonPropertyName("id")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? Id { get; set; }
+        public string? Id { get; set; };
 
         [JsonPropertyName("weight")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public int? Weight { get; set; }
+        public int? Weight { get; set; };
 
         [JsonPropertyName("color")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public object? Color { get; set; }
+        public object? Color { get; set; };
 
     }
 

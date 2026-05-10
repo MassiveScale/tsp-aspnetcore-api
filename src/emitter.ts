@@ -214,7 +214,10 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     },
   });
 
+  const hasMergePatchUpdateModels = models.some(isMergePatchUpdateModel);
+
   for (const model of models) {
+    const isMergePatchModel = isMergePatchUpdateModel(model);
     const typespecNs = csharpNamespaceFor(model.namespace, options);
     // When `namespaceFromPath` is enabled and an output-dir is configured,
     // append the PascalCased dir segments to the TypeSpec namespace so the C#
@@ -243,8 +246,20 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     const refs = modelReferences(model);
     // Pass modelsDirSuffix so that usings for referenced types also resolve to
     // the correct suffixed namespace.
-    const classUsings = collectUsings(classNs, refs, options, options.modelsDirSuffix);
-    const interfaceUsings = collectUsings(interfaceNs, refs, options, options.modelsDirSuffix);
+    const classUsings = collectUsings(
+      classNs,
+      refs,
+      options,
+      options.modelsDirSuffix,
+      isMergePatchModel,
+    );
+    const interfaceUsings = collectUsings(
+      interfaceNs,
+      refs,
+      options,
+      options.modelsDirSuffix,
+      isMergePatchModel,
+    );
 
     const classFileName = `${pascalCase(model.name)}${options.fileExtension}`;
     await emitFile(program, {
@@ -253,7 +268,7 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
         fileName: classFileName,
         namespace: classNs,
         usings: classUsings,
-        body: renderer.renderClass(buildClassView(program, model, options)),
+        body: renderer.renderClass(buildClassView(program, model, options, isMergePatchModel)),
       }),
     });
 
@@ -265,7 +280,9 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
           fileName: interfaceFileName,
           namespace: interfaceNs,
           usings: interfaceUsings,
-          body: renderer.renderInterface(buildInterfaceView(program, model, options)),
+          body: renderer.renderInterface(
+            buildInterfaceView(program, model, options, isMergePatchModel),
+          ),
         }),
       });
     }
@@ -312,7 +329,7 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     await emitControllerGroup(program, group, renderer, options);
   }
 
-  if (options.emitHelpers) {
+  if (options.emitHelpers || hasMergePatchUpdateModels) {
     await emitHelpers(program, renderer, options);
   }
 }
@@ -562,8 +579,8 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
   const namespaceMap = Object.entries(map)
     .map(([key, value]) => ({ key, value }))
     .sort((a, b) => b.key.length - a.key.length);
-  const modelsDir = raw["models-output-dir"] ?? "Models";
-  const interfacesDir = raw["interfaces-output-dir"] ?? "Interfaces";
+  const modelsDir = raw["models-output-dir"] ?? "";
+  const interfacesDir = raw["interfaces-output-dir"] ?? "";
   const controllersDir = raw["controllers-output-dir"] ?? "Controllers";
   const servicesDir = raw["services-output-dir"] ?? "Services";
   const helpersDir = raw["helpers-output-dir"] ?? "Helpers";
@@ -812,6 +829,7 @@ function collectUsings(
   options: ResolvedOptions,
   /** The dir-suffix currently applied to the emitting file's namespace. */
   dirSuffix = "",
+  usesMergePatchValue = false,
 ): string[] {
   const usings = new Set<string>(SYSTEM_USINGS);
   for (const u of options.additionalUsings) usings.add(u);
@@ -827,6 +845,9 @@ function collectUsings(
           : typespecNs;
       if (ns && ns !== ownNamespace) usings.add(ns);
     }
+  }
+  if (usesMergePatchValue && options.helpersNamespace !== ownNamespace) {
+    usings.add(options.helpersNamespace);
   }
   return sortUsings(usings);
 }
@@ -862,6 +883,7 @@ function buildClassView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  isMergePatchModel: boolean,
 ): ClassView {
   const className = pascalCase(model.name);
   return {
@@ -869,7 +891,7 @@ function buildClassView(
     className,
     interfaceName: `I${className}`,
     baseClass: model.baseModel ? typeReference(model.baseModel) : undefined,
-    properties: buildPropertyViews(program, model, options),
+    properties: buildPropertyViews(program, model, options, isMergePatchModel),
   };
 }
 
@@ -885,12 +907,13 @@ function buildInterfaceView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  isMergePatchModel: boolean,
 ): InterfaceView {
   return {
     doc: docFor(program, model),
     interfaceName: `I${pascalCase(model.name)}`,
     baseInterface: model.baseModel ? `I${pascalCase(model.baseModel.name)}` : undefined,
-    properties: buildPropertyViews(program, model, options),
+    properties: buildPropertyViews(program, model, options, isMergePatchModel),
   };
 }
 
@@ -931,15 +954,20 @@ function buildPropertyViews(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  isMergePatchModel: boolean,
 ): PropertyView[] {
   return [...model.properties.values()].map((prop) => {
-    const type = propertyTypeName(program, prop, options);
+    const type = propertyTypeName(program, prop, options, isMergePatchModel);
     return {
       doc: docFor(program, prop),
       type,
       name: pascalCase(prop.name),
       jsonName: camelCase(prop.name),
       nullable: type.endsWith("?"),
+      initializer:
+        isMergePatchModel && type.startsWith("MergePatchValue<")
+          ? `${type}.Absent`
+          : undefined,
     };
   });
 }
@@ -972,6 +1000,7 @@ function propertyTypeName(
   program: Program,
   prop: ModelProperty,
   options: ResolvedOptions,
+  isMergePatchModel: boolean,
 ): string {
   const propFormat = getFormat(program, prop);
   const scalarFormat =
@@ -984,7 +1013,18 @@ function propertyTypeName(
     type = typeReference(prop.type);
   }
   const nullable = prop.optional || options.nullableProperties;
-  return nullable && !type.endsWith("?") ? `${type}?` : type;
+  const nullableType = nullable && !type.endsWith("?") ? `${type}?` : type;
+  if (isMergePatchModel) {
+    return `MergePatchValue<${nullableType}>`;
+  }
+  return nullableType;
+}
+
+/**
+ * Returns true when a generated model represents TypeSpec MergePatchUpdate.
+ */
+function isMergePatchUpdateModel(model: Model): boolean {
+  return /MergePatchUpdate$/i.test(model.name);
 }
 
 /**

@@ -17,7 +17,7 @@ namespace MassiveScale.Versioned.Api.Example.Models
     {
         [JsonPropertyName("items")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public IList<Widget>? Items { get; set; }
+        public IList<Widget>? Items { get; set; };
 
     }
 

@@ -27,7 +27,12 @@ import {
   getAllHttpServices,
   getRoutePath,
 } from "@typespec/http";
-import { getAllVersions } from "@typespec/versioning";
+import {
+  Availability,
+  getAllVersions,
+  getAvailabilityMap,
+  Version,
+} from "@typespec/versioning";
 import {
   ControllerView,
   OperationParamView,
@@ -137,7 +142,6 @@ export function collectControllers(
 
   for (const service of services) {
     const versions = getAllVersions(program, service.namespace) ?? [];
-    const versionValues = versions.map((v) => v.value);
 
     const byContainer = new Map<OperationContainer, HttpOperation[]>();
     for (const op of service.operations) {
@@ -160,9 +164,8 @@ export function collectControllers(
       const serviceName = `${pascalCase(containerName)}Service${options.abstractSuffix}`;
       const serviceInterfaceName = `I${pascalCase(containerName)}Service`;
 
-      const basePath = resolveControllerPath(program, ops);
       const operations = ops.map((op) =>
-        buildOperationView(program, op, options, basePath, versionValues),
+        buildOperationView(program, op, options, versions),
       );
 
       groups.push({
@@ -190,63 +193,60 @@ export function collectControllers(
 }
 
 /**
- * Determines the shared base path for a group of operations belonging to the
- * same controller.
+ * Filters service-level versions down to the versions where a specific
+ * operation exists.
  *
- * Strips the operation-specific route suffix from the first operation's full
- * path to recover the controller-level segment.
- *
- * @param program - The compiled TypeSpec program (used to read `@route`).
- * @param ops - All HTTP operations for one container, at least one element.
- * @returns Base path string (always starts with `/`).
+ * @param program - The compiled TypeSpec program.
+ * @param op - The operation being emitted.
+ * @param serviceVersions - Version values declared for the containing service.
+ * @returns Version values where the operation is available.
  */
-function resolveControllerPath(program: Program, ops: HttpOperation[]): string {
-  if (ops.length === 0) return "";
-  const firstOp = ops[0];
-  const opRoute = getRoutePath(program, firstOp.operation)?.path;
-  if (opRoute && opRoute !== "/") {
-    const suffix = opRoute.startsWith("/") ? opRoute : `/${opRoute}`;
-    const fullPath = firstOp.path;
-    if (fullPath.endsWith(suffix)) {
-      return fullPath.slice(0, fullPath.length - suffix.length) || "/";
-    }
-  }
-  return firstOp.path;
+function getOperationVersions(
+  program: Program,
+  op: HttpOperation,
+  serviceVersions: Version[],
+): Version[] {
+  if (serviceVersions.length === 0) return [];
+
+  const availability = getAvailabilityMap(program, op.operation);
+  if (!availability) return serviceVersions;
+
+  return serviceVersions.filter((version) => {
+    const state = availability.get(version.name);
+    return (
+      state === Availability.Added ||
+      state === Availability.Available
+    );
+  });
 }
 
 /**
- * Builds the absolute route strings for a single operation.
+ * Builds absolute route strings for a single operation.
  *
- * One route is emitted per API version; a single unversioned route is emitted
- * when the service has no `@versioned` decorator.  The route suffix (from the
- * operation's own `@route` decorator) is appended after the base path.
+ * One route is emitted per available API version; a single unversioned route
+ * is emitted when the service has no `@versioned` decorator. Routes are based
+ * on the operation's resolved full path, preserving path parameters.
  *
  * @param prefix - Route prefix (e.g. `"api"`), may be empty.
- * @param basePath - Controller base path (e.g. `"/widgets"`).
- * @param routeSuffix - Operation-level route fragment (e.g. `"{id}"`), or
- *   `undefined` when the operation sits at the container root.
- * @param versions - Version value strings from `@versioned(Versions)`.
+ * @param operationPath - Full operation path as resolved by TypeSpec HTTP.
+ * @param versions - Version value strings where the operation is available.
  * @returns Array of absolute route strings starting with `/`.
  */
 function buildOperationRoutes(
   prefix: string,
-  basePath: string,
-  routeSuffix: string | undefined,
-  versions: string[],
+  operationPath: string,
+  versions: Version[],
 ): string[] {
-  const trimmedBase = basePath.replace(/^\//, "");
+  const trimmedPath = operationPath.replace(/^\/+|\/+$/g, "");
   const trimmedPrefix = prefix.replace(/^\/|\/$/g, "");
-  const trimmedSuffix = routeSuffix?.replace(/^\//, "");
 
   if (versions.length === 0) {
-    const parts = [trimmedPrefix, trimmedBase, trimmedSuffix].filter(Boolean);
+    const parts = [trimmedPrefix, trimmedPath].filter(Boolean);
     return ["/" + parts.join("/")];
   }
 
   return versions.map((v) => {
-    const parts = [trimmedPrefix, v, trimmedBase, trimmedSuffix].filter(
-      Boolean,
-    );
+    const parts = [trimmedPrefix, v.value, trimmedPath].filter(Boolean);
     return "/" + parts.join("/");
   });
 }
@@ -258,9 +258,7 @@ function buildOperationRoutes(
  * @param program - The compiled TypeSpec program.
  * @param op - The HTTP operation to convert.
  * @param options - Naming, routing, and nullability options.
- * @param basePath - The controller-level base path (e.g. `"/users"`), used
- *   together with the operation's own route suffix to build full route strings.
- * @param versions - Version value strings from `@versioned(Versions)`; empty
+ * @param serviceVersions - Versions from `@versioned(Versions)`; empty
  *   when the service is unversioned.
  * @returns Populated operation view model.
  */
@@ -268,8 +266,7 @@ function buildOperationView(
   program: Program,
   op: HttpOperation,
   options: ControllerOptions,
-  basePath: string,
-  versions: string[],
+  serviceVersions: Version[],
 ): OperationView {
   const opRoute = getRoutePath(program, op.operation)?.path;
   const routeSuffix =
@@ -283,10 +280,10 @@ function buildOperationView(
     options,
   );
   const returnType = resolveReturnType(program, op, options);
+  const versions = getOperationVersions(program, op, serviceVersions);
   const routes = buildOperationRoutes(
     options.routePrefix,
-    basePath,
-    routeSuffix,
+    op.path,
     versions,
   );
 
