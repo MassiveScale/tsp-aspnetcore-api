@@ -1,0 +1,92 @@
+{{!--
+  class.hbs — rendered once per TypeSpec model as `public partial class`.
+
+  Override via tspconfig.yaml:
+    options:
+      "@massivescale/tsp-aspnetcore-api":
+        templates:
+          class: "./templates/class.hbs"
+
+  ── Template variables ──────────────────────────────────────────────────────
+
+  {{doc}}             — pre-rendered XML <summary> block (may be falsy).
+                        Format: "/// <summary>\n/// ...\n/// </summary>"
+
+  {{className}}       — PascalCase class name, e.g. "UserProfile"
+
+  {{interfaceName}}   — companion interface name, e.g. "IUserProfile"
+
+  {{baseClass}}       — PascalCase base class name if the TypeSpec model uses
+                        `extends`; falsy when there is no parent model
+
+  {{bases}}           — comma-joined inheritance list ready for `: <bases>`,
+                        e.g. "Animal, IUserProfile"  or just  "IUserProfile".
+                        Computed as: [baseClass, interfaceName].filter(Boolean).join(", ")
+
+  {{properties}}      — array of property objects, one per TypeSpec property,
+                        in declaration order.  Each object has:
+    .doc              —   pre-rendered XML <summary> block (may be falsy)
+    .type             —   C# type string, e.g. "string?", "IList<Guid>?", "int"
+    .name             —   PascalCase property name, e.g. "FirstName"
+    .jsonName         —   camelCase JSON key for [JsonPropertyName], e.g. "firstName"
+    .nullable         —   true when the type is nullable (ends with "?");
+                          controls whether [JsonIgnore] is emitted
+
+  {{propertiesBlock}} — shortcut: all properties pre-rendered (with JSON
+                        attributes) joined by blank lines; equivalent to
+                        iterating {{properties}} with the default formatting.
+                        Pass through {{indent}} to get 4-space indentation.
+
+  ── Built-in helpers ────────────────────────────────────────────────────────
+
+  {{indent <text>}}        — prefixes every non-empty line of <text> with
+                             4 spaces; safe to call on multi-line doc strings
+  {{#if (isDefined val)}}  — true when val is not undefined (use for numeric
+                             values that may legitimately be 0)
+
+  ── Handlebars #each data ────────────────────────────────────────────────────
+
+  Inside {{#each properties}}:
+    @index  — 0-based position
+    @first  — true on the first iteration
+    @last   — true on the last iteration
+  Use {{#unless @last}} to add a blank line between properties.
+
+  ── Example customisations ────────────────────────────────────────────────────
+
+  • Add class-level attributes before the declaration:
+      [Serializable]
+      public partial class {{className}} : {{bases}}
+
+  • Use `internal` or `public sealed` instead of `public partial`.
+
+  • Override the JSON key for a specific property (iterate {{properties}}):
+      [JsonPropertyName("my_snake_case")]
+      public {{type}} {{name}} { get; set; }
+
+  • Add `= default!;` initialisers to suppress nullable warnings:
+      public {{type}} {{name}} { get; set; } = default!;
+
+  • Use init-only setters (C# 9+):
+      public {{type}} {{name}} { get; init; }
+
+  • Omit [JsonIgnore] and rely on global JsonSerializerOptions instead:
+      [JsonPropertyName("{{jsonName}}")]
+      public {{type}} {{name}} { get; set; }
+
+  • Add [JsonRequired] for non-nullable required properties:
+      {{#unless nullable}}[JsonRequired]
+      {{/unless}}[JsonPropertyName("{{jsonName}}")]
+      public {{type}} {{name}} { get; set; }
+--}}
+{{#if doc}}{{doc}}
+{{/if}}public partial class {{className}} : {{bases}}
+{
+{{#each properties}}{{#if doc}}{{indent doc}}
+{{/if}}    [JsonPropertyName("{{jsonName}}")]
+{{#if nullable}}    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+{{/if}}    public {{type}} {{name}} { get; set; }
+{{#unless @last}}
+
+{{/unless}}{{/each}}
+}

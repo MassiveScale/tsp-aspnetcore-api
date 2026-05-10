@@ -1,0 +1,82 @@
+{{!--
+  service-class.hbs — rendered once per HTTP operation container as an abstract
+  service base class that implements the service interface.
+
+  NOTE: this template is not wired to the default renderer.  To activate it,
+  add a `renderServiceClass(view: ServiceView): string` method to the Renderer
+  interface and implement it in `createRenderer` (see renderer.ts).
+
+  Override path (once wired up):
+    options:
+      "@massivescale/tsp-aspnetcore-api":
+        templates:
+          service-class: "./templates/service-class.hbs"
+
+  ── Template variables ──────────────────────────────────────────────────────
+
+  {{doc}}           — pre-rendered XML <summary> block (may be falsy)
+
+  {{serviceName}}   — abstract class name, e.g. "UsersServiceBase"
+
+  {{interfaceName}} — service interface being implemented, e.g. "IUsersService"
+
+  {{operations}}    — array of operation objects, one per HTTP operation.
+                      Each object has:
+    .doc            —   pre-rendered XML <summary> block (may be falsy)
+    .name           —   PascalCase operation name
+    .httpVerb       —   PascalCase HTTP verb (informational)
+    .routeSuffix    —   relative route fragment (informational)
+    .returnType     —   C# return type from the 2xx response body
+    .params         —   array of parameter objects.  Each has:
+      .name         —     camelCase parameter name
+      .type         —     C# type string (non-nullable)
+      .binding      —     binding source (informational)
+      .optional     —     boolean; true → render type as `{{type}}?`
+
+  {{methodsBlock}}  — shortcut: all operations pre-rendered as interface-style
+                      `Task<returnType>? nameAsync(params);` declarations
+                      (4-space indented) joined by blank lines.
+                      ⚠ Does NOT include `public abstract` or a method body —
+                      iterate {{operations}} directly when you need those.
+
+  ── Built-in helpers ────────────────────────────────────────────────────────
+
+  {{indent <text>}}        — 4-space indent on every non-empty line
+  {{#if (isDefined val)}}  — true when val is not undefined
+
+  ── Handlebars #each data ───────────────────────────────────────────────────
+
+  Inside {{#each operations}}:  @index, @first, @last
+  Inside {{#each params}}:      @index, @first, @last
+
+  ── Common customisations ────────────────────────────────────────────────────
+
+  • Use throw stubs (compile but blow up at runtime):
+      public virtual Task<{{returnType}}?> {{name}}Async(...)
+          => throw new NotImplementedException(nameof({{name}}Async));
+
+  • Add a constructor that injects shared dependencies:
+      protected {{serviceName}}(MyDbContext db)
+      {
+          _db = db;
+      }
+      private readonly MyDbContext _db;
+
+  • Change to a concrete (non-abstract) class for simple CRUD delegation:
+      public class {{serviceName}} : {{interfaceName}}
+
+  • Add CancellationToken to every method:
+      public abstract Task<{{returnType}}?> {{name}}Async(
+          {{#each params}}{{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}},
+          {{/each}}CancellationToken cancellationToken = default);
+--}}
+{{#if doc}}{{doc}}
+{{/if}}public abstract class {{serviceName}} : {{interfaceName}}
+{
+{{#each operations}}{{#if doc}}{{indent doc}}
+{{/if}}    public abstract Task<{{returnType}}?> {{name}}Async({{#each params}}{{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}});
+{{#unless @last}}
+
+{{/unless}}{{/each}}
+
+}

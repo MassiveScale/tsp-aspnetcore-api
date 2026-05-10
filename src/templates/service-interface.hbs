@@ -1,0 +1,80 @@
+{{!--
+  service-interface.hbs — rendered once per HTTP operation container as the
+  service interface that controllers and DI consumers depend on.
+
+  Override via tspconfig.yaml:
+    options:
+      "@massivescale/tsp-aspnetcore-api":
+        templates:
+          service-interface: "./templates/service-interface.hbs"
+
+  ── Template variables ──────────────────────────────────────────────────────
+
+  {{doc}}           — pre-rendered XML <summary> block (may be falsy)
+
+  {{interfaceName}} — service interface name, e.g. "IUsersService"
+
+  {{serviceName}}   — abstract service class name, e.g. "UsersServiceBase"
+                      Available for cross-reference comments.
+
+  {{operations}}    — array of operation objects, one per HTTP operation.
+                      Each object has:
+    .doc            —   pre-rendered XML <summary> block (may be falsy)
+    .name           —   PascalCase operation name, e.g. "GetById"
+    .httpVerb       —   PascalCase HTTP verb (informational only)
+    .routeSuffix    —   relative route fragment (informational only)
+    .returnType     —   C# return type from the 2xx response body,
+                        e.g. "User", "IList<Widget>", "object"
+    .params         —   array of parameter objects.  Each has:
+      .name         —     camelCase parameter name
+      .type         —     C# type string (non-nullable)
+      .binding      —     binding source (informational in service context)
+      .optional     —     boolean; true → render type as `{{type}}?`
+
+  {{methodsBlock}}  — shortcut: all operations pre-rendered as
+                      `Task<returnType>? nameAsync(params);` declarations
+                      (4-space indented) joined by blank lines.
+
+  ── Built-in helpers ────────────────────────────────────────────────────────
+
+  {{indent <text>}}        — 4-space indent on every non-empty line
+  {{#if (isDefined val)}}  — true when val is not undefined
+
+  ── Handlebars #each data ───────────────────────────────────────────────────
+
+  Inside {{#each operations}}:  @index, @first, @last
+  Inside {{#each params}}:      @index, @first, @last
+
+  ── Param rendering quick reference ─────────────────────────────────────────
+
+  Service method parameter (no binding attribute):
+    {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}
+
+  ── Common customisations ────────────────────────────────────────────────────
+
+  • Add CancellationToken to every method:
+      {{#each operations}}
+          Task<{{returnType}}?> {{name}}Async(
+              {{#each params}}{{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}},
+              {{/each}}CancellationToken cancellationToken = default);
+      {{/each}}
+
+  • Use ValueTask instead of Task:
+      ValueTask<{{returnType}}?> {{name}}Async(...);
+
+  • Remove the Async suffix:
+      Task<{{returnType}}?> {{name}}(...);
+
+  • Add a marker base interface (e.g. IDisposable):
+      public interface {{interfaceName}} : IDisposable
+--}}
+{{#if doc}}{{doc}}
+{{/if}}public interface {{interfaceName}}
+{
+{{#each operations}}{{#if doc}}{{indent doc}}
+{{/if}}    Task<{{returnType}}?> {{name}}Async({{#each params}}{{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}});
+{{#unless @last}}
+
+{{/unless}}{{/each}}
+
+}

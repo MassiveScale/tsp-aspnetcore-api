@@ -1,0 +1,131 @@
+{{!--
+  merge-patch-value.hbs — static helper emitted once per project into the
+  helpers output directory (default: `Helpers/`).
+
+  Implements RFC 7396 JSON Merge Patch semantics in C#: a `MergePatchValue<T>`
+  wrapper that distinguishes "field absent from the request" from "field
+  explicitly set to null", along with its `System.Text.Json` converter.
+
+  Override via tspconfig.yaml:
+    options:
+      "@massivescale/tsp-aspnetcore-api":
+        templates:
+          merge-patch-value: "./templates/merge-patch-value.hbs"
+
+  ── Template variables ──────────────────────────────────────────────────────
+
+  (none — this template renders a fully static class body)
+
+  ── Built-in helpers ────────────────────────────────────────────────────────
+
+  {{indent <text>}}        — 4-space indent on every non-empty line
+  {{#if (isDefined val)}}  — true when val is not undefined
+
+  ── Example customisations ────────────────────────────────────────────────────
+
+  • Change accessibility to `public` (remove `sealed`):
+      public class MergePatchValue<T>
+
+  • Add a nullable type constraint to limit T to reference types:
+      public sealed class MergePatchValue<T> where T : class
+
+  • Add an `Explicit` factory for clarity alongside the implicit operator:
+      public static MergePatchValue<T> Explicit(T? value) => new(value, true);
+
+  • Add a `GetValueOrDefault` helper:
+      public T? GetValueOrDefault(T? @default = default) =>
+          IsPresent ? Value : @default;
+
+  • Replace the implicit operator with an explicit cast to be more defensive:
+      public static explicit operator MergePatchValue<T>(T value) => Of(value);
+
+  • Change the factory class from `internal sealed` to `public sealed` if
+    consumers need to reference the converter directly:
+      public sealed class MergePatchValueJsonConverterFactory : JsonConverterFactory
+--}}
+/// <summary>
+/// Represents an optional value in a JSON Merge Patch (RFC 7396) operation.
+/// Distinguishes between a field that is explicitly set (including to <see langword="null"/>)
+/// and a field that is absent from the patch payload.
+/// </summary>
+/// <typeparam name="T">The type of the wrapped value.</typeparam>
+[JsonConverter(typeof(MergePatchValueJsonConverterFactory))]
+public sealed class MergePatchValue<T>
+{
+    /// <summary>Initializes a new instance with the given value and presence flag.</summary>
+    /// <param name="value">The underlying value.</param>
+    /// <param name="isPresent"><see langword="true"/> if the field was present in the payload; otherwise <see langword="false"/>.</param>
+    private MergePatchValue(T? value, bool isPresent)
+    {
+        Value = value;
+        IsPresent = isPresent;
+    }
+
+    /// <summary>
+    /// Gets a sentinel that represents an absent (omitted) field.
+    /// </summary>
+    public static MergePatchValue<T> Absent { get; } = new(default, false);
+
+    /// <summary>
+    /// Gets the wrapped value, or <see langword="default"/> when the field is absent.
+    /// </summary>
+    public T? Value { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether the field was present in the patch payload.
+    /// </summary>
+    public bool IsPresent { get; }
+
+    /// <summary>
+    /// Creates a present <see cref="MergePatchValue{T}"/> wrapping <paramref name="value"/>.
+    /// </summary>
+    /// <param name="value">The value to wrap.</param>
+    public static MergePatchValue<T> Of(T? value) => new(value, true);
+
+    /// <summary>
+    /// Implicitly wraps <paramref name="value"/> as a present <see cref="MergePatchValue{T}"/>.
+    /// </summary>
+    /// <param name="value">The value to wrap.</param>
+    public static implicit operator MergePatchValue<T>(T value) => Of(value);
+}
+
+/// <summary>
+/// Creates <see cref="MergePatchValueJsonConverter{T}"/> instances for any closed
+/// <see cref="MergePatchValue{T}"/> type at runtime.
+/// </summary>
+internal sealed class MergePatchValueJsonConverterFactory : JsonConverterFactory
+{
+    /// <inheritdoc/>
+    public override bool CanConvert(Type typeToConvert) =>
+        typeToConvert.IsGenericType &&
+        typeToConvert.GetGenericTypeDefinition() == typeof(MergePatchValue<>);
+
+    /// <inheritdoc/>
+    public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options)
+    {
+        Type valueType = typeToConvert.GetGenericArguments()[0];
+        return (JsonConverter)Activator.CreateInstance(
+            typeof(MergePatchValueJsonConverter<>).MakeGenericType(valueType))!;
+    }
+}
+
+/// <summary>
+/// Reads and writes <see cref="MergePatchValue{T}"/> as its underlying <typeparamref name="T"/> value.
+/// Absent fields are never written; present fields (including explicit <see langword="null"/>) are written normally.
+/// </summary>
+/// <typeparam name="T">The type of the wrapped value.</typeparam>
+internal sealed class MergePatchValueJsonConverter<T> : JsonConverter<MergePatchValue<T>>
+{
+    /// <inheritdoc/>
+    public override MergePatchValue<T> Read(
+        ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        MergePatchValue<T>.Of(JsonSerializer.Deserialize<T>(ref reader, options));
+
+    /// <inheritdoc/>
+    public override void Write(
+        Utf8JsonWriter writer, MergePatchValue<T> value, JsonSerializerOptions options)
+    {
+        if (!value.IsPresent) return;
+        JsonSerializer.Serialize(writer, value.Value, options);
+    }
+}

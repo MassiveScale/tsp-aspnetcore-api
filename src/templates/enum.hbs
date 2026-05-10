@@ -1,0 +1,64 @@
+{{!--
+  enum.hbs — rendered once per TypeSpec enum as a C# `enum`.
+
+  Override via tspconfig.yaml:
+    options:
+      "@massivescale/tsp-aspnetcore-api":
+        templates:
+          enum: "./templates/enum.hbs"
+
+  ── Template variables ──────────────────────────────────────────────────────
+
+  {{doc}}           — optional XML `<summary>` doc comment for the enum type
+                      (pre-rendered, includes `///` prefixes).
+
+  {{enumName}}      — PascalCase enum name, e.g. "OrderStatus"
+
+  {{members}}       — array of enum-member objects in declaration order.
+                      Each object has:
+    .doc            —   optional XML `<summary>` doc comment for the member
+                        (pre-rendered, includes `///` prefixes).
+    .name           —   PascalCase member name, e.g. "Pending"
+    .memberValue    —   wire string written to / read from JSON; taken from
+                        the TypeSpec string value when present, otherwise the
+                        original TypeSpec member name.
+    .value          —   explicit numeric value (number) when the TypeSpec member
+                        carries an integer literal; `undefined` otherwise.
+                        ⚠ Use {{#if (isDefined value)}} not {{#if value}} so
+                        that a legitimate value of 0 is not silently omitted.
+
+  {{membersBlock}}  — all members pre-rendered (with doc comments,
+                      [EnumMember] attributes, commas, and optional `= N`
+                      assignments) separated by blank lines.  Pass through
+                      {{indent}} for 4-space indentation.
+
+  ── Built-in helpers ────────────────────────────────────────────────────────
+
+  {{indent <text>}}        — 4-space indent on every non-empty line
+  {{#if (isDefined val)}}  — true when val is not undefined; required for
+                             numeric values that may legitimately be 0
+
+  ── Example customisations ──────────────────────────────────────────────────
+
+  • Add [Flags] for bit-field enums:
+      [Flags]
+      [JsonConverter(typeof(EnumMemberConverterFactory))]
+      public enum {{enumName}}
+
+  • Remove custom serialization (revert to numeric):
+      public enum {{enumName}}
+
+  • Specify an explicit backing type:
+      [JsonConverter(typeof(EnumMemberConverterFactory))]
+      public enum {{enumName}} : byte
+
+  • Use strict case-sensitive deserialization (requires editing the converter):
+      Replace StringComparer.OrdinalIgnoreCase with StringComparer.Ordinal in
+      EnumMemberConverter<T>'s static constructor.
+--}}
+{{#if doc}}{{doc}}
+{{/if}}[JsonConverter(typeof(EnumMemberConverterFactory))]
+public enum {{enumName}}
+{
+{{indent membersBlock}}
+}

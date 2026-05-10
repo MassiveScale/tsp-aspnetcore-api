@@ -1,0 +1,75 @@
+{{!--
+  interface.hbs — rendered once per TypeSpec model as `public partial interface`.
+
+  Override via tspconfig.yaml:
+    options:
+      "@massivescale/tsp-aspnetcore-api":
+        templates:
+          interface: "./templates/interface.hbs"
+
+  ── Template variables ──────────────────────────────────────────────────────
+
+  {{doc}}             — pre-rendered XML <summary> block (may be falsy)
+
+  {{interfaceName}}   — interface name, e.g. "IUserProfile"
+
+  {{baseInterface}}   — parent interface name when the model uses `extends`,
+                        e.g. "IAnimal"; falsy when there is no parent
+
+  {{baseClause}}      — ready-to-use inheritance clause including the leading
+                        colon and space, e.g. " : IAnimal", or empty string.
+                        Computed as: baseInterface ? ` : ${baseInterface}` : ""
+
+  {{properties}}      — array of property objects in declaration order.
+                        Each object has:
+    .doc              —   pre-rendered XML <summary> block (may be falsy)
+    .type             —   C# type string, e.g. "string?", "IList<Guid>?"
+    .name             —   PascalCase property name
+    .jsonName         —   camelCase JSON key for [JsonPropertyName], e.g. "firstName"
+    .nullable         —   true when the type is nullable (ends with "?");
+                          controls whether [JsonIgnore] is emitted
+
+  {{propertiesBlock}} — shortcut: all properties pre-rendered (with JSON
+                        attributes, without `public` access modifier) joined by
+                        blank lines.  Pass through {{indent}} for 4-space
+                        indentation inside the interface body.
+
+  ── Built-in helpers ────────────────────────────────────────────────────────
+
+  {{indent <text>}}        — 4-space indent on every non-empty line
+  {{#if (isDefined val)}}  — true when val is not undefined
+
+  ── Handlebars #each data ───────────────────────────────────────────────────
+
+  Inside {{#each properties}}:
+    @index, @first, @last  — iteration metadata
+
+  ── Common customisations ────────────────────────────────────────────────────
+
+  • Switch to get-only properties to enforce immutability:
+      {{#each properties}}
+          {{#if doc}}{{indent doc}}
+          {{/if}}[JsonPropertyName("{{jsonName}}")]
+          {{type}} {{name}} { get; }
+      {{/each}}
+
+  • Add a marker base interface (e.g. IEntity) to every generated interface:
+      public partial interface {{interfaceName}} : IEntity{{baseClause}}
+
+  • Remove `partial` if you don't need hand-written interface extensions.
+
+  • Omit [JsonIgnore] and use a global JsonSerializerOptions:
+      [JsonPropertyName("{{jsonName}}")]
+      {{type}} {{name}} { get; set; }
+--}}
+{{#if doc}}{{doc}}
+{{/if}}public partial interface {{interfaceName}}{{baseClause}}
+{
+{{#each properties}}{{#if doc}}{{indent doc}}
+{{/if}}    [JsonPropertyName("{{jsonName}}")]
+{{#if nullable}}    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+{{/if}}    {{type}} {{name}} { get; set; }
+{{#unless @last}}
+
+{{/unless}}{{/each}}
+}
