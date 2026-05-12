@@ -72,7 +72,7 @@
 {{/if}}public interface {{interfaceName}}
 {
 {{#each operations}}{{#if doc}}{{indent doc}}
-{{/if}}    Task<{{returnType}}?> {{name}}Async({{#each params}}{{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}});
+{{/if}}{{#if (eq returnType "void")}}    Task {{name}}Async({{#each params}}{{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}});{{else}}    Task<{{returnType}}?> {{name}}Async({{#each params}}{{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}});{{/if}}
 {{#unless @last}}
 
 {{/unless}}{{/each}}

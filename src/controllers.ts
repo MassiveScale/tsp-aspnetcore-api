@@ -18,6 +18,7 @@ import {
   getDoc,
   getFormat,
   isArrayModelType,
+  isErrorModel,
   isRecordModelType,
 } from "@typespec/compiler";
 import {
@@ -221,10 +222,10 @@ function collectOperationReferences(
       references.add(op.parameters.body.type);
     }
 
-    // Collect response body types
+    // Collect response body types, excluding @error models (never used in service/controller signatures)
     for (const response of op.responses) {
       for (const content of response.responses) {
-        if (content.body?.bodyKind === "single") {
+        if (content.body?.bodyKind === "single" && !isErrorModel(program, content.body.type)) {
           references.add(content.body.type);
         }
       }
@@ -408,12 +409,16 @@ function httpParamBinding(
  * Determines the C# return type for an HTTP operation by inspecting the first
  * 2xx response body type.
  *
- * Falls back to `"object"` when no successful response has a typed body.
+ * `@error` models are skipped — errors are raised as exceptions and are not
+ * returned by service methods.  Returns `"void"` when no non-error 2xx body is
+ * found (e.g. `void`, `204 No Content`, or response unions that contain only
+ * error variants).
  *
  * @param program - The compiled TypeSpec program.
  * @param op - The HTTP operation to inspect.
  * @param options - Nullability and type-resolution options.
- * @returns C# type string for the service method's return type.
+ * @returns C# type string for the service method's return type, or `"void"`
+ *   when the operation produces no response body.
  */
 function resolveReturnType(
   program: Program,
@@ -422,19 +427,25 @@ function resolveReturnType(
 ): string {
   for (const response of op.responses) {
     const code = response.statusCodes;
+    // Wildcard ("*") is the status code assigned to @error models by the
+    // TypeSpec HTTP library — exclude it so error responses are never treated
+    // as successful return types.
     const is2xx =
-      code === "*" ||
       (typeof code === "number" && code >= 200 && code < 300) ||
       (typeof code === "object" && code.start >= 200 && code.end < 300);
     if (!is2xx) continue;
 
     for (const content of response.responses) {
       if (content.body?.bodyKind === "single") {
-        return typeRef(program, content.body.type, options);
+        const bodyType = content.body.type;
+        // Skip @error models even when they appear under a 2xx status code.
+        if (isErrorModel(program, bodyType)) continue;
+        return typeRef(program, bodyType, options);
       }
     }
   }
-  return "object";
+  // No non-error 2xx body: the service method returns void (plain Task).
+  return "void";
 }
 
 /**

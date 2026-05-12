@@ -75,26 +75,26 @@ namespace MyCompany.Api.Users
 
 ## Options
 
-| Option                   | Type                     | Default              | Description |
-| ------------------------ | ------------------------ | -------------------- | ----------- |
-| `abstract-suffix`        | `string`                 | `"Base"`             | Suffix appended to generated abstract controller class names, e.g. `UsersControllerBase`. |
-| `additional-usings`      | `string[]`               | `[]`                 | Extra `using` directives added to every generated file. |
-| `controllers-output-dir` | `string`                 | `"Controllers"`      | Destination for generated controller files. |
-| `emit-controllers`       | `boolean`                | `true`               | When `false`, no controller base class files are emitted. |
-| `emit-helpers`           | `boolean`                | `false`              | When `false`, helper files are skipped unless required by generated output. `MergePatchValue` is emitted automatically when any `MergePatchUpdate<T>` model is generated; enum converter helpers still follow this option. |
-| `emit-interfaces`        | `boolean`                | `true`               | When `false`, no `I<Model>` interface files are emitted. |
-| `emit-services`          | `boolean`                | `true`               | When `false`, no service interface files are emitted. |
-| `file-extension`         | `string`                 | `".g.cs"`            | File extension for all generated files. |
-| `helpers-output-dir`     | `string`                 | `"Helpers"`          | Destination for generated helper files (`EnumMemberConverterFactory`, `MergePatchValue`). |
-| `interfaces-output-dir`  | `string`                 | `"Models"`           | Destination for generated interface files. |
-| `models-output-dir`      | `string`                 | `"Models"`           | Destination for generated class and enum files. Relative paths resolve against `emitter-output-dir`. |
-| `namespace-from-path`    | `boolean`                | `true`               | When `true`, output-dir path segments are appended to the TypeSpec namespace for models/interfaces/enums, and are used as the namespace for controllers/services/helpers. See [Namespace resolution](#namespace-resolution). |
-| `namespace-map`          | `Record<string, string>` | `{}`                 | Rewrites TypeSpec namespaces to C# namespaces. Longest-prefix match wins; sub-namespaces inherit the rewrite automatically. |
-| `nullable-properties`    | `boolean`                | `true`               | When `true`, all properties are emitted as nullable (`string?`, `int?`). When `false`, only TypeSpec-optional properties and `T \| null` unions are nullable. |
-| `root-namespace`         | `string`                 | _(inferred)_         | Root C# namespace. Stripped from folder paths so the directory tree mirrors the namespace hierarchy beneath it. When omitted, inferred from the TypeSpec namespace tree. |
-| `route-prefix`           | `string`                 | `"api"`              | Prefix prepended to every controller route, e.g. `"api"` → `/api/v1/users`. |
-| `services-output-dir`    | `string`                 | `"Services"`         | Destination for generated service interface files. |
-| `templates`              | `Record<string, string>` | `{}`                 | Custom Handlebars template paths keyed by template name. See [Custom templates](#custom-templates). |
+| Option                   | Type                     | Default         | Description                                                                                                                                                                                                                  |
+| ------------------------ | ------------------------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `abstract-suffix`        | `string`                 | `"Base"`        | Suffix appended to generated abstract controller class names, e.g. `UsersControllerBase`.                                                                                                                                    |
+| `additional-usings`      | `string[]`               | `[]`            | Extra `using` directives added to every generated file.                                                                                                                                                                      |
+| `controllers-output-dir` | `string`                 | `"Controllers"` | Destination for generated controller files.                                                                                                                                                                                  |
+| `emit-controllers`       | `boolean`                | `true`          | When `false`, no controller base class files are emitted.                                                                                                                                                                    |
+| `emit-helpers`           | `boolean`                | `false`         | When `false`, helper files are skipped unless required by generated output. `MergePatchValue` is emitted automatically when any `MergePatchUpdate<T>` model is generated; enum converter helpers still follow this option.   |
+| `emit-interfaces`        | `boolean`                | `true`          | When `false`, no `I<Model>` interface files are emitted.                                                                                                                                                                     |
+| `emit-services`          | `boolean`                | `true`          | When `false`, no service interface files are emitted.                                                                                                                                                                        |
+| `file-extension`         | `string`                 | `".g.cs"`       | File extension for all generated files.                                                                                                                                                                                      |
+| `helpers-output-dir`     | `string`                 | `"Helpers"`     | Destination for generated helper files (`EnumMemberConverterFactory`, `MergePatchValue`).                                                                                                                                    |
+| `interfaces-output-dir`  | `string`                 | `"Models"`      | Destination for generated interface files.                                                                                                                                                                                   |
+| `models-output-dir`      | `string`                 | `"Models"`      | Destination for generated class and enum files. Relative paths resolve against `emitter-output-dir`.                                                                                                                         |
+| `namespace-from-path`    | `boolean`                | `true`          | When `true`, output-dir path segments are appended to the TypeSpec namespace for models/interfaces/enums, and are used as the namespace for controllers/services/helpers. See [Namespace resolution](#namespace-resolution). |
+| `namespace-map`          | `Record<string, string>` | `{}`            | Rewrites TypeSpec namespaces to C# namespaces. Longest-prefix match wins; sub-namespaces inherit the rewrite automatically.                                                                                                  |
+| `nullable-properties`    | `boolean`                | `true`          | When `true`, all properties are emitted as nullable (`string?`, `int?`). When `false`, only TypeSpec-optional properties and `T \| null` unions are nullable.                                                                |
+| `root-namespace`         | `string`                 | _(inferred)_    | Root C# namespace. Stripped from folder paths so the directory tree mirrors the namespace hierarchy beneath it. When omitted, inferred from the TypeSpec namespace tree.                                                     |
+| `route-prefix`           | `string`                 | `"api"`         | Prefix prepended to every controller route, e.g. `"api"` → `/api/v1/users`.                                                                                                                                                  |
+| `services-output-dir`    | `string`                 | `"Services"`    | Destination for generated service interface files.                                                                                                                                                                           |
+| `templates`              | `Record<string, string>` | `{}`            | Custom Handlebars template paths keyed by template name. See [Custom templates](#custom-templates).                                                                                                                          |
 
 ---
 
@@ -108,11 +108,11 @@ The C# namespace is always derived from the TypeSpec namespace (after applying `
 
 When `namespace-from-path` is `true` (the default) **and** an output-dir is configured, the output-dir path segments are PascalCased and **appended** to the TypeSpec namespace. Files are placed flat in the output directory.
 
-| Configuration | TypeSpec namespace | C# namespace | File path |
-| --- | --- | --- | --- |
-| `root-namespace: App` | `App.Users` | `App.Users` | `Users/User.g.cs` |
-| `root-namespace: App`, `models-output-dir: models` | `App.Users` | `App.Users.Models` | `models/User.g.cs` |
-| `root-namespace: App`, `models-output-dir: models`, `namespace-from-path: false` | `App.Users` | `App.Users` | `models/Users/User.g.cs` |
+| Configuration                                                                    | TypeSpec namespace | C# namespace       | File path                |
+| -------------------------------------------------------------------------------- | ------------------ | ------------------ | ------------------------ |
+| `root-namespace: App`                                                            | `App.Users`        | `App.Users`        | `Users/User.g.cs`        |
+| `root-namespace: App`, `models-output-dir: models`                               | `App.Users`        | `App.Users.Models` | `models/User.g.cs`       |
+| `root-namespace: App`, `models-output-dir: models`, `namespace-from-path: false` | `App.Users`        | `App.Users`        | `models/Users/User.g.cs` |
 
 When a model's namespace does not start with `root-namespace`, the file is placed flat at the output root while keeping its TypeSpec namespace unchanged.
 
@@ -120,11 +120,11 @@ When a model's namespace does not start with `root-namespace`, the file is place
 
 The C# namespace is always path-derived: `effectiveRootNs` + PascalCased output-dir segments, where `effectiveRootNs` is the explicit `root-namespace` or the namespace inferred from the TypeSpec namespace tree.
 
-| `root-namespace` | `controllers-output-dir` | C# namespace |
-| --- | --- | --- |
-| `MyApp` | `Controllers` (default) | `MyApp.Controllers` |
-| `MyApp` | `src/api` | `MyApp.Src.Api` |
-| _(omitted, TypeSpec ns = `Demo`)_ | `Controllers` (default) | `Demo.Controllers` |
+| `root-namespace`                  | `controllers-output-dir` | C# namespace        |
+| --------------------------------- | ------------------------ | ------------------- |
+| `MyApp`                           | `Controllers` (default)  | `MyApp.Controllers` |
+| `MyApp`                           | `src/api`                | `MyApp.Src.Api`     |
+| _(omitted, TypeSpec ns = `Demo`)_ | `Controllers` (default)  | `Demo.Controllers`  |
 
 When `namespace-from-path` is `false`, controllers and services use the TypeSpec namespace of their operation container instead.
 
@@ -132,26 +132,26 @@ When `namespace-from-path` is `false`, controllers and services use the TypeSpec
 
 ## Type mapping
 
-| TypeSpec | C# |
-| --- | --- |
-| `string` | `string` |
-| `boolean` | `bool` |
-| `bytes` | `byte[]` |
-| `int8` / `int16` / `int32` / `int64` | `sbyte` / `short` / `int` / `long` |
+| TypeSpec                                 | C#                                   |
+| ---------------------------------------- | ------------------------------------ |
+| `string`                                 | `string`                             |
+| `boolean`                                | `bool`                               |
+| `bytes`                                  | `byte[]`                             |
+| `int8` / `int16` / `int32` / `int64`     | `sbyte` / `short` / `int` / `long`   |
 | `uint8` / `uint16` / `uint32` / `uint64` | `byte` / `ushort` / `uint` / `ulong` |
-| `safeint`, `integer` | `long` |
-| `float32` | `float` |
-| `float`, `float64`, `numeric` | `double` |
-| `decimal`, `decimal128` | `decimal` |
-| `plainDate` | `DateOnly` |
-| `plainTime` | `TimeOnly` |
-| `utcDateTime`, `offsetDateTime` | `DateTimeOffset` |
-| `duration` | `TimeSpan` |
-| `url` | `Uri` |
-| `T[]` | `IList<T>` |
-| `Record<T>` | `IDictionary<string, T>` |
-| `T \| null` | `T?` |
-| Other unions, tuples | `object` |
+| `safeint`, `integer`                     | `long`                               |
+| `float32`                                | `float`                              |
+| `float`, `float64`, `numeric`            | `double`                             |
+| `decimal`, `decimal128`                  | `decimal`                            |
+| `plainDate`                              | `DateOnly`                           |
+| `plainTime`                              | `TimeOnly`                           |
+| `utcDateTime`, `offsetDateTime`          | `DateTimeOffset`                     |
+| `duration`                               | `TimeSpan`                           |
+| `url`                                    | `Uri`                                |
+| `T[]`                                    | `IList<T>`                           |
+| `Record<T>`                              | `IDictionary<string, T>`             |
+| `T \| null`                              | `T?`                                 |
+| Other unions, tuples                     | `object`                             |
 
 Custom scalars walk up to the nearest known base type. Unmapped scalars fall back to `object`.
 
@@ -159,15 +159,62 @@ Custom scalars walk up to the nearest known base type. Unmapped scalars fall bac
 
 When a property or scalar carries `@format(...)`, the format takes precedence over the underlying type:
 
-| `@format` value | C# |
-| --- | --- |
-| `uuid`, `guid` | `Guid` |
-| `uri`, `url` | `Uri` |
-| `date-time` | `DateTimeOffset` |
-| `date` | `DateOnly` |
-| `time` | `TimeOnly` |
+| `@format` value | C#               |
+| --------------- | ---------------- |
+| `uuid`, `guid`  | `Guid`           |
+| `uri`, `url`    | `Uri`            |
+| `date-time`     | `DateTimeOffset` |
+| `date`          | `DateOnly`       |
+| `time`          | `TimeOnly`       |
 
 Unknown format strings fall through to the underlying type mapping.
+
+---
+
+## Default property values
+
+When a TypeSpec model property carries a default value, the emitter assigns it as a C# property initializer. The following value kinds are supported:
+
+| TypeSpec default                | C# initializer |
+| ------------------------------- | -------------- |
+| Enum member (`Size.medium`)     | `Size.Medium`  |
+| String literal (`"production"`) | `"production"` |
+| Numeric literal (`20`)          | `20`           |
+| Boolean literal (`true`)        | `true`         |
+
+```typespec
+enum Size { small, medium, large }
+
+model Widget {
+  size: Size = Size.medium;
+  pageSize: int32 = 20;
+  env: string = "production";
+  enabled: boolean = true;
+}
+```
+
+```csharp
+public partial class Widget : IWidget
+{
+    [JsonPropertyName("size")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Size? Size { get; set; } = Size.Medium;
+
+    [JsonPropertyName("pageSize")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? PageSize { get; set; } = 20;
+
+    [JsonPropertyName("env")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Env { get; set; } = "production";
+
+    [JsonPropertyName("enabled")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Enabled { get; set; } = true;
+}
+```
+
+Complex default value kinds (objects, arrays, scalar constructors) are not supported and produce no initializer.
 
 ---
 
@@ -218,10 +265,10 @@ When the TypeSpec source includes `@typespec/http` operations, the emitter produ
 
 For each HTTP `interface` (or `namespace`) that carries routes, the emitter writes:
 
-| File | Content |
-| --- | --- |
+| File                      | Content                                                                                                                           |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `<Name>ControllerBase.cs` | Abstract ASP.NET Core controller inheriting `ControllerBase`. Injects `I<Name>Service` and delegates every action to the service. |
-| `I<Name>Service.cs` | Service interface with one `Task<T>` method per operation. |
+| `I<Name>Service.cs`       | Service interface with one `Task<T>` method per operation.                                                                        |
 
 **Routes** — one `[Http<Verb>("...")]` attribute is emitted per available API version of each operation. Without versioning a single attribute is emitted using the resolved operation path.
 
@@ -360,17 +407,17 @@ Templates are compiled with `noEscape: true` (so `<`, `>`, and `&` pass through 
 
 ### View models
 
-| Template | View model |
-| --- | --- |
-| `file` | `{ namespace: string, usings: string[], body: string }` — `body` is the already-rendered inner block. |
-| `class` | `{ doc?: string, className: string, interfaceName: string, baseClass?: string, bases: string, properties: Property[], propertiesBlock: string }` — `bases` is `baseClass` and `interfaceName` joined by `, `; `propertiesBlock` is the pre-rendered property list. |
-| `interface` | `{ doc?: string, interfaceName: string, baseInterface?: string, baseClause: string, properties: Property[], propertiesBlock: string }` — `baseClause` is `" : <baseInterface>"` or `""`. |
-| `enum` | `{ doc?: string, enumName: string, members: Member[], membersBlock: string }` — `membersBlock` is each member pre-rendered with trailing commas. |
-| `controller` | `{ doc?: string, controllerName: string, serviceName: string, serviceInterfaceName: string, routes: string[], operations: Operation[], actionsBlock: string }` — `routes` has one entry per API version. |
-| `service-interface` | `{ doc?: string, interfaceName: string, serviceName: string, operations: Operation[], methodsBlock: string }` |
-| `service-class` | `{ doc?: string, serviceName: string, interfaceName: string, operations: Operation[], methodsBlock: string }` |
-| `merge-patch-value` | _(no variables — static helper class)_ |
-| `enum-member-converter` | _(no variables — static helper class)_ |
+| Template                | View model                                                                                                                                                                                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `file`                  | `{ namespace: string, usings: string[], body: string }` — `body` is the already-rendered inner block.                                                                                                                                                              |
+| `class`                 | `{ doc?: string, className: string, interfaceName: string, baseClass?: string, bases: string, properties: Property[], propertiesBlock: string }` — `bases` is `baseClass` and `interfaceName` joined by `, `; `propertiesBlock` is the pre-rendered property list. |
+| `interface`             | `{ doc?: string, interfaceName: string, baseInterface?: string, baseClause: string, properties: Property[], propertiesBlock: string }` — `baseClause` is `" : <baseInterface>"` or `""`.                                                                           |
+| `enum`                  | `{ doc?: string, enumName: string, members: Member[], membersBlock: string }` — `membersBlock` is each member pre-rendered with trailing commas.                                                                                                                   |
+| `controller`            | `{ doc?: string, controllerName: string, serviceName: string, serviceInterfaceName: string, routes: string[], operations: Operation[], actionsBlock: string }` — `routes` has one entry per API version.                                                           |
+| `service-interface`     | `{ doc?: string, interfaceName: string, serviceName: string, operations: Operation[], methodsBlock: string }`                                                                                                                                                      |
+| `service-class`         | `{ doc?: string, serviceName: string, interfaceName: string, operations: Operation[], methodsBlock: string }`                                                                                                                                                      |
+| `merge-patch-value`     | _(no variables — static helper class)_                                                                                                                                                                                                                             |
+| `enum-member-converter` | _(no variables — static helper class)_                                                                                                                                                                                                                             |
 
 **Shared sub-types:**
 

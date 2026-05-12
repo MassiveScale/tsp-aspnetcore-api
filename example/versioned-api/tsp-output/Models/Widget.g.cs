@@ -28,6 +28,10 @@ namespace MassiveScale.Versioned.Api.Example.Models
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public WidgetColor? Color { get; set; }
     
+        [JsonPropertyName("size")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Size? Size { get; set; } = Size.Medium;
+    
     }
 
 }
