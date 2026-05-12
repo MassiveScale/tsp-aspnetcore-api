@@ -35,12 +35,12 @@ namespace MassiveScale.Versioned.Api.Example.Services
         /// <summary>
         /// Update a widget
         /// </summary>
-        Task<Widget?> UpdateAsync(string id, WidgetMergePatchUpdate body);
+        Task UpdateAsync(string id, WidgetMergePatchUpdate body);
 
         /// <summary>
         /// Delete a widget
         /// </summary>
-        Task<Error?> DeleteAsync(string id);
+        Task DeleteAsync(string id);
 
         /// <summary>
         /// Analyze a widget

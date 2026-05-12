@@ -39,7 +39,7 @@ namespace MassiveScale.Simple.Api.Example
         /// <summary>
         /// Delete a widget
         /// </summary>
-        Task<Error?> DeleteAsync(string id);
+        Task DeleteAsync(string id);
 
         /// <summary>
         /// Analyze a widget

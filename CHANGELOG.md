@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-05-12
+
+### Added
+
+- Model properties with TypeSpec default values now emit C# property initializers. Supported value kinds: enum members (`Size.Medium`), string literals (`"production"`), numeric literals (`20`), and boolean literals (`true`/`false`).
+
+### Changed
+
+- Service interface methods that have no response body (e.g. `void`, `204 No Content`, or response unions containing only `@error` variants) now return a plain `Task` instead of `Task<object?>`.
+- Service interface methods now use the `@body` type directly as the return type when a response has a complex shape (`@statusCode`, `@header`, `@body`); the status code and headers are not reflected at the service layer.
+- `@error` models are excluded from service return types entirely — errors are surfaced as exceptions and must not be returned by service methods.
+- Added `eq` Handlebars helper to the template environment, enabling `{{#if (eq returnType "void")}}` in custom service templates.
+
 ## [1.1.0] - 2026-05-10
 
 ### Fixed

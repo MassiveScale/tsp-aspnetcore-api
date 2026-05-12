@@ -26,6 +26,9 @@ namespace MassiveScale.Versioned.Api.Example.Models
         [JsonPropertyName("color")]
         MergePatchValue<WidgetColor?> Color { get; set; }
 
+        [JsonPropertyName("size")]
+        MergePatchValue<Size?> Size { get; set; }
+
     }
 
 }

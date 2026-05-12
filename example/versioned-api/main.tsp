@@ -14,10 +14,17 @@ enum Versions {
   v2_0: "2.0",
 }
 
+enum Size {
+  small,
+  medium,
+  large,
+}
+
 model Widget {
   id: string;
   weight: int32;
   color: "red" | "blue";
+  size: Size = Size.medium;
 }
 
 model WidgetList {
@@ -48,7 +55,11 @@ interface Widgets {
   /** Create a widget */
   @added(Versions.v1_1)
   @post
-  create(@body body: Widget): Widget | Error;
+  create(@body body: Widget): {
+    @statusCode status: 201;
+    @header eTag: string;
+    @body body: Widget;
+  } | Error;
 
   /** Update a widget */
   @added(Versions.v1_1)
@@ -56,12 +67,12 @@ interface Widgets {
   update(
     @path id: string,
     @body body: MergePatchUpdate<Widget>,
-  ): Widget | Error;
+  ): NotFoundResponse | Error;
 
   /** Delete a widget */
   @added(Versions.v2_0)
   @delete
-  delete(@path id: string): void | Error;
+  delete(@path id: string): NotFoundResponse | Error;
 
   /** Analyze a widget */
   @added(Versions.v2_0)

@@ -172,7 +172,9 @@ export interface OperationView {
   routeSuffix?: string;
   /** Ordered list of parameter view models. */
   params: OperationParamView[];
-  /** C# return type for the service method, e.g. `"User"` or `"IList<Widget>"`. */
+  /** C# return type for the service method, e.g. `"User"` or `"IList<Widget>"`.  The
+   * special value `"void"` indicates that the operation has no response body and the
+   * service method should return a plain `Task` with no type parameter. */
   returnType: string;
 }
 
@@ -284,6 +286,12 @@ function createHandlebarsEnv(): typeof Handlebars {
    * @example `{{#if (isDefined value)}} = {{value}}{{/if}}`
    */
   env.registerHelper("isDefined", (value: unknown) => value !== undefined);
+
+  /**
+   * `{{eq a b}}` — returns true when `a` strictly equals `b`.
+   * Useful in service templates to test `{{#if (eq returnType "void")}}Task{{else}}Task<{{returnType}}?>{{/if}}`.
+   */
+  env.registerHelper("eq", (a: unknown, b: unknown) => a === b);
 
   return env;
 }
@@ -412,6 +420,10 @@ function controllerActionBlock(op: OperationView): string {
 /**
  * Renders a single service interface method declaration.
  *
+ * When `op.returnType` is `"void"` the method returns a plain `Task` with no
+ * type parameter (the operation has no response body).  Otherwise it returns
+ * `Task<T?>`.
+ *
  * @param op - Operation view model.
  * @returns Multi-line indented C# method declaration text (no trailing newline).
  */
@@ -419,7 +431,8 @@ function serviceMethodDecl(op: OperationView): string {
   const lines: string[] = [];
   if (op.doc) lines.push(...op.doc.split("\n").map((l) => `    ${l}`));
   const paramList = op.params.map((p) => `${p.optional ? `${p.type}?` : p.type} ${p.name}`).join(", ");
-  lines.push(`    Task<${op.returnType}?> ${op.name}Async(${paramList});`);
+  const returnDecl = op.returnType === "void" ? "Task" : `Task<${op.returnType}?>`;
+  lines.push(`    ${returnDecl} ${op.name}Async(${paramList});`);
   return lines.join("\n");
 }
 

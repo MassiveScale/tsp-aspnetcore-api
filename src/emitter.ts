@@ -20,6 +20,7 @@ import {
   Namespace,
   Program,
   Type,
+  Value,
   emitFile,
   getDoc,
   getFormat,
@@ -1074,6 +1075,41 @@ function buildEnumView(program: Program, en: Enum): EnumView {
 }
 
 /**
+ * Converts a TypeSpec default {@link Value} to a C# property initializer expression.
+ *
+ * Handles the value kinds that map cleanly to C# literals:
+ * - `EnumValue`    → `EnumTypeName.MemberName`
+ * - `StringValue`  → `"value"`
+ * - `NumericValue` → `42` / `3.14`
+ * - `BooleanValue` → `true` | `false`
+ * - `NullValue`    → `null`
+ *
+ * Returns `undefined` for complex value kinds (objects, arrays, scalars) that
+ * cannot be represented as a simple C# literal.
+ *
+ * @param value - The TypeSpec default value from `ModelProperty.defaultValue`.
+ * @returns A C# initializer expression string, or `undefined` if unsupported.
+ */
+function defaultValueInitializer(value: Value): string | undefined {
+  switch (value.valueKind) {
+    case "EnumValue": {
+      const member = value.value;
+      return `${pascalCase(member.enum.name)}.${pascalCase(member.name)}`;
+    }
+    case "StringValue":
+      return `"${value.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+    case "NumericValue":
+      return value.value.toString();
+    case "BooleanValue":
+      return value.value ? "true" : "false";
+    case "NullValue":
+      return "null";
+    default:
+      return undefined;
+  }
+}
+
+/**
  * Builds the ordered array of {@link PropertyView} objects for all properties
  * of a TypeSpec model.
  *
@@ -1105,7 +1141,9 @@ function buildPropertyViews(
       initializer:
         isMergePatchModel && type.startsWith("MergePatchValue<")
           ? `${type}.Absent`
-          : undefined,
+          : prop.defaultValue !== undefined
+            ? defaultValueInitializer(prop.defaultValue)
+            : undefined,
     };
   });
 }

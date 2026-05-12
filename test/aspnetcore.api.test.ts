@@ -369,6 +369,80 @@ describe("csharp emitter", () => {
     });
   });
 
+  describe("default property values", () => {
+    it("assigns an enum default value as an initializer", async () => {
+      const results = await emit(`
+        namespace Demo;
+        enum Size { small, medium, large }
+        model Widget { size: Size = Size.medium; }
+      `);
+
+      const file = results["Widget.g.cs"] ?? results["Models/Widget.g.cs"];
+      ok(file, `expected Widget.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes("public Size? Size { get; set; } = Size.Medium;"),
+        `expected enum default initializer in:\n${file}`,
+      );
+    });
+
+    it("assigns a string default value as an initializer", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Config { env: string = "production"; }
+      `);
+
+      const file = results["Config.g.cs"] ?? results["Models/Config.g.cs"];
+      ok(file, `expected Config.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes('public string? Env { get; set; } = "production";'),
+        `expected string default initializer in:\n${file}`,
+      );
+    });
+
+    it("assigns a numeric default value as an initializer", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Pagination { pageSize: int32 = 20; }
+      `);
+
+      const file = results["Pagination.g.cs"] ?? results["Models/Pagination.g.cs"];
+      ok(file, `expected Pagination.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes("public int? PageSize { get; set; } = 20;"),
+        `expected numeric default initializer in:\n${file}`,
+      );
+    });
+
+    it("assigns a boolean default value as an initializer", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Feature { enabled: boolean = true; }
+      `);
+
+      const file = results["Feature.g.cs"] ?? results["Models/Feature.g.cs"];
+      ok(file, `expected Feature.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes("public bool? Enabled { get; set; } = true;"),
+        `expected boolean default initializer in:\n${file}`,
+      );
+    });
+
+    it("does not emit an initializer when no default is present", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Widget { name: string; }
+      `);
+
+      const file = results["Widget.g.cs"] ?? results["Models/Widget.g.cs"];
+      ok(file, `expected Widget.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes("public string? Name { get; set; }") &&
+          !file.includes("public string? Name { get; set; } ="),
+        `expected no initializer when no default in:\n${file}`,
+      );
+    });
+  });
+
   describe("using statements", () => {
     it("does not add a using for the model's own namespace", async () => {
       const results = await emit(`
@@ -1187,6 +1261,84 @@ namespace {{namespace}}
       ok(svc, `expected Services/IUsersService.g.cs`);
       ok(svc.includes("public interface IUsersService"), `expected interface decl in:\n${svc}`);
       ok(svc.includes("Task<"), `expected Task<> signature in:\n${svc}`);
+    });
+
+    it("service interface returns plain Task for operations with no response body", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service(#{title: "Items" })
+        namespace Demo;
+
+        model Item { id: string; }
+
+        @route("/items")
+        interface Items {
+          @delete @route("{id}") remove(@path id: string): void;
+          @put @route("{id}") replace(@path id: string, @body item: Item): NoContentResponse;
+        }
+      `);
+
+      const svc = results["Services/IItemsService.g.cs"];
+      ok(svc, `expected Services/IItemsService.g.cs`);
+      ok(svc.includes("Task RemoveAsync("), `expected plain Task for void response in:\n${svc}`);
+      ok(svc.includes("Task ReplaceAsync("), `expected plain Task for 204 response in:\n${svc}`);
+      ok(!svc.includes("Task<"), `did not expect Task<T> in:\n${svc}`);
+    });
+
+    it("service interface excludes @error models from return type", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service(#{title: "Widgets" })
+        namespace Demo;
+
+        model Widget { id: string; }
+
+        @error
+        model ApiError { code: int32; message: string; }
+
+        @route("/widgets")
+        interface Widgets {
+          @get list(): Widget[] | ApiError;
+          @get @route("{id}") read(@path id: string): Widget | ApiError;
+          @delete @route("{id}") remove(@path id: string): void | ApiError;
+        }
+      `);
+
+      const svc = results["Services/IWidgetsService.g.cs"];
+      ok(svc, `expected Services/IWidgetsService.g.cs`);
+      ok(svc.includes("Task<IList<Widget>?>"), `expected IList<Widget> return in:\n${svc}`);
+      ok(svc.includes("Task<Widget?>"), `expected Widget return in:\n${svc}`);
+      ok(svc.includes("Task RemoveAsync("), `expected plain Task for void|error response in:\n${svc}`);
+      ok(!svc.includes("ApiError"), `did not expect ApiError in service interface:\n${svc}`);
+    });
+
+    it("service interface uses @body type for complex responses with status codes and headers", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service(#{title: "Widgets" })
+        namespace Demo;
+
+        model Widget { id: string; }
+
+        @route("/widgets")
+        interface Widgets {
+          @post create(@body widget: Widget): {
+            @statusCode status: 201;
+            @header eTag: string;
+            @body body: Widget;
+          };
+        }
+      `);
+
+      const svc = results["Services/IWidgetsService.g.cs"];
+      ok(svc, `expected Services/IWidgetsService.g.cs`);
+      ok(svc.includes("Task<Widget?>"), `expected Task<Widget?> for @body response in:\n${svc}`);
     });
 
     it("generates one route attribute per API version on each method", async () => {
