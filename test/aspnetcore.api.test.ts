@@ -1593,4 +1593,145 @@ namespace {{namespace}}
       ok(helper.includes("namespace MyApp.Helpers"), `expected 'namespace MyApp.Helpers' in:\n${helper}`);
     });
   });
+
+  describe("per-section root namespace options", () => {
+    it("models-root-namespace overrides root-namespace for model files", async () => {
+      const results = await emit(`model Free { id: string; }`, {
+        "root-namespace": "App",
+        "models-root-namespace": "Acme.Core",
+      });
+
+      // Default models-output-dir is "Models", so the suffix is appended.
+      const file = results["Free.g.cs"];
+      ok(file, "expected Free.g.cs");
+      ok(file.includes("namespace Acme.Core.Models"), `expected 'namespace Acme.Core.Models' in:\n${file}`);
+    });
+
+    it("interfaces-root-namespace overrides root-namespace for interface files", async () => {
+      const results = await emit(`model Free { id: string; }`, {
+        "root-namespace": "App",
+        "interfaces-root-namespace": "Acme.Contracts",
+      });
+
+      // Default interfaces-output-dir is "Models", so the suffix is appended.
+      const iface = results["IFree.g.cs"];
+      ok(iface, "expected IFree.g.cs");
+      ok(iface.includes("namespace Acme.Contracts.Models"), `expected 'namespace Acme.Contracts.Models' in:\n${iface}`);
+    });
+
+    it("models-root-namespace and interfaces-root-namespace can differ from each other", async () => {
+      const results = await emit(`model Free { id: string; }`, {
+        "root-namespace": "App",
+        "models-root-namespace": "Acme.Models",
+        "interfaces-root-namespace": "Acme.Contracts",
+      });
+
+      const file = results["Free.g.cs"];
+      ok(file.includes("namespace Acme.Models.Models"), `expected 'namespace Acme.Models.Models' in:\n${file}`);
+
+      const iface = results["IFree.g.cs"];
+      ok(iface.includes("namespace Acme.Contracts.Models"), `expected 'namespace Acme.Contracts.Models' in:\n${iface}`);
+    });
+
+    it("controllers-root-namespace overrides root-namespace for controller files", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        model Item { id: string; }
+
+        @route("/items")
+        interface Items {
+          @get list(): Item[];
+        }
+      `, {
+        "root-namespace": "Demo",
+        "controllers-root-namespace": "MyCompany.Web",
+      });
+
+      const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
+      ok(ctrl, `expected Controllers/ItemsControllerBase.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(ctrl.includes("namespace MyCompany.Web.Controllers"), `expected 'namespace MyCompany.Web.Controllers' in:\n${ctrl}`);
+    });
+
+    it("services-root-namespace overrides root-namespace for service files", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        model Item { id: string; }
+
+        @route("/items")
+        interface Items {
+          @get list(): Item[];
+        }
+      `, {
+        "root-namespace": "Demo",
+        "services-root-namespace": "MyCompany.Application",
+      });
+
+      const svc = results["Services/IItemsService.g.cs"];
+      ok(svc, `expected Services/IItemsService.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(svc.includes("namespace MyCompany.Application.Services"), `expected 'namespace MyCompany.Application.Services' in:\n${svc}`);
+    });
+
+    it("validators-root-namespace overrides root-namespace for validator files", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        model Widget { name: string; }
+
+        @route("/widgets")
+        interface Widgets {
+          @post create(@body widget: Widget): Widget;
+        }
+      `, {
+        "root-namespace": "Demo",
+        "validators-root-namespace": "MyCompany.Validators",
+        "emit-validators": true,
+      });
+
+      const validator = results["Validators/WidgetValidator.g.cs"];
+      ok(validator, `expected Validators/WidgetValidator.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(validator.includes("namespace MyCompany.Validators.Validators"), `expected 'namespace MyCompany.Validators.Validators' in:\n${validator}`);
+    });
+
+    it("per-section overrides are independent — unset sections fall back to root-namespace", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        model Item { id: string; }
+
+        @route("/items")
+        interface Items {
+          @get list(): Item[];
+        }
+      `, {
+        "root-namespace": "App",
+        "controllers-root-namespace": "MyCompany.Web",
+      });
+
+      // controller uses the override
+      const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
+      ok(ctrl.includes("namespace MyCompany.Web.Controllers"), `expected override ns in ctrl:\n${ctrl}`);
+
+      // service uses the global root unchanged
+      const svc = results["Services/IItemsService.g.cs"];
+      ok(svc.includes("namespace App.Services"), `expected global ns in svc:\n${svc}`);
+    });
+  });
 });

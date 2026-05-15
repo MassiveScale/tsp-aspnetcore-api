@@ -2,5 +2,6 @@ emit:
   - "@massivescale/tsp-aspnetcore-api"
 options:
   "@massivescale/tsp-aspnetcore-api":
-    emitter-output-dir: "{output-dir}/defaults"
-    
+    emitter-output-dir: "{output-dir}/all"
+    emit-helpers: true
+    emit-validators: true

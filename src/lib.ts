@@ -29,6 +29,16 @@ export interface TemplateOverrides {
   "merge-patch-value"?: string;
   /** Custom template for the EnumMemberConverter helper class. */
   "enum-member-converter"?: string;
+  /** Custom template for the standard POST validator class. */
+  "validator-post"?: string;
+  /** Custom template for the standard PATCH validator class. */
+  "validator-patch"?: string;
+  /** Custom template for the version-aware POST validator class. */
+  "validator-post-version-aware"?: string;
+  /** Custom template for the version-aware PATCH validator class. */
+  "validator-patch-version-aware"?: string;
+  /** Custom template for the `ValidatorsInitializer` DI registration class. */
+  "validator-initializer"?: string;
 }
 
 /**
@@ -42,6 +52,41 @@ export interface EmitterOptions {
    * rather than `RootNs/Sub/Model.g.cs`.
    */
   "root-namespace"?: string;
+
+  /**
+   * Root C# namespace for generated model and enum files.
+   * Overrides `root-namespace` for this section only.
+   * Used as the fallback namespace for unnamespaced types and as the prefix
+   * stripped from folder paths when `namespace-from-path` is `false`.
+   */
+  "models-root-namespace"?: string;
+
+  /**
+   * Root C# namespace for generated interface files.
+   * Overrides `root-namespace` for this section only.
+   */
+  "interfaces-root-namespace"?: string;
+
+  /**
+   * Root C# namespace for generated controller base class files.
+   * Overrides `root-namespace` for this section only.
+   * The full controller namespace is: `<controllers-root-namespace>.<controllers-output-dir>`.
+   */
+  "controllers-root-namespace"?: string;
+
+  /**
+   * Root C# namespace for generated service interface files.
+   * Overrides `root-namespace` for this section only.
+   * The full service namespace is: `<services-root-namespace>.<services-output-dir>`.
+   */
+  "services-root-namespace"?: string;
+
+  /**
+   * Root C# namespace for generated validator files.
+   * Overrides `root-namespace` for this section only.
+   * The full validator namespace is: `<validators-root-namespace>.<validators-output-dir>`.
+   */
+  "validators-root-namespace"?: string;
 
   /**
    * Rewrites TypeSpec namespace names to different C# namespaces.
@@ -100,8 +145,9 @@ export interface EmitterOptions {
   "services-output-dir"?: string;
 
   /**
-   * When `false`, no helper files (`MergePatchValue`, `EnumMemberConverter`) are emitted.
-   * Defaults to `true`.
+   * When `true`, helper files (`MergePatchValue`, `EnumMemberConverter`) are emitted.
+   * Defaults to `false`. Note: `MergePatchValue` is always emitted automatically
+   * when any `MergePatchUpdate<T>` model is generated, regardless of this setting.
    */
   "emit-helpers"?: boolean;
 
@@ -197,12 +243,6 @@ export interface EmitterOptions {
    */
   "validators-version-strategy"?: "earliest" | "latest" | "per-version" | "version-aware";
 
-  /**
-   * When `true`, validator output files are placed in subdirectories matching
-   * the namespace segments (e.g. namespace `"MyApp.Validators"` → `MyApp/Validators/`).
-   * Defaults to `false`.
-   */
-  "validators-output-subdirectory"?: boolean;
 }
 
 /** JSON Schema used by the TypeSpec compiler to validate emitter options. */
@@ -250,8 +290,18 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
         "service-interface": { type: "string", nullable: true },
         "merge-patch-value": { type: "string", nullable: true },
         "enum-member-converter": { type: "string", nullable: true },
+        "validator-post": { type: "string", nullable: true },
+        "validator-patch": { type: "string", nullable: true },
+        "validator-post-version-aware": { type: "string", nullable: true },
+        "validator-patch-version-aware": { type: "string", nullable: true },
+        "validator-initializer": { type: "string", nullable: true },
       },
     },
+    "models-root-namespace": { type: "string", nullable: true },
+    "interfaces-root-namespace": { type: "string", nullable: true },
+    "controllers-root-namespace": { type: "string", nullable: true },
+    "services-root-namespace": { type: "string", nullable: true },
+    "validators-root-namespace": { type: "string", nullable: true },
     "emit-validators": { type: "boolean", nullable: true },
     "validators-output-dir": { type: "string", nullable: true },
     validators: {
@@ -264,7 +314,6 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
       enum: ["earliest", "latest", "per-version", "version-aware"],
       nullable: true,
     },
-    "validators-output-subdirectory": { type: "boolean", nullable: true },
   },
   required: [],
 };

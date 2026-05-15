@@ -9,9 +9,9 @@
  * that compiles all templates once and returns a stateless {@link Renderer}.
  */
 
-import { readFileSync } from "fs";
-import { dirname, resolve } from "path";
-import { fileURLToPath } from "url";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import Handlebars from "handlebars";
 
 /** Absolute path to the bundled default templates directory. */
@@ -29,7 +29,12 @@ export type TemplateName =
   | "controller"
   | "service-interface"
   | "merge-patch-value"
-  | "enum-member-converter";
+  | "enum-member-converter"
+  | "validator-post"
+  | "validator-patch"
+  | "validator-post-version-aware"
+  | "validator-patch-version-aware"
+  | "validator-initializer";
 
 /**
  * Partial map of template names to absolute file paths used to override the

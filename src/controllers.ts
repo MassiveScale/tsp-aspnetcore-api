@@ -41,46 +41,7 @@ import {
   ServiceView,
   renderDocComment,
 } from "./renderer.js";
-
-/** Maps TypeSpec `@format` values to their C# type equivalents. */
-const FORMAT_MAP: Record<string, string> = {
-  uuid: "Guid",
-  guid: "Guid",
-  uri: "Uri",
-  url: "Uri",
-  "date-time": "DateTimeOffset",
-  date: "DateOnly",
-  time: "TimeOnly",
-};
-
-/** Maps TypeSpec built-in scalar names to their C# primitive equivalents. */
-const SCALAR_MAP: Record<string, string> = {
-  string: "string",
-  boolean: "bool",
-  bytes: "byte[]",
-  int8: "sbyte",
-  int16: "short",
-  int32: "int",
-  int64: "long",
-  uint8: "byte",
-  uint16: "ushort",
-  uint32: "uint",
-  uint64: "ulong",
-  safeint: "long",
-  integer: "long",
-  float: "double",
-  float32: "float",
-  float64: "double",
-  decimal: "decimal",
-  decimal128: "decimal",
-  numeric: "double",
-  plainDate: "DateOnly",
-  plainTime: "TimeOnly",
-  utcDateTime: "DateTimeOffset",
-  offsetDateTime: "DateTimeOffset",
-  duration: "TimeSpan",
-  url: "Uri",
-};
+import { SCALAR_MAP, FORMAT_MAP, pascalCase, camelCase } from "./utils.js";
 
 /**
  * Options forwarded from the emitter to the controller collection phase.
@@ -535,28 +496,3 @@ function typeRef(
   }
 }
 
-/**
- * Converts a string to PascalCase by splitting on `_`, `-`, and whitespace.
- *
- * @param name - Input string.
- * @returns PascalCase string.
- */
-function pascalCase(name: string): string {
-  if (!name) return name;
-  return name
-    .split(/[_\-\s]+/)
-    .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : ""))
-    .join("");
-}
-
-/**
- * Converts a string to camelCase by PascalCasing it then lowercasing the first
- * character.
- *
- * @param name - Input string.
- * @returns camelCase string.
- */
-function camelCase(name: string): string {
-  const pascal = pascalCase(name);
-  return pascal ? pascal[0].toLowerCase() + pascal.slice(1) : pascal;
-}
