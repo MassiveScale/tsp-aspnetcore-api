@@ -207,6 +207,8 @@ interface ReferencedValidator {
 interface ValidatorTemplateData {
   namespace?: string;
   modelName: string;
+  /** C# type name of the validated PATCH body (e.g. `PetMergePatchUpdate`). Only set for patch validators. */
+  patchBodyTypeName?: string;
   properties: PropertyData[];
   referencedValidators?: ReferencedValidator[];
 }
@@ -221,6 +223,8 @@ interface VersionGroup {
 interface VersionAwareValidatorTemplateData {
   namespace?: string;
   modelName: string;
+  /** C# type name of the validated PATCH body (e.g. `PetMergePatchUpdate`). Only set for patch validators. */
+  patchBodyTypeName?: string;
   allVersions: string[];
   defaultVersion: string;
   baseProperties: PropertyData[];
@@ -779,17 +783,21 @@ function addModelWithDescendants(allModels: Model[], model: Model, target: Set<M
  * Collects the sets of models that appear as POST and PATCH request bodies
  * across all HTTP services. Returns `undefined` when no HTTP operations exist,
  * signalling the caller to fall back to all models.
+ *
+ * For PATCH, `patchModels` maps each source model to the C# name of the actual
+ * PATCH body type (e.g. `Pet` → `"PetMergePatchUpdate"` for a MergePatch body,
+ * or `"Pet"` for a plain PATCH body).
  */
 function collectValidatorModelsFromRoutes(
   program: Program,
   allModels: Model[],
-): { postModels: Set<Model>; patchModels: Set<Model> } | undefined {
+): { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined {
   const [services] = getAllHttpServices(program);
   const hasAnyOperations = services.some((s) => s.operations.length > 0);
   if (!hasAnyOperations) return undefined;
 
   const postModels = new Set<Model>();
-  const patchModels = new Set<Model>();
+  const patchModels = new Map<Model, string>();
 
   for (const service of services) {
     for (const op of service.operations) {
@@ -802,10 +810,22 @@ function collectValidatorModelsFromRoutes(
       if (op.verb === "post") {
         addModelWithDescendants(allModels, bodyModel, postModels);
       } else {
-        const sourceModel = isMergePatch(program, bodyModel)
+        const isMergePatchBody = isMergePatch(program, bodyModel);
+        const sourceModel = isMergePatchBody
           ? getMergePatchSource(program, bodyModel)
           : bodyModel;
-        if (sourceModel) addModelWithDescendants(allModels, sourceModel, patchModels);
+        if (sourceModel) {
+          patchModels.set(sourceModel, bodyModel.name);
+          // Also register direct descendants, deriving their patch body type name.
+          for (const candidate of allModels) {
+            if (candidate.baseModel === sourceModel) {
+              const descBodyTypeName = isMergePatchBody
+                ? `${candidate.name}MergePatchUpdate`
+                : candidate.name;
+              patchModels.set(candidate, descBodyTypeName);
+            }
+          }
+        }
       }
     }
   }
@@ -839,7 +859,7 @@ function resolveValidatorNamespace(
 async function emitValidatorModels(
   program: Program,
   allModels: Model[],
-  routeModels: { postModels: Set<Model>; patchModels: Set<Model> } | undefined,
+  routeModels: { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined,
   createMember: EnumMember | undefined,
   updateMember: EnumMember | undefined,
   options: ResolvedOptions,
@@ -879,11 +899,13 @@ async function emitValidatorModels(
     }
 
     if (doPatch) {
+      const patchBodyTypeName = routeModels?.patchModels.get(model) ?? model.name;
       const patchProps = buildValidatorProperties(program, model, writeMembers, updateMember, versionFilter);
       const patchRefs = deriveReferencedValidators(patchProps);
       const data: ValidatorTemplateData = {
         namespace,
         modelName: model.name,
+        patchBodyTypeName,
         properties: patchProps,
         referencedValidators: patchRefs.length > 0 ? patchRefs : undefined,
       };
@@ -899,7 +921,7 @@ async function emitValidatorModels(
 async function emitVersionAwareValidatorModels(
   program: Program,
   allModels: Model[],
-  routeModels: { postModels: Set<Model>; patchModels: Set<Model> } | undefined,
+  routeModels: { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined,
   createMember: EnumMember | undefined,
   updateMember: EnumMember | undefined,
   options: ResolvedOptions,
@@ -942,6 +964,7 @@ async function emitVersionAwareValidatorModels(
     }
 
     if (doPatch) {
+      const patchBodyTypeName = routeModels?.patchModels.get(model) ?? model.name;
       const { baseProperties, versionGroups } = buildVersionAwareValidatorProperties(
         program, model, writeMembers, updateMember, allVersions,
       );
@@ -949,6 +972,7 @@ async function emitVersionAwareValidatorModels(
       const data: VersionAwareValidatorTemplateData = {
         namespace,
         modelName: model.name,
+        patchBodyTypeName,
         allVersions: versionValues,
         defaultVersion,
         baseProperties,
@@ -972,7 +996,7 @@ interface EmitValidatorInitializerOptions {
 async function emitValidatorsInitializer(
   program: Program,
   allModels: Model[],
-  routeModels: { postModels: Set<Model>; patchModels: Set<Model> } | undefined,
+  routeModels: { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined,
   options: ResolvedOptions,
   emitPost: boolean,
   emitPatch: boolean,
@@ -987,7 +1011,8 @@ async function emitValidatorsInitializer(
       registrations.push({ modelTypeName: model.name, validatorName: `${model.name}Validator` });
     }
     if (emitPatch && (routeModels === undefined || routeModels.patchModels.has(model))) {
-      registrations.push({ modelTypeName: `${model.name}Patch`, validatorName: `${model.name}PatchValidator` });
+      const patchBodyTypeName = routeModels?.patchModels.get(model) ?? model.name;
+      registrations.push({ modelTypeName: patchBodyTypeName, validatorName: `${model.name}PatchValidator` });
     }
   }
 
