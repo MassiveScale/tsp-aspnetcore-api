@@ -8,13 +8,13 @@ namespace {{{namespace}}};
 {{/if}}
 
 /// <summary>
-/// Auto-generated version-aware PATCH validator for <see cref="{{{modelName}}}Patch"/>.
+/// Auto-generated version-aware PATCH validator for <see cref="{{{patchBodyTypeName}}}"/>.
 /// Each rule fires only when the corresponding property is present in the patch and
 /// is conditioned on the API version resolved from the inbound HTTP request
 /// (URL segment, <c>api-version</c> header, or <c>api-version</c> query parameter).
 /// Extend this partial class to add custom validation rules.
 /// </summary>
-public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{modelName}}}Patch>
+public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{patchBodyTypeName}}}>
 {
     private static readonly string[] _versions = new[] { {{#each allVersions}}"{{this}}"{{#unless @last}}, {{/unless}}{{/each}} };
 

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Patch validators now reference the correct C# type in `AbstractValidator<T>` and `IValidator<T>` registrations. Previously, the generated code used a non-existent `{Model}Patch` type; it now correctly uses the actual PATCH body type (e.g. `PetMergePatchUpdate` for MergePatch bodies).
+- `ValidatorsInitializer.g.cs` now registers patch validators against the actual PATCH body type instead of the non-existent `{Model}Patch` type.
+
+### Changed
+
+- Validators now follow the same namespace logic as controllers and services. The namespace is derived from the output path when `namespace-from-path` is enabled, rather than from the TypeSpec model's namespace.
+- Properties marked `@visibility(Lifecycle.Read)` (read-only) are excluded from generated POST and PATCH validators.
+
 ## [1.3.0] - 2026-05-15
 
 ### Added
