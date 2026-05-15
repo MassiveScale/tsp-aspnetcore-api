@@ -33,9 +33,8 @@ Recommended VS Code extensions for test discovery and test UI integration:
 
 ```
 src/
-  emitter.ts        # $onEmit entrypoint; option resolution; model/enum/interface emit
+  emitter.ts        # $onEmit entrypoint; option resolution; model/enum/interface/validator emit
   controllers.ts    # controller and service interface emit
-  validators.ts     # FluentValidation emit
   lib.ts            # EmitterOptions interface + JSON Schema; $lib registration
   renderer.ts       # Handlebars template loading and rendering
   utils.ts          # SCALAR_MAP, FORMAT_MAP, pascalCase, camelCase
