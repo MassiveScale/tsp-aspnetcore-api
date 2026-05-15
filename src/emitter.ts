@@ -53,6 +53,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EmitterOptions, reportDiagnostic } from "./lib.js";
+import { SCALAR_MAP, FORMAT_MAP, pascalCase, camelCase } from "./utils.js";
 import {
   ClassView,
   EnumView,
@@ -93,48 +94,16 @@ const ENUM_CONVERTER_HELPER_USINGS = [
   "System.Text.Json.Serialization",
 ];
 
+/** `using` directives included in every service interface file. */
+const SERVICE_USINGS = ["System", "System.Collections.Generic", "System.Threading.Tasks"];
+
 /** `using` directives included in every enum file. */
-const ENUM_USINGS = ["System", "System.Collections.Generic", "System.Runtime.Serialization", "System.Text.Json.Serialization"];
-
-/** Maps TypeSpec built-in scalar names to C# primitive type strings. */
-const SCALAR_MAP: Record<string, string> = {
-  string: "string",
-  boolean: "bool",
-  bytes: "byte[]",
-  int8: "sbyte",
-  int16: "short",
-  int32: "int",
-  int64: "long",
-  uint8: "byte",
-  uint16: "ushort",
-  uint32: "uint",
-  uint64: "ulong",
-  safeint: "long",
-  integer: "long",
-  float: "double",
-  float32: "float",
-  float64: "double",
-  decimal: "decimal",
-  decimal128: "decimal",
-  numeric: "double",
-  plainDate: "DateOnly",
-  plainTime: "TimeOnly",
-  utcDateTime: "DateTimeOffset",
-  offsetDateTime: "DateTimeOffset",
-  duration: "TimeSpan",
-  url: "Uri",
-};
-
-/** Maps TypeSpec `@format` annotation values to C# type strings. */
-const FORMAT_MAP: Record<string, string> = {
-  uuid: "Guid",
-  guid: "Guid",
-  uri: "Uri",
-  url: "Uri",
-  "date-time": "DateTimeOffset",
-  date: "DateOnly",
-  time: "TimeOnly",
-};
+const ENUM_USINGS = [
+  "System",
+  "System.Collections.Generic",
+  "System.Runtime.Serialization",
+  "System.Text.Json.Serialization",
+];
 
 // ── Validator template support ───────────────────────────────────────────────
 
@@ -1300,7 +1269,7 @@ function buildServiceUsings(
   references: Type[],
   ownNamespace: string,
 ): string[] {
-  const usings = new Set<string>(["System", "System.Collections.Generic", "System.Threading.Tasks"]);
+  const usings = new Set<string>(SERVICE_USINGS);
   for (const u of options.additionalUsings) usings.add(u);
   for (const ref of references) {
     for (const type of collectReferencedTypes(ref)) {
@@ -2080,21 +2049,15 @@ function buildInferredEnumView(inferred: InferredEnum): EnumView {
 }
 
 /**
- * Returns true when a generated model represents TypeSpec MergePatchUpdate.
- */
-/**
- * Detects whether a TypeSpec model is a MergePatchUpdate<T> (RFC 7396 merge patch).
+ * Returns `true` when a model's name ends with `"MergePatchUpdate"` (case-insensitive),
+ * matching the `{ResourceName}MergePatchUpdate` convention used by `@typespec/http`.
  *
- * This detection requires the model to follow the standard TypeSpec @typespec/http
- * naming convention: the model name must end with "MergePatchUpdate" (case-insensitive).
- * The @typespec/http library automatically generates models named `{ResourceName}MergePatchUpdate`
- * when you use `MergePatchUpdate<ResourceType>` in your TypeSpec definitions.
- *
- * For merge-patch models, properties are automatically wrapped in `MergePatchValue<T>`
- * to distinguish between "not provided" (absent) and "explicitly set to null" semantics.
+ * Merge-patch models have every property wrapped in `MergePatchValue<T>` so that
+ * RFC 7396 semantics — distinguishing an absent field from an explicit `null` —
+ * are preserved end-to-end.
  *
  * @param model - The TypeSpec model to check.
- * @returns `true` if the model's name ends with "MergePatchUpdate".
+ * @returns `true` if the model represents a merge-patch update payload.
  */
 function isMergePatchUpdateModel(model: Model): boolean {
   return /MergePatchUpdate$/i.test(model.name);
@@ -2159,28 +2122,3 @@ function typeReference(type: Type): string {
   }
 }
 
-/**
- * Converts a string to camelCase by PascalCasing it then lowercasing the
- * first character.
- *
- * @param name - Input string.
- * @returns camelCase string.
- */
-function camelCase(name: string): string {
-  const pascal = pascalCase(name);
-  return pascal ? pascal[0].toLowerCase() + pascal.slice(1) : pascal;
-}
-
-/**
- * Converts a string to PascalCase by splitting on `_`, `-`, and whitespace.
- *
- * @param name - Input string.
- * @returns PascalCase string.
- */
-function pascalCase(name: string): string {
-  if (!name) return name;
-  return name
-    .split(/[_\-\s]+/)
-    .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : ""))
-    .join("");
-}

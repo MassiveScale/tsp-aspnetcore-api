@@ -100,8 +100,9 @@ export interface EmitterOptions {
   "services-output-dir"?: string;
 
   /**
-   * When `false`, no helper files (`MergePatchValue`, `EnumMemberConverter`) are emitted.
-   * Defaults to `true`.
+   * When `true`, helper files (`MergePatchValue`, `EnumMemberConverter`) are emitted.
+   * Defaults to `false`. Note: `MergePatchValue` is always emitted automatically
+   * when any `MergePatchUpdate<T>` model is generated, regardless of this setting.
    */
   "emit-helpers"?: boolean;
 

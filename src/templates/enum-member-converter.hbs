@@ -29,11 +29,9 @@
 
   ── Example customisations ──────────────────────────────────────────────────
 
-  • Make the factory public so consumers can register it explicitly:
-      public sealed class EnumMemberConverterFactory : JsonConverterFactory
-
-  • Make the converter public to allow per-property converter overrides:
-      public sealed class EnumMemberConverter<T> : JsonConverter<T> where T : struct, Enum
+  • Make both classes internal for single-assembly projects:
+      internal sealed class EnumMemberConverterFactory : JsonConverterFactory
+      internal sealed class EnumMemberConverter<T> : JsonConverter<T> where T : struct, Enum
 
   • Change string comparison from OrdinalIgnoreCase to Ordinal for strict matching:
       _readMap = new(StringComparer.Ordinal);
@@ -49,7 +47,7 @@
 /// <summary>
 /// Creates <see cref="EnumMemberConverter{T}"/> instances for any enum type at runtime.
 /// </summary>
-internal sealed class EnumMemberConverterFactory : JsonConverterFactory
+public sealed class EnumMemberConverterFactory : JsonConverterFactory
 {
     /// <inheritdoc />
     public override bool CanConvert(Type typeToConvert) =>
@@ -68,7 +66,7 @@ internal sealed class EnumMemberConverterFactory : JsonConverterFactory
 /// Deserialization is case-insensitive.
 /// </summary>
 /// <typeparam name="T">The enum type to convert.</typeparam>
-internal sealed class EnumMemberConverter<T> : JsonConverter<T> where T : struct, Enum
+public sealed class EnumMemberConverter<T> : JsonConverter<T> where T : struct, Enum
 {
     /// <summary>
     /// Maps wire names (case-insensitive) to their corresponding enum members. Built once per <typeparamref name="T"/>.
