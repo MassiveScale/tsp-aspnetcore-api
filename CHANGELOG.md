@@ -16,10 +16,18 @@ All notable changes to this project will be documented in this file.
 
 - `EnumMemberConverterFactory` and `EnumMemberConverter<T>` are now `public sealed` instead of `internal sealed`. This allows consumers to reference these types from separate assemblies (e.g. test projects, shared helper libraries). Use the `enum-member-converter` template override to revert to `internal` for single-assembly projects.
 
+### Added
+
+- Five new per-section root namespace options — `models-root-namespace`, `interfaces-root-namespace`, `controllers-root-namespace`, `services-root-namespace`, and `validators-root-namespace` — each override `root-namespace` for that output section only. When unset they fall back to the global `root-namespace` / inferred root, preserving all existing defaults.
+
 ### Changed
 
 - Validators now follow the same namespace logic as controllers and services. The namespace is derived from the output path when `namespace-from-path` is enabled, rather than from the TypeSpec model's namespace.
 - Properties marked `@visibility(Lifecycle.Read)` (read-only) are excluded from generated POST and PATCH validators.
+
+### Removed
+
+- `validators-output-subdirectory` option removed. Validator files are always written flat in `validators-output-dir` (or a version subdirectory when `validators-version-strategy` is `"per-version"`). The option previously defaulted to `false`, so existing projects are unaffected.
 
 ### Internal
 

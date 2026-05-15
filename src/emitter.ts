@@ -222,6 +222,20 @@ interface InitializerTemplateData {
 interface ResolvedOptions {
   /** Value of `root-namespace`, or `undefined` if not configured. */
   rootNamespace: string | undefined;
+  /**
+   * Effective root namespace for models and enums — `models-root-namespace` when
+   * set, otherwise the same as the inferred/configured global root namespace.
+   * Used as the fallback for unnamespaced types and as the prefix stripped from
+   * folder paths when `namespace-from-path` is `false`.
+   */
+  modelsEffectiveRootNs: string | undefined;
+  /** Effective root namespace for interface files. Falls back to inferred global root. */
+  interfacesEffectiveRootNs: string | undefined;
+  /**
+   * Inferred or explicitly configured global root namespace.
+   * Equals `root-namespace` when set, otherwise inferred from the TypeSpec namespace tree.
+   */
+  effectiveRootNamespace: string | undefined;
   /** Sorted namespace-map entries (longest key first for longest-match wins). */
   namespaceMap: Array<{ key: string; value: string }>;
   /** File extension for all emitted files, e.g. `".g.cs"`. */
@@ -287,8 +301,6 @@ interface ResolvedOptions {
    * "earliest" otherwise.
    */
   validatorsVersionStrategy: "earliest" | "latest" | "per-version" | "version-aware" | undefined;
-  /** Whether to use namespace subdirectories for validator output files. */
-  validatorsOutputSubdirectory: boolean;
 }
 
 /** Inferred enum derived from a string-literal union property. */
@@ -345,7 +357,7 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
 
   for (const model of models) {
     const isMergePatchModel = isMergePatchUpdateModel(model);
-    const typespecNs = csharpNamespaceFor(model.namespace, options);
+    const typespecNs = csharpNamespaceFor(model.namespace, options, options.modelsEffectiveRootNs);
     // When `namespaceFromPath` is enabled and an output-dir is configured,
     // append the PascalCased dir segments to the TypeSpec namespace so the C#
     // namespace reflects the physical output path
@@ -365,11 +377,11 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     const classFolder =
       options.namespaceFromPath && options.modelsDirSuffix
         ? []
-        : folderSegments(options.rootNamespace, typespecNs);
+        : folderSegments(options.modelsEffectiveRootNs, typespecNs);
     const interfaceFolder =
       options.namespaceFromPath && options.interfacesDirSuffix
         ? []
-        : folderSegments(options.rootNamespace, typespecNs);
+        : folderSegments(options.interfacesEffectiveRootNs, typespecNs);
     const refs = modelReferences(model);
     // Pass modelsDirSuffix so that usings for referenced types also resolve to
     // the correct suffixed namespace.
@@ -417,7 +429,7 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
 
   for (const en of enums) {
     // Enums follow the same namespace strategy as model classes.
-    const typespecEnumNs = csharpNamespaceFor(en.namespace, options);
+    const typespecEnumNs = csharpNamespaceFor(en.namespace, options, options.modelsEffectiveRootNs);
     const ns =
       options.namespaceFromPath && options.modelsDirSuffix
         ? `${typespecEnumNs}.${options.modelsDirSuffix}`
@@ -425,7 +437,7 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     const folder =
       options.namespaceFromPath && options.modelsDirSuffix
         ? []
-        : folderSegments(options.rootNamespace, typespecEnumNs);
+        : folderSegments(options.modelsEffectiveRootNs, typespecEnumNs);
     const enumFileName = `${pascalCase(en.name)}${options.fileExtension}`;
     await emitFile(program, {
       path: resolvePath(options.modelsOutputDir, ...folder, enumFileName),
@@ -462,7 +474,7 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     program,
     controllerOptions,
     (ns) => csharpNamespaceFor(ns, options),
-    (ns) => folderSegments(options.rootNamespace, ns),
+    (ns) => folderSegments(options.effectiveRootNamespace, ns),
   );
 
   for (const group of groups) {
@@ -838,16 +850,12 @@ async function emitValidatorModels(
 ): Promise<void> {
   const { versionFilter, versionDirName, versionNsSuffix } = singleOpts;
   const namespace = resolveValidatorNamespace(options, versionNsSuffix);
-  const nsDir = options.validatorsOutputSubdirectory && namespace
-    ? `${namespace.split(".").join("/")}/`
-    : "";
   const writeMembers = new Set(
     [createMember, updateMember].filter((m): m is EnumMember => m !== undefined),
   );
 
   for (const model of allModels) {
     const versionDir = versionDirName ? `${versionDirName}/` : "";
-    const dir = `${versionDir}${nsDir}`;
 
     const doPost = emitPost && (routeModels === undefined || routeModels.postModels.has(model));
     const doPatch = emitPatch && (routeModels === undefined || routeModels.patchModels.has(model));
@@ -862,7 +870,7 @@ async function emitValidatorModels(
         referencedValidators: postRefs.length > 0 ? postRefs : undefined,
       };
       await emitFile(program, {
-        path: resolvePath(options.validatorsOutputDir, `${dir}${model.name}Validator${options.fileExtension}`),
+        path: resolvePath(options.validatorsOutputDir, `${versionDir}${model.name}Validator${options.fileExtension}`),
         content: getValidatorPostTemplate()(data),
       });
     }
@@ -879,7 +887,7 @@ async function emitValidatorModels(
         referencedValidators: patchRefs.length > 0 ? patchRefs : undefined,
       };
       await emitFile(program, {
-        path: resolvePath(options.validatorsOutputDir, `${dir}${model.name}PatchValidator${options.fileExtension}`),
+        path: resolvePath(options.validatorsOutputDir, `${versionDir}${model.name}PatchValidator${options.fileExtension}`),
         content: getValidatorPatchTemplate()(data),
       });
     }
@@ -901,9 +909,6 @@ async function emitVersionAwareValidatorModels(
   const versionValues = allVersions.map((v) => v.value);
   const defaultVersion = versionValues[0];
   const namespace = resolveValidatorNamespace(options);
-  const nsDir = options.validatorsOutputSubdirectory && namespace
-    ? `${namespace.split(".").join("/")}/`
-    : "";
   const writeMembers = new Set(
     [createMember, updateMember].filter((m): m is EnumMember => m !== undefined),
   );
@@ -927,7 +932,7 @@ async function emitVersionAwareValidatorModels(
         referencedValidators: postRefs.length > 0 ? postRefs : undefined,
       };
       await emitFile(program, {
-        path: resolvePath(options.validatorsOutputDir, `${nsDir}${model.name}Validator${options.fileExtension}`),
+        path: resolvePath(options.validatorsOutputDir, `${model.name}Validator${options.fileExtension}`),
         content: getValidatorPostVersionAwareTemplate()(data),
       });
     }
@@ -949,7 +954,7 @@ async function emitVersionAwareValidatorModels(
         referencedValidators: patchRefs.length > 0 ? patchRefs : undefined,
       };
       await emitFile(program, {
-        path: resolvePath(options.validatorsOutputDir, `${nsDir}${model.name}PatchValidator${options.fileExtension}`),
+        path: resolvePath(options.validatorsOutputDir, `${model.name}PatchValidator${options.fileExtension}`),
         content: getValidatorPatchVersionAwareTemplate()(data),
       });
     }
@@ -992,14 +997,11 @@ async function emitValidatorsInitializer(
     namespace = namespace ? `${namespace}.${versionNsSuffix}` : versionNsSuffix;
   }
 
-  const nsDir = options.validatorsOutputSubdirectory && namespace
-    ? `${namespace.split(".").join("/")}/`
-    : "";
   const versionDir = versionDirName ? `${versionDirName}/` : "";
 
   const data: InitializerTemplateData = { namespace, registrations, isVersionAware };
   await emitFile(program, {
-    path: resolvePath(options.validatorsOutputDir, `${versionDir}${nsDir}ValidatorsInitializer${options.fileExtension}`),
+    path: resolvePath(options.validatorsOutputDir, `${versionDir}ValidatorsInitializer${options.fileExtension}`),
     content: getValidatorInitializerTemplate()(data),
   });
 }
@@ -1240,7 +1242,7 @@ function buildControllerUsings(
   for (const u of options.additionalUsings) usings.add(u);
   for (const ref of references) {
     for (const type of collectReferencedTypes(ref)) {
-      const typespecNs = csharpNamespaceFor(type.namespace, options);
+      const typespecNs = csharpNamespaceFor(type.namespace, options, options.modelsEffectiveRootNs);
       // When namespace-from-path is enabled, apply the appropriate directory suffix
       // (modelsDirSuffix for models/enums that go in the models output dir)
       const ns =
@@ -1273,7 +1275,7 @@ function buildServiceUsings(
   for (const u of options.additionalUsings) usings.add(u);
   for (const ref of references) {
     for (const type of collectReferencedTypes(ref)) {
-      const typespecNs = csharpNamespaceFor(type.namespace, options);
+      const typespecNs = csharpNamespaceFor(type.namespace, options, options.modelsEffectiveRootNs);
       // When namespace-from-path is enabled, apply the appropriate directory suffix
       // (modelsDirSuffix for models/enums that go in the models output dir)
       const ns =
@@ -1456,6 +1458,12 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
   // receive a properly-qualified namespace (e.g. "MyApp.Controllers" rather
   // than just "Controllers").
   const effectiveRootNs = rootNs ?? inferRootNamespace(context.program);
+  // Per-section effective roots — fall back to the global effective root when not set.
+  const modelsEffectiveRootNs = raw["models-root-namespace"] ?? effectiveRootNs;
+  const interfacesEffectiveRootNs = raw["interfaces-root-namespace"] ?? effectiveRootNs;
+  const controllersRootNs = raw["controllers-root-namespace"] ?? effectiveRootNs;
+  const servicesRootNs = raw["services-root-namespace"] ?? effectiveRootNs;
+  const validatorsRootNs = raw["validators-root-namespace"] ?? effectiveRootNs;
   // Determine if we should use namespace-from-path mode
   const useNamespaceFromPath = raw["namespace-from-path"] ?? true;
   // When namespace-from-path is enabled, always compute the dir suffixes
@@ -1464,6 +1472,9 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
   const interfacesDirSuffix = useNamespaceFromPath ? pathNamespace(undefined, interfacesDir) : "";
   return {
     rootNamespace: rootNs,
+    effectiveRootNamespace: effectiveRootNs,
+    modelsEffectiveRootNs,
+    interfacesEffectiveRootNs,
     namespaceMap,
     fileExtension: raw["file-extension"] ?? ".g.cs",
     modelsOutputDir: resolvePath(baseDir, modelsDir),
@@ -1479,19 +1490,18 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     namespaceFromPath: useNamespaceFromPath,
     modelsDirSuffix,
     interfacesDirSuffix,
-    controllersPathNamespace: pathNamespace(effectiveRootNs, controllersDir),
-    servicesPathNamespace: pathNamespace(effectiveRootNs, servicesDir),
+    controllersPathNamespace: pathNamespace(controllersRootNs, controllersDir),
+    servicesPathNamespace: pathNamespace(servicesRootNs, servicesDir),
     helpersNamespace: pathNamespace(effectiveRootNs, helpersDir),
     additionalUsings: raw["additional-usings"] ?? [],
     nullableProperties: raw["nullable-properties"] ?? true,
     abstractSuffix: raw["abstract-suffix"] ?? "Base",
     templates: resolveTemplatePaths(raw.templates),
     emitValidators: raw["emit-validators"] ?? false,
-    validatorsPathNamespace: pathNamespace(effectiveRootNs, validatorsDir),
+    validatorsPathNamespace: pathNamespace(validatorsRootNs, validatorsDir),
     validatorsOutputDir: resolvePath(baseDir, validatorsDir),
     validatorsTypes: raw["validators"] ?? "both",
     validatorsVersionStrategy: raw["validators-version-strategy"],
-    validatorsOutputSubdirectory: raw["validators-output-subdirectory"] ?? false,
   };
 }
 
@@ -1593,9 +1603,13 @@ function namespaceFullName(ns: Namespace | undefined): string {
  * @param options - Resolved options carrying the namespace map and root.
  * @returns Dot-separated C# namespace string.
  */
-function csharpNamespaceFor(ns: Namespace | undefined, options: ResolvedOptions): string {
+function csharpNamespaceFor(
+  ns: Namespace | undefined,
+  options: ResolvedOptions,
+  sectionRootNs?: string,
+): string {
   const fullNs = namespaceFullName(ns);
-  if (!fullNs) return options.rootNamespace ?? DEFAULT_NAMESPACE;
+  if (!fullNs) return sectionRootNs ?? options.rootNamespace ?? DEFAULT_NAMESPACE;
   const mapped = applyNamespaceMap(fullNs, options.namespaceMap);
   return mapped.split(".").map(pascalCase).join(".");
 }
@@ -1713,7 +1727,7 @@ function collectUsings(
   for (const u of options.additionalUsings) usings.add(u);
   for (const ref of references) {
     for (const type of collectReferencedTypes(ref)) {
-      const typespecNs = csharpNamespaceFor(type.namespace, options);
+      const typespecNs = csharpNamespaceFor(type.namespace, options, options.modelsEffectiveRootNs);
       // When a dir-suffix has been applied to the emitting file's namespace,
       // the same suffix must be applied to referenced types so that
       // using-directives point at the correct C# namespace.
@@ -1996,7 +2010,7 @@ function collectInferredEnums(
   const byKey = new Map<string, InferredEnum>();
   const explicitEnumKeys = new Set(
     explicitEnums.map((en) => {
-      const typespecNs = csharpNamespaceFor(en.namespace, options);
+      const typespecNs = csharpNamespaceFor(en.namespace, options, options.modelsEffectiveRootNs);
       const ns =
         options.namespaceFromPath && options.modelsDirSuffix
           ? `${typespecNs}.${options.modelsDirSuffix}`
@@ -2007,7 +2021,7 @@ function collectInferredEnums(
 
   for (const model of models) {
     const isMergePatchModel = isMergePatchUpdateModel(model);
-    const typespecNs = csharpNamespaceFor(model.namespace, options);
+    const typespecNs = csharpNamespaceFor(model.namespace, options, options.modelsEffectiveRootNs);
     const ns =
       options.namespaceFromPath && options.modelsDirSuffix
         ? `${typespecNs}.${options.modelsDirSuffix}`
@@ -2015,7 +2029,7 @@ function collectInferredEnums(
     const folder =
       options.namespaceFromPath && options.modelsDirSuffix
         ? []
-        : folderSegments(options.rootNamespace, typespecNs);
+        : folderSegments(options.modelsEffectiveRootNs, typespecNs);
 
     for (const prop of model.properties.values()) {
       const values = getStringLiteralUnionValues(prop.type);
