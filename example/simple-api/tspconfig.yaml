@@ -18,3 +18,4 @@ options:
     #emit-controllers: true
     #emit-services: true
     emit-helpers: true
+    emit-validators: true
