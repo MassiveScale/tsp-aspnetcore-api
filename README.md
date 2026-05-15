@@ -75,26 +75,31 @@ namespace MyCompany.Api.Users
 
 ## Options
 
-| Option                   | Type                     | Default         | Description                                                                                                                                                                                                                  |
-| ------------------------ | ------------------------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `abstract-suffix`        | `string`                 | `"Base"`        | Suffix appended to generated abstract controller class names, e.g. `UsersControllerBase`.                                                                                                                                    |
-| `additional-usings`      | `string[]`               | `[]`            | Extra `using` directives added to every generated file.                                                                                                                                                                      |
-| `controllers-output-dir` | `string`                 | `"Controllers"` | Destination for generated controller files.                                                                                                                                                                                  |
-| `emit-controllers`       | `boolean`                | `true`          | When `false`, no controller base class files are emitted.                                                                                                                                                                    |
-| `emit-helpers`           | `boolean`                | `false`         | When `false`, helper files are skipped unless required by generated output. `MergePatchValue` is emitted automatically when any `MergePatchUpdate<T>` model is generated; enum converter helpers still follow this option.   |
-| `emit-interfaces`        | `boolean`                | `true`          | When `false`, no `I<Model>` interface files are emitted.                                                                                                                                                                     |
-| `emit-services`          | `boolean`                | `true`          | When `false`, no service interface files are emitted.                                                                                                                                                                        |
-| `file-extension`         | `string`                 | `".g.cs"`       | File extension for all generated files.                                                                                                                                                                                      |
-| `helpers-output-dir`     | `string`                 | `"Helpers"`     | Destination for generated helper files (`EnumMemberConverterFactory`, `MergePatchValue`).                                                                                                                                    |
-| `interfaces-output-dir`  | `string`                 | `"Models"`      | Destination for generated interface files.                                                                                                                                                                                   |
-| `models-output-dir`      | `string`                 | `"Models"`      | Destination for generated class and enum files. Relative paths resolve against `emitter-output-dir`.                                                                                                                         |
-| `namespace-from-path`    | `boolean`                | `true`          | When `true`, output-dir path segments are appended to the TypeSpec namespace for models/interfaces/enums, and are used as the namespace for controllers/services/helpers. See [Namespace resolution](#namespace-resolution). |
-| `namespace-map`          | `Record<string, string>` | `{}`            | Rewrites TypeSpec namespaces to C# namespaces. Longest-prefix match wins; sub-namespaces inherit the rewrite automatically.                                                                                                  |
-| `nullable-properties`    | `boolean`                | `true`          | When `true`, all properties are emitted as nullable (`string?`, `int?`). When `false`, only TypeSpec-optional properties and `T \| null` unions are nullable.                                                                |
-| `root-namespace`         | `string`                 | _(inferred)_    | Root C# namespace. Stripped from folder paths so the directory tree mirrors the namespace hierarchy beneath it. When omitted, inferred from the TypeSpec namespace tree.                                                     |
-| `route-prefix`           | `string`                 | `"api"`         | Prefix prepended to every controller route, e.g. `"api"` → `/api/v1/users`.                                                                                                                                                  |
-| `services-output-dir`    | `string`                 | `"Services"`    | Destination for generated service interface files.                                                                                                                                                                           |
-| `templates`              | `Record<string, string>` | `{}`            | Custom Handlebars template paths keyed by template name. See [Custom templates](#custom-templates).                                                                                                                          |
+| Option                           | Type                                                               | Default         | Description                                                                                                                                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `abstract-suffix`                | `string`                                                           | `"Base"`        | Suffix appended to generated abstract controller class names, e.g. `UsersControllerBase`.                                                                                                                                    |
+| `additional-usings`              | `string[]`                                                         | `[]`            | Extra `using` directives added to every generated file.                                                                                                                                                                      |
+| `controllers-output-dir`         | `string`                                                           | `"Controllers"` | Destination for generated controller files.                                                                                                                                                                                  |
+| `emit-controllers`               | `boolean`                                                          | `true`          | When `false`, no controller base class files are emitted.                                                                                                                                                                    |
+| `emit-helpers`                   | `boolean`                                                          | `false`         | When `false`, helper files are skipped unless required by generated output. `MergePatchValue` is emitted automatically when any `MergePatchUpdate<T>` model is generated; enum converter helpers still follow this option.   |
+| `emit-interfaces`                | `boolean`                                                          | `true`          | When `false`, no `I<Model>` interface files are emitted.                                                                                                                                                                     |
+| `emit-services`                  | `boolean`                                                          | `true`          | When `false`, no service interface files are emitted.                                                                                                                                                                        |
+| `emit-validators`                | `boolean`                                                          | `false`         | When `true`, FluentValidation validator classes are generated for models that appear as POST or PATCH request bodies. See [FluentValidation validators](#fluentvalidation-validators).                                       |
+| `file-extension`                 | `string`                                                           | `".g.cs"`       | File extension for all generated files.                                                                                                                                                                                      |
+| `helpers-output-dir`             | `string`                                                           | `"Helpers"`     | Destination for generated helper files (`EnumMemberConverterFactory`, `MergePatchValue`).                                                                                                                                    |
+| `interfaces-output-dir`          | `string`                                                           | `"Models"`      | Destination for generated interface files.                                                                                                                                                                                   |
+| `models-output-dir`              | `string`                                                           | `"Models"`      | Destination for generated class and enum files. Relative paths resolve against `emitter-output-dir`.                                                                                                                         |
+| `namespace-from-path`            | `boolean`                                                          | `true`          | When `true`, output-dir path segments are appended to the TypeSpec namespace for models/interfaces/enums, and are used as the namespace for controllers/services/helpers. See [Namespace resolution](#namespace-resolution). |
+| `namespace-map`                  | `Record<string, string>`                                           | `{}`            | Rewrites TypeSpec namespaces to C# namespaces. Longest-prefix match wins; sub-namespaces inherit the rewrite automatically.                                                                                                  |
+| `nullable-properties`            | `boolean`                                                          | `true`          | When `true`, all properties are emitted as nullable (`string?`, `int?`). When `false`, only TypeSpec-optional properties and `T \| null` unions are nullable.                                                                |
+| `root-namespace`                 | `string`                                                           | _(inferred)_    | Root C# namespace. Stripped from folder paths so the directory tree mirrors the namespace hierarchy beneath it. When omitted, inferred from the TypeSpec namespace tree.                                                     |
+| `route-prefix`                   | `string`                                                           | `"api"`         | Prefix prepended to every controller route, e.g. `"api"` → `/api/v1/users`.                                                                                                                                                  |
+| `services-output-dir`            | `string`                                                           | `"Services"`    | Destination for generated service interface files.                                                                                                                                                                           |
+| `templates`                      | `Record<string, string>`                                           | `{}`            | Custom Handlebars template paths keyed by template name. See [Custom templates](#custom-templates).                                                                                                                          |
+| `validators`                     | `"post"` \| `"patch"` \| `"both"`                                  | `"both"`        | Controls which validator type(s) are emitted per model. `"post"` emits `{Model}Validator.g.cs`; `"patch"` emits `{Model}PatchValidator.g.cs`; `"both"` emits both.                                                           |
+| `validators-output-dir`          | `string`                                                           | `"Validators"`  | Output directory for generated validator and initializer files.                                                                                                                                                              |
+| `validators-output-subdirectory` | `boolean`                                                          | `false`         | When `true`, validator files are placed in subdirectories that mirror the namespace hierarchy (e.g. namespace `"MyApp.Validators"` → `MyApp/Validators/`).                                                                   |
+| `validators-version-strategy`    | `"earliest"` \| `"latest"` \| `"per-version"` \| `"version-aware"` | _(auto)_        | Controls how versioning affects validator generation. Auto-detected: `"version-aware"` when `@versioned` is present, `"earliest"` otherwise. See [Version strategies](#version-strategies).                                  |
 
 ---
 
@@ -388,6 +393,77 @@ public partial class WidgetMergePatchUpdate : IWidgetMergePatchUpdate
 ### Helper file emission
 
 The `MergePatchValue<T>` helper class is automatically emitted to the helpers directory whenever any MergePatchUpdate model is generated, regardless of the `emit-helpers` option setting. This ensures merge-patch models always have access to the required helper type.
+
+---
+
+## FluentValidation validators
+
+When `emit-validators: true`, the emitter generates [FluentValidation](https://docs.fluentvalidation.net/) validator classes for models that appear as POST or PATCH request bodies, plus a `ValidatorsInitializer.g.cs` helper to register them with ASP.NET Core's DI container.
+
+### Generated files
+
+| File                         | Content                                                                                 |
+| ---------------------------- | --------------------------------------------------------------------------------------- |
+| `{Model}Validator.g.cs`      | `AbstractValidator<{Model}>` with rules for POST bodies.                                |
+| `{Model}PatchValidator.g.cs` | `AbstractValidator<{Model}Patch>` with conditional, patch-aware rules.                  |
+| `ValidatorsInitializer.g.cs` | Static `AddGeneratedValidators(this IServiceCollection)` extension method for DI setup. |
+
+Enable in `tspconfig.yaml`:
+
+```yaml
+options:
+  "@massivescale/tsp-aspnetcore-api":
+    emit-validators: true
+```
+
+Register in your `Program.cs` or `Startup.cs`:
+
+```csharp
+builder.Services.AddGeneratedValidators();
+```
+
+### Extracted rules
+
+The emitter reads TypeSpec constraint decorators and translates them to FluentValidation rules:
+
+| TypeSpec decorator             | FluentValidation rule                            |
+| ------------------------------ | ------------------------------------------------ |
+| Required non-optional `string` | `NotEmpty()`                                     |
+| `@minLength(n)`                | `MinimumLength(n)`                               |
+| `@maxLength(n)`                | `MaximumLength(n)`                               |
+| `@pattern("...")`              | `Matches(@"...")`                                |
+| `@format("email")`             | `EmailAddress()`                                 |
+| `@minValue(n)`                 | `GreaterThanOrEqualTo(n)`                        |
+| `@maxValue(n)`                 | `LessThanOrEqualTo(n)`                           |
+| Enum property                  | `IsInEnum()`                                     |
+| Nested model property          | `SetValidator(childValidator)` (injected via DI) |
+
+### Custom rules
+
+Every generated validator is a `partial class` that exposes an `ExtendRules()` virtual method. Override it in a hand-written partial to add custom rules without editing the generated file:
+
+```csharp
+public partial class WidgetValidator
+{
+    protected override void ExtendRules()
+    {
+        RuleFor(x => x.Name).Must(name => !name.Contains("admin")).WithMessage("Name cannot contain 'admin'.");
+    }
+}
+```
+
+### Version strategies
+
+When the TypeSpec spec uses `@versioned`, the `validators-version-strategy` option controls output:
+
+| Strategy        | Behaviour                                                                                                                                                                                                             |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `earliest`      | Emits validators using only the constraints present in the earliest API version.                                                                                                                                      |
+| `latest`        | Emits validators using the constraints of the latest version. Emits a compiler warning.                                                                                                                               |
+| `per-version`   | Emits a separate set of validator files per version, each in its own subdirectory.                                                                                                                                    |
+| `version-aware` | (Default when `@versioned` is present) Emits one validator per model; rules for later-added properties are wrapped in `When(() => IsAtLeast("v2", ...))` guards that read the API version from the live HTTP request. |
+
+Version-aware validators accept `IHttpContextAccessor` to resolve the API version from the route segment (`version`), the `api-version` request header, or the `api-version` query parameter. Ensure `services.AddHttpContextAccessor()` is called before `AddGeneratedValidators()`.
 
 ---
 

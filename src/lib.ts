@@ -159,6 +159,50 @@ export interface EmitterOptions {
 
   /** Custom Handlebars template paths keyed by template name. */
   templates?: TemplateOverrides;
+
+  // ── FluentValidation options ─────────────────────────────────────────────
+
+  /**
+   * When `true`, FluentValidation validator classes are generated for models
+   * that appear as POST or PATCH request bodies.
+   * Defaults to `false`.
+   */
+  "emit-validators"?: boolean;
+
+  /**
+   * Output directory for generated validator classes.
+   * Relative paths are resolved against the emitter output dir.
+   * Defaults to `Validators/`.
+   */
+  "validators-output-dir"?: string;
+
+  /**
+   * Controls which validator type(s) are emitted for each model.
+   * - `"post"` — emits `{Model}Validator.g.cs` with standard FluentValidation rules.
+   * - `"patch"` — emits `{Model}PatchValidator.g.cs` with conditional patch-aware rules.
+   * - `"both"` — emits both files (default).
+   */
+  "validators"?: "post" | "patch" | "both";
+
+  /**
+   * Controls how versioning affects validator generation when the TypeSpec spec
+   * uses `@versioned`.
+   * - `"earliest"` — emits validators based on the earliest version only.
+   * - `"latest"` — emits validators based on the latest version (emits a warning).
+   * - `"per-version"` — emits separate validators for each version in its own subdirectory.
+   * - `"version-aware"` — emits a single validator per model whose rules are applied
+   *   conditionally based on the API version resolved from the live HTTP request.
+   *
+   * When unset, auto-detected: `"version-aware"` if `@versioned` is present, `"earliest"` otherwise.
+   */
+  "validators-version-strategy"?: "earliest" | "latest" | "per-version" | "version-aware";
+
+  /**
+   * When `true`, validator output files are placed in subdirectories matching
+   * the namespace segments (e.g. namespace `"MyApp.Validators"` → `MyApp/Validators/`).
+   * Defaults to `false`.
+   */
+  "validators-output-subdirectory"?: boolean;
 }
 
 /** JSON Schema used by the TypeSpec compiler to validate emitter options. */
@@ -208,6 +252,19 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
         "enum-member-converter": { type: "string", nullable: true },
       },
     },
+    "emit-validators": { type: "boolean", nullable: true },
+    "validators-output-dir": { type: "string", nullable: true },
+    validators: {
+      type: "string",
+      enum: ["post", "patch", "both"],
+      nullable: true,
+    },
+    "validators-version-strategy": {
+      type: "string",
+      enum: ["earliest", "latest", "per-version", "version-aware"],
+      nullable: true,
+    },
+    "validators-output-subdirectory": { type: "boolean", nullable: true },
   },
   required: [],
 };
@@ -223,6 +280,12 @@ export const $lib = createTypeSpecLibrary({
       severity: "error",
       messages: {
         default: paramMessage`Failed to load custom template "${"name"}" from "${"path"}": ${"reason"}`,
+      },
+    },
+    "version-strategy-breaking": {
+      severity: "warning",
+      messages: {
+        default: paramMessage`Using validators-version-strategy "latest" may produce validators that reject requests from clients targeting earlier API versions. Consider "earliest" or "version-aware" to avoid breaking changes.`,
       },
     },
   },

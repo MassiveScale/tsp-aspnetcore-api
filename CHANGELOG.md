@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-05-15
+
+### Added
+
+- FluentValidation validator generation (`emit-validators: true`). When enabled, the emitter produces:
+  - `{Model}Validator.g.cs` — `AbstractValidator<{Model}>` for POST request bodies.
+  - `{Model}PatchValidator.g.cs` — patch-aware `AbstractValidator<{Model}Patch>` whose rules fire only when the corresponding property is present in the patch.
+  - `ValidatorsInitializer.g.cs` — `AddGeneratedValidators(this IServiceCollection)` extension method for registering all validators with ASP.NET Core DI.
+- Constraint decorators translated to FluentValidation rules: `@minLength`, `@maxLength`, `@pattern`, `@format("email")`, `@minValue`, `@maxValue`, enum membership, and `NotEmpty` for required non-optional string properties.
+- Nested model validators are injected as constructor parameters and wired via `SetValidator` / `RuleForEach`+`SetValidator`.
+- All generated validators are `partial` classes with a virtual `ExtendRules()` method for adding custom rules without touching generated code.
+- Four version strategies for `@versioned` specs: `earliest`, `latest`, `per-version`, and `version-aware`. Auto-detected: `version-aware` when `@versioned` is present, `earliest` otherwise.
+- Version-aware validators embed `ResolveApiVersion` and apply later-version rules conditionally via `When(() => IsAtLeast(...))` guards. They accept `IHttpContextAccessor` to read the version from the route, `api-version` header, or `api-version` query parameter.
+- New options: `emit-validators`, `validators`, `validators-output-dir`, `validators-output-subdirectory`, `validators-version-strategy`.
+
 ## [1.2.0] - 2026-05-12
 
 ### Added

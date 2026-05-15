@@ -5,5 +5,3 @@ settings.local.json
 
 # Exclude tsp-output everywhere except in examples
 tsp-output/
-!example/**/tsp-output/
-!example/**/tsp-output/**
