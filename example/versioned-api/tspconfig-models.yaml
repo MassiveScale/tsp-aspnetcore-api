@@ -1,0 +1,10 @@
+emit:
+  - "@massivescale/tsp-aspnetcore-api"
+options:
+  "@massivescale/tsp-aspnetcore-api":
+    emitter-output-dir: "{output-dir}/models-only"
+    emit-helpers: false
+    emit-validators: false
+    emit-controllers: false
+    emit-services: false
+    

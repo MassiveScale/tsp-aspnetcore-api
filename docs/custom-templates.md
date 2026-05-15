@@ -37,13 +37,18 @@ Templates are compiled with `noEscape: true` (so `<`, `>`, and `&` pass through 
 
 ## Available template keys
 
-| Key                     | Overrides                                               |
-| ----------------------- | ------------------------------------------------------- |
-| `file`                  | Namespace + using wrapper for every generated file.     |
-| `class`                 | C# class declarations.                                  |
-| `interface`             | C# interface declarations.                              |
-| `enum`                  | C# enum declarations.                                   |
-| `controller`            | ASP.NET Core abstract controller base classes.          |
-| `service-interface`     | Service interface declarations.                         |
-| `merge-patch-value`     | `MergePatchValue<T>` helper class.                      |
-| `enum-member-converter` | `EnumMemberConverterFactory` and `EnumMemberConverter<T>` helper classes. |
+| Key                           | Overrides                                                                     |
+| ----------------------------- | ----------------------------------------------------------------------------- |
+| `file`                        | Namespace + using wrapper for every generated file.                           |
+| `class`                       | C# class declarations.                                                        |
+| `interface`                   | C# interface declarations.                                                    |
+| `enum`                        | C# enum declarations.                                                         |
+| `controller`                  | ASP.NET Core abstract controller base classes.                                |
+| `service-interface`           | Service interface declarations.                                               |
+| `merge-patch-value`           | `MergePatchValue<T>` helper class.                                            |
+| `enum-member-converter`       | `EnumMemberConverterFactory` and `EnumMemberConverter<T>` helper classes.     |
+| `validator-post`              | Standard POST validator (`AbstractValidator<{Model}>`).                       |
+| `validator-patch`             | Standard PATCH validator with conditional patch-aware rules.                  |
+| `validator-post-version-aware`  | Version-aware POST validator with `When(() => IsAtLeast(...))` guards.      |
+| `validator-patch-version-aware` | Version-aware PATCH validator with `When(() => IsAtLeast(...))` guards.     |
+| `validator-initializer`       | `ValidatorsInitializer` DI registration class.                                |

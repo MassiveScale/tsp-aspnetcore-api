@@ -117,24 +117,29 @@ let _compiledValidatorPostVersionAwareTemplate: Handlebars.TemplateDelegate | un
 let _compiledValidatorPatchVersionAwareTemplate: Handlebars.TemplateDelegate | undefined;
 let _compiledValidatorInitializerTemplate: Handlebars.TemplateDelegate | undefined;
 
-function loadValidatorTemplate(name: string): Handlebars.TemplateDelegate {
-  return Handlebars.compile(readFileSync(resolve(TEMPLATES_DIR, name), "utf-8"));
+function loadValidatorTemplate(path: string): Handlebars.TemplateDelegate {
+  return Handlebars.compile(readFileSync(path, "utf-8"));
 }
 
-function getValidatorPostTemplate(): Handlebars.TemplateDelegate {
-  return (_compiledValidatorPostTemplate ??= loadValidatorTemplate("validator-post.hbs"));
+function getValidatorPostTemplate(override?: string): Handlebars.TemplateDelegate {
+  if (override) return loadValidatorTemplate(override);
+  return (_compiledValidatorPostTemplate ??= loadValidatorTemplate(resolve(TEMPLATES_DIR, "validator-post.hbs")));
 }
-function getValidatorPatchTemplate(): Handlebars.TemplateDelegate {
-  return (_compiledValidatorPatchTemplate ??= loadValidatorTemplate("validator-patch.hbs"));
+function getValidatorPatchTemplate(override?: string): Handlebars.TemplateDelegate {
+  if (override) return loadValidatorTemplate(override);
+  return (_compiledValidatorPatchTemplate ??= loadValidatorTemplate(resolve(TEMPLATES_DIR, "validator-patch.hbs")));
 }
-function getValidatorPostVersionAwareTemplate(): Handlebars.TemplateDelegate {
-  return (_compiledValidatorPostVersionAwareTemplate ??= loadValidatorTemplate("validator-post-version-aware.hbs"));
+function getValidatorPostVersionAwareTemplate(override?: string): Handlebars.TemplateDelegate {
+  if (override) return loadValidatorTemplate(override);
+  return (_compiledValidatorPostVersionAwareTemplate ??= loadValidatorTemplate(resolve(TEMPLATES_DIR, "validator-post-version-aware.hbs")));
 }
-function getValidatorPatchVersionAwareTemplate(): Handlebars.TemplateDelegate {
-  return (_compiledValidatorPatchVersionAwareTemplate ??= loadValidatorTemplate("validator-patch-version-aware.hbs"));
+function getValidatorPatchVersionAwareTemplate(override?: string): Handlebars.TemplateDelegate {
+  if (override) return loadValidatorTemplate(override);
+  return (_compiledValidatorPatchVersionAwareTemplate ??= loadValidatorTemplate(resolve(TEMPLATES_DIR, "validator-patch-version-aware.hbs")));
 }
-function getValidatorInitializerTemplate(): Handlebars.TemplateDelegate {
-  return (_compiledValidatorInitializerTemplate ??= loadValidatorTemplate("validator-initializer.hbs"));
+function getValidatorInitializerTemplate(override?: string): Handlebars.TemplateDelegate {
+  if (override) return loadValidatorTemplate(override);
+  return (_compiledValidatorInitializerTemplate ??= loadValidatorTemplate(resolve(TEMPLATES_DIR, "validator-initializer.hbs")));
 }
 
 // ── Validator data types (ported from tsp-fluent-validators) ─────────────────
@@ -358,6 +363,10 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
   for (const model of models) {
     const isMergePatchModel = isMergePatchUpdateModel(model);
     const typespecNs = csharpNamespaceFor(model.namespace, options, options.modelsEffectiveRootNs);
+    // When `interfaces-root-namespace` differs from `models-root-namespace`, the
+    // fallback for top-level (unnamespaced) types must be resolved separately so
+    // interface files land under the correct root.
+    const typespecIfaceNs = csharpNamespaceFor(model.namespace, options, options.interfacesEffectiveRootNs);
     // When `namespaceFromPath` is enabled and an output-dir is configured,
     // append the PascalCased dir segments to the TypeSpec namespace so the C#
     // namespace reflects the physical output path
@@ -370,8 +379,8 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
         : typespecNs;
     const interfaceNs =
       options.namespaceFromPath && options.interfacesDirSuffix
-        ? `${typespecNs}.${options.interfacesDirSuffix}`
-        : typespecNs;
+        ? `${typespecIfaceNs}.${options.interfacesDirSuffix}`
+        : typespecIfaceNs;
     // Flatten into the output dir when a suffix was applied; otherwise keep
     // the folderSegments sub-directory layout.
     const classFolder =
@@ -381,7 +390,7 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     const interfaceFolder =
       options.namespaceFromPath && options.interfacesDirSuffix
         ? []
-        : folderSegments(options.interfacesEffectiveRootNs, typespecNs);
+        : folderSegments(options.interfacesEffectiveRootNs, typespecIfaceNs);
     const refs = modelReferences(model);
     // Pass modelsDirSuffix so that usings for referenced types also resolve to
     // the correct suffixed namespace.
@@ -871,7 +880,7 @@ async function emitValidatorModels(
       };
       await emitFile(program, {
         path: resolvePath(options.validatorsOutputDir, `${versionDir}${model.name}Validator${options.fileExtension}`),
-        content: getValidatorPostTemplate()(data),
+        content: getValidatorPostTemplate(options.templates["validator-post"])(data),
       });
     }
 
@@ -888,7 +897,7 @@ async function emitValidatorModels(
       };
       await emitFile(program, {
         path: resolvePath(options.validatorsOutputDir, `${versionDir}${model.name}PatchValidator${options.fileExtension}`),
-        content: getValidatorPatchTemplate()(data),
+        content: getValidatorPatchTemplate(options.templates["validator-patch"])(data),
       });
     }
   }
@@ -933,7 +942,7 @@ async function emitVersionAwareValidatorModels(
       };
       await emitFile(program, {
         path: resolvePath(options.validatorsOutputDir, `${model.name}Validator${options.fileExtension}`),
-        content: getValidatorPostVersionAwareTemplate()(data),
+        content: getValidatorPostVersionAwareTemplate(options.templates["validator-post-version-aware"])(data),
       });
     }
 
@@ -955,7 +964,7 @@ async function emitVersionAwareValidatorModels(
       };
       await emitFile(program, {
         path: resolvePath(options.validatorsOutputDir, `${model.name}PatchValidator${options.fileExtension}`),
-        content: getValidatorPatchVersionAwareTemplate()(data),
+        content: getValidatorPatchVersionAwareTemplate(options.templates["validator-patch-version-aware"])(data),
       });
     }
   }
@@ -1002,7 +1011,7 @@ async function emitValidatorsInitializer(
   const data: InitializerTemplateData = { namespace, registrations, isVersionAware };
   await emitFile(program, {
     path: resolvePath(options.validatorsOutputDir, `${versionDir}ValidatorsInitializer${options.fileExtension}`),
-    content: getValidatorInitializerTemplate()(data),
+    content: getValidatorInitializerTemplate(options.templates["validator-initializer"])(data),
   });
 }
 
@@ -1524,6 +1533,11 @@ function resolveTemplatePaths(templates: EmitterOptions["templates"]): TemplateO
     "service-interface",
     "merge-patch-value",
     "enum-member-converter",
+    "validator-post",
+    "validator-patch",
+    "validator-post-version-aware",
+    "validator-patch-version-aware",
+    "validator-initializer",
   ];
   for (const name of keys) {
     const value = templates[name as keyof typeof templates];
@@ -1597,10 +1611,15 @@ function namespaceFullName(ns: Namespace | undefined): string {
  * files.
  *
  * Applies the namespace-map (longest-match) and PascalCases each segment.
- * Falls back to `root-namespace` (if set) or `"Models"` for top-level types.
+ * For top-level types (no TypeSpec namespace) the fallback order is:
+ *   1. `sectionRootNs` — per-section root override when provided.
+ *   2. `root-namespace` — the global root namespace when set.
+ *   3. `DEFAULT_NAMESPACE` (`"Models"`) — the hard-coded default.
  *
  * @param ns - TypeSpec namespace node, or `undefined`.
  * @param options - Resolved options carrying the namespace map and root.
+ * @param sectionRootNs - Optional per-section root (e.g. `models-root-namespace`)
+ *   that takes priority over the global root for unnamespaced types.
  * @returns Dot-separated C# namespace string.
  */
 function csharpNamespaceFor(

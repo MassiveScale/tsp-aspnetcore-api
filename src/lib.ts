@@ -29,6 +29,16 @@ export interface TemplateOverrides {
   "merge-patch-value"?: string;
   /** Custom template for the EnumMemberConverter helper class. */
   "enum-member-converter"?: string;
+  /** Custom template for the standard POST validator class. */
+  "validator-post"?: string;
+  /** Custom template for the standard PATCH validator class. */
+  "validator-patch"?: string;
+  /** Custom template for the version-aware POST validator class. */
+  "validator-post-version-aware"?: string;
+  /** Custom template for the version-aware PATCH validator class. */
+  "validator-patch-version-aware"?: string;
+  /** Custom template for the `ValidatorsInitializer` DI registration class. */
+  "validator-initializer"?: string;
 }
 
 /**
@@ -280,6 +290,11 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
         "service-interface": { type: "string", nullable: true },
         "merge-patch-value": { type: "string", nullable: true },
         "enum-member-converter": { type: "string", nullable: true },
+        "validator-post": { type: "string", nullable: true },
+        "validator-patch": { type: "string", nullable: true },
+        "validator-post-version-aware": { type: "string", nullable: true },
+        "validator-patch-version-aware": { type: "string", nullable: true },
+        "validator-initializer": { type: "string", nullable: true },
       },
     },
     "models-root-namespace": { type: "string", nullable: true },

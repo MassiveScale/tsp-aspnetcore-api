@@ -29,7 +29,12 @@ export type TemplateName =
   | "controller"
   | "service-interface"
   | "merge-patch-value"
-  | "enum-member-converter";
+  | "enum-member-converter"
+  | "validator-post"
+  | "validator-patch"
+  | "validator-post-version-aware"
+  | "validator-patch-version-aware"
+  | "validator-initializer";
 
 /**
  * Partial map of template names to absolute file paths used to override the

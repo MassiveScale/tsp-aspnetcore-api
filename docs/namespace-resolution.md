@@ -16,9 +16,9 @@ When `namespace-from-path` is `true` (the default) **and** an output-dir is conf
 
 When a model's namespace does not start with `root-namespace`, the file is placed flat at the output root while keeping its TypeSpec namespace unchanged.
 
-## Controllers, services, and helpers
+## Controllers, services, validators, and helpers
 
-The C# namespace is always path-derived: `rootNs` + PascalCased output-dir segments, where `rootNs` is the section-specific root (`controllers-root-namespace`, `services-root-namespace`, etc.) when set, otherwise the explicit `root-namespace`, otherwise the namespace inferred from the TypeSpec namespace tree.
+The C# namespace is always path-derived: `rootNs` + PascalCased output-dir segments, where `rootNs` is the section-specific root (`controllers-root-namespace`, `services-root-namespace`, or `validators-root-namespace`) when set, otherwise the explicit `root-namespace`, otherwise the namespace inferred from the TypeSpec namespace tree. Helpers have no dedicated root override and always use the global root.
 
 | `root-namespace` | `controllers-root-namespace` | `controllers-output-dir` | C# namespace                     |
 | ---------------- | ---------------------------- | ------------------------ | -------------------------------- |
@@ -27,7 +27,7 @@ The C# namespace is always path-derived: `rootNs` + PascalCased output-dir segme
 | `MyApp`          | _(not set)_                  | `src/api`                | `MyApp.Src.Api`                  |
 | _(omitted, TypeSpec ns = `Demo`)_ | _(not set)_   | `Controllers` (default)  | `Demo.Controllers`               |
 
-When `namespace-from-path` is `false`, controllers and services use the TypeSpec namespace of their operation container instead.
+When `namespace-from-path` is `false`, controllers, services, and validators use the TypeSpec namespace of their operation container instead.
 
 ## Per-section root namespace overrides
 
