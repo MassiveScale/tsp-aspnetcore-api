@@ -7,7 +7,7 @@ When `emit-validators: true`, the emitter generates [FluentValidation](https://d
 | File                         | Content                                                                                 |
 | ---------------------------- | --------------------------------------------------------------------------------------- |
 | `{Model}Validator.g.cs`      | `AbstractValidator<{Model}>` with rules for POST bodies.                                |
-| `{Model}PatchValidator.g.cs` | Patch-aware `AbstractValidator<{Model}Patch>` whose rules fire only when the corresponding property is present in the patch. |
+| `{Model}PatchValidator.g.cs` | Patch-aware `AbstractValidator<{Model}MergePatchUpdate>` whose rules fire only when the corresponding property is present in the patch body. |
 | `ValidatorsInitializer.g.cs` | Static `AddGeneratedValidators(this IServiceCollection)` extension method for DI setup. |
 
 ## Setup
