@@ -63,8 +63,7 @@
       {{type}} {{name}} { get; set; }
 --}}
 {{#if doc}}{{doc}}
-{{/if}}[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial interface {{interfaceName}}{{baseClause}}
+{{/if}}public partial interface {{interfaceName}}{{baseClause}}
 {
 {{#each properties}}{{#if doc}}{{indent doc}}
 {{/if}}    [JsonPropertyName("{{jsonName}}")]
