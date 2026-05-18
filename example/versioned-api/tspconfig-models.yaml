@@ -7,4 +7,3 @@ options:
     emit-validators: false
     emit-controllers: false
     emit-services: false
-    
