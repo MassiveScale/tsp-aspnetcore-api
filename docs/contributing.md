@@ -10,13 +10,13 @@ npm test        # builds first, then runs node --test on dist/
 
 ## Commands
 
-| Command              | Description                                                  |
-| -------------------- | ------------------------------------------------------------ |
-| `npm run build`      | Compile TypeScript and copy Handlebars templates to `dist/`. |
-| `npm test`           | Build then run all end-to-end tests via `node --test`.       |
-| `npm run test:vscode`| VS Code-friendly test entrypoint (`test/*.test.mjs`).        |
-| `npm run format`     | Format source files with Prettier.                           |
-| `npm run lint`       | Lint source files with ESLint.                               |
+| Command               | Description                                                  |
+| --------------------- | ------------------------------------------------------------ |
+| `npm run build`       | Compile TypeScript and copy Handlebars templates to `dist/`. |
+| `npm test`            | Build then run all end-to-end tests via `node --test`.       |
+| `npm run test:vscode` | VS Code-friendly test entrypoint (`test/*.test.mjs`).        |
+| `npm run format`      | Format source files with Prettier.                           |
+| `npm run lint`        | Lint source files with ESLint.                               |
 
 ## VS Code testing
 

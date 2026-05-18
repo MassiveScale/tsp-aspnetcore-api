@@ -102,6 +102,7 @@
 --}}
 {{#if doc}}{{doc}}
 {{/if}}[ApiController]
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public abstract class {{controllerName}} : ControllerBase
 {
 {{#each operations}}{{#if doc}}{{indent doc}}

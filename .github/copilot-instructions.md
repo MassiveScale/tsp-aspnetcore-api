@@ -11,17 +11,17 @@ validators, and helper types from TypeSpec definitions.
 
 ## Architecture
 
-| File / directory | Role |
-|---|---|
-| `src/lib.ts` | `EmitterOptions` interface + `EmitterOptionsSchema` (JSON Schema) + `$lib` registration |
-| `src/emitter.ts` | `$onEmit` entrypoint; `resolveOptions`; `ResolvedOptions`; model / enum / interface / validator emit |
-| `src/controllers.ts` | Controller and service interface collection and emit |
-| `src/renderer.ts` | Handlebars setup; `TemplateName` union; `TemplateOverrides` type; `createRenderer` |
-| `src/utils.ts` | `SCALAR_MAP`, `FORMAT_MAP`, `pascalCase`, `camelCase` — shared utilities |
-| `src/templates/*.hbs` | Handlebars templates for every generated C# artifact |
-| `test/aspnetcore.api.test.ts` | End-to-end tests (TypeScript source, compiled to `dist/test/`) |
-| `test/host.ts` | `emit()` and `emitWithDiagnostics()` test helpers |
-| `docs/` | Per-topic documentation linked from README |
+| File / directory              | Role                                                                                                 |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `src/lib.ts`                  | `EmitterOptions` interface + `EmitterOptionsSchema` (JSON Schema) + `$lib` registration              |
+| `src/emitter.ts`              | `$onEmit` entrypoint; `resolveOptions`; `ResolvedOptions`; model / enum / interface / validator emit |
+| `src/controllers.ts`          | Controller and service interface collection and emit                                                 |
+| `src/renderer.ts`             | Handlebars setup; `TemplateName` union; `TemplateOverrides` type; `createRenderer`                   |
+| `src/utils.ts`                | `SCALAR_MAP`, `FORMAT_MAP`, `pascalCase`, `camelCase` — shared utilities                             |
+| `src/templates/*.hbs`         | Handlebars templates for every generated C# artifact                                                 |
+| `test/aspnetcore.api.test.ts` | End-to-end tests (TypeScript source, compiled to `dist/test/`)                                       |
+| `test/host.ts`                | `emit()` and `emitWithDiagnostics()` test helpers                                                    |
+| `docs/`                       | Per-topic documentation linked from README                                                           |
 
 ---
 

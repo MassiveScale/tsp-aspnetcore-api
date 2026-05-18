@@ -47,6 +47,7 @@
 /// <summary>
 /// Creates <see cref="EnumMemberConverter{T}"/> instances for any enum type at runtime.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public sealed class EnumMemberConverterFactory : JsonConverterFactory
 {
     /// <inheritdoc />
@@ -66,6 +67,7 @@ public sealed class EnumMemberConverterFactory : JsonConverterFactory
 /// Deserialization is case-insensitive.
 /// </summary>
 /// <typeparam name="T">The enum type to convert.</typeparam>
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public sealed class EnumMemberConverter<T> : JsonConverter<T> where T : struct, Enum
 {
     /// <summary>

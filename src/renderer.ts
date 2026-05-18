@@ -15,7 +15,10 @@ import { fileURLToPath } from "node:url";
 import Handlebars from "handlebars";
 
 /** Absolute path to the bundled default templates directory. */
-const TEMPLATES_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../templates");
+const TEMPLATES_DIR = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../templates",
+);
 
 /**
  * Names of the built-in Handlebars templates.
@@ -255,7 +258,11 @@ export interface Renderer {
  */
 export function renderDocComment(doc: string): string {
   const lines = doc.split(/\r?\n/);
-  return ["/// <summary>", ...lines.map((l) => `/// ${l}`), "/// </summary>"].join("\n");
+  return [
+    "/// <summary>",
+    ...lines.map((l) => `/// ${l}`),
+    "/// </summary>",
+  ].join("\n");
 }
 
 /**
@@ -308,7 +315,10 @@ function createHandlebarsEnv(): typeof Handlebars {
  * @param source - Raw template source.
  * @returns Compiled template delegate.
  */
-function compileTemplate(env: typeof Handlebars, source: string): HandlebarsTemplateDelegate {
+function compileTemplate(
+  env: typeof Handlebars,
+  source: string,
+): HandlebarsTemplateDelegate {
   return env.compile(source, { noEscape: true });
 }
 
@@ -347,7 +357,8 @@ function classPropertyText(prop: PropertyView): string {
   const parts: string[] = [];
   if (prop.doc) parts.push(prop.doc);
   parts.push(`[JsonPropertyName("${prop.jsonName}")]`);
-  if (prop.nullable) parts.push(`[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`);
+  if (prop.nullable)
+    parts.push(`[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`);
   parts.push(`public ${prop.type} ${prop.name} { get; set; }`);
   return parts.join("\n");
 }
@@ -363,7 +374,8 @@ function interfacePropertyText(prop: PropertyView): string {
   const parts: string[] = [];
   if (prop.doc) parts.push(prop.doc);
   parts.push(`[JsonPropertyName("${prop.jsonName}")]`);
-  if (prop.nullable) parts.push(`[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`);
+  if (prop.nullable)
+    parts.push(`[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`);
   parts.push(`${prop.type} ${prop.name} { get; set; }`);
   return parts.join("\n");
 }
@@ -387,7 +399,8 @@ function enumMemberText(member: EnumMemberView, isLast: boolean): string {
   const parts: string[] = [];
   if (member.doc) parts.push(member.doc);
   parts.push(`[EnumMember(Value = "${member.memberValue}")]`);
-  const numericValue = typeof member.value === "number" ? ` = ${member.value}` : "";
+  const numericValue =
+    typeof member.value === "number" ? ` = ${member.value}` : "";
   parts.push(`${member.name}${numericValue}${isLast ? "" : ","}`);
   return parts.join("\n");
 }
@@ -418,7 +431,9 @@ function controllerActionBlock(op: OperationView): string {
     lines.push(`    [Http${op.httpVerb}("${route}")]`);
   }
   const paramList = op.params.map(operationParamDecl).join(", ");
-  lines.push(`    public abstract Task<IActionResult> ${op.name}(${paramList});`);
+  lines.push(
+    `    public abstract Task<IActionResult> ${op.name}(${paramList});`,
+  );
   return lines.join("\n");
 }
 
@@ -435,8 +450,11 @@ function controllerActionBlock(op: OperationView): string {
 function serviceMethodDecl(op: OperationView): string {
   const lines: string[] = [];
   if (op.doc) lines.push(...op.doc.split("\n").map((l) => `    ${l}`));
-  const paramList = op.params.map((p) => `${p.optional ? `${p.type}?` : p.type} ${p.name}`).join(", ");
-  const returnDecl = op.returnType === "void" ? "Task" : `Task<${op.returnType}?>`;
+  const paramList = op.params
+    .map((p) => `${p.optional ? `${p.type}?` : p.type} ${p.name}`)
+    .join(", ");
+  const returnDecl =
+    op.returnType === "void" ? "Task" : `Task<${op.returnType}?>`;
   lines.push(`    ${returnDecl} ${op.name}Async(${paramList});`);
   return lines.join("\n");
 }
@@ -462,7 +480,11 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
   const classTemplate = loadTemplate(env, "class", overrides.class);
   const interfaceTemplate = loadTemplate(env, "interface", overrides.interface);
   const enumTemplate = loadTemplate(env, "enum", overrides.enum);
-  const controllerTemplate = loadTemplate(env, "controller", overrides.controller);
+  const controllerTemplate = loadTemplate(
+    env,
+    "controller",
+    overrides.controller,
+  );
   const serviceInterfaceTemplate = loadTemplate(
     env,
     "service-interface",
@@ -484,7 +506,9 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
       return fileTemplate(view);
     },
     renderClass(view) {
-      const bases = [view.baseClass, view.interfaceName].filter(Boolean) as string[];
+      const bases = [view.baseClass, view.interfaceName].filter(
+        Boolean,
+      ) as string[];
       return classTemplate({
         ...view,
         bases: bases.join(", "),
@@ -495,14 +519,18 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
       return interfaceTemplate({
         ...view,
         baseClause: view.baseInterface ? ` : ${view.baseInterface}` : "",
-        propertiesBlock: view.properties.map(interfacePropertyText).join("\n\n"),
+        propertiesBlock: view.properties
+          .map(interfacePropertyText)
+          .join("\n\n"),
       });
     },
     renderEnum(view) {
       const last = view.members.length - 1;
       return enumTemplate({
         ...view,
-        membersBlock: view.members.map((m, i) => enumMemberText(m, i === last)).join("\n"),
+        membersBlock: view.members
+          .map((m, i) => enumMemberText(m, i === last))
+          .join("\n"),
       });
     },
     renderController(view) {

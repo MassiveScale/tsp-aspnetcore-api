@@ -20,12 +20,12 @@ When a model's namespace does not start with `root-namespace`, the file is place
 
 The C# namespace is always path-derived: `rootNs` + PascalCased output-dir segments, where `rootNs` is the section-specific root (`controllers-root-namespace`, `services-root-namespace`, or `validators-root-namespace`) when set, otherwise the explicit `root-namespace`, otherwise the namespace inferred from the TypeSpec namespace tree. Helpers have no dedicated root override and always use the global root.
 
-| `root-namespace` | `controllers-root-namespace` | `controllers-output-dir` | C# namespace                     |
-| ---------------- | ---------------------------- | ------------------------ | -------------------------------- |
-| `MyApp`          | _(not set)_                  | `Controllers` (default)  | `MyApp.Controllers`              |
-| `MyApp`          | `MyCompany.Platform`         | `Controllers` (default)  | `MyCompany.Platform.Controllers` |
-| `MyApp`          | _(not set)_                  | `src/api`                | `MyApp.Src.Api`                  |
-| _(omitted, TypeSpec ns = `Demo`)_ | _(not set)_   | `Controllers` (default)  | `Demo.Controllers`               |
+| `root-namespace`                  | `controllers-root-namespace` | `controllers-output-dir` | C# namespace                     |
+| --------------------------------- | ---------------------------- | ------------------------ | -------------------------------- |
+| `MyApp`                           | _(not set)_                  | `Controllers` (default)  | `MyApp.Controllers`              |
+| `MyApp`                           | `MyCompany.Platform`         | `Controllers` (default)  | `MyCompany.Platform.Controllers` |
+| `MyApp`                           | _(not set)_                  | `src/api`                | `MyApp.Src.Api`                  |
+| _(omitted, TypeSpec ns = `Demo`)_ | _(not set)_                  | `Controllers` (default)  | `Demo.Controllers`               |
 
 When `namespace-from-path` is `false`, controllers, services, and validators use the TypeSpec namespace of their operation container instead.
 
