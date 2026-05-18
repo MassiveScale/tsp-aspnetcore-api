@@ -50,6 +50,7 @@
 /// </summary>
 /// <typeparam name="T">The type of the wrapped value.</typeparam>
 [JsonConverter(typeof(MergePatchValueJsonConverterFactory))]
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public sealed class MergePatchValue<T>
 {
     /// <summary>Initializes a new instance with the given value and presence flag.</summary>
@@ -93,6 +94,7 @@ public sealed class MergePatchValue<T>
 /// Creates <see cref="MergePatchValueJsonConverter{T}"/> instances for any closed
 /// <see cref="MergePatchValue{T}"/> type at runtime.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 internal sealed class MergePatchValueJsonConverterFactory : JsonConverterFactory
 {
     /// <inheritdoc/>
@@ -114,6 +116,7 @@ internal sealed class MergePatchValueJsonConverterFactory : JsonConverterFactory
 /// Absent fields are never written; present fields (including explicit <see langword="null"/>) are written normally.
 /// </summary>
 /// <typeparam name="T">The type of the wrapped value.</typeparam>
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 internal sealed class MergePatchValueJsonConverter<T> : JsonConverter<MergePatchValue<T>>
 {
     /// <inheritdoc/>
