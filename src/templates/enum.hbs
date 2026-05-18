@@ -57,7 +57,7 @@
       EnumMemberConverter<T>'s static constructor.
 --}}
 {{#if doc}}{{doc}}
-{{/if}}[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+{{/if}}[JsonConverter(typeof(EnumMemberConverterFactory))]
 public enum {{enumName}}
 {
 {{indent membersBlock}}
