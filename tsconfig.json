@@ -4,9 +4,7 @@
     "useDefineForClassFields": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": [
-      "ES2022"
-    ],
+    "lib": ["ES2022"],
     "rootDir": ".",
     "outDir": "dist",
     "sourceMap": true,
@@ -15,7 +13,5 @@
     /* Linting */
     "strict": true
   },
-  "include": [
-    "src"
-  ]
+  "include": ["src"]
 }

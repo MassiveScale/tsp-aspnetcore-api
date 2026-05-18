@@ -80,7 +80,8 @@
       public {{type}} {{name}} { get; set; }
 --}}
 {{#if doc}}{{doc}}
-{{/if}}public partial class {{className}} : {{bases}}
+{{/if}}[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+public partial class {{className}} : {{bases}}
 {
 {{#each properties}}{{#if doc}}{{indent doc}}
 {{/if}}    [JsonPropertyName("{{jsonName}}")]

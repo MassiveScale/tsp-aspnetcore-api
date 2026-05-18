@@ -90,7 +90,6 @@ All notable changes to this project will be documented in this file.
 - Service interface and controller files now include any `additional-usings` specified in the emitter configuration.
 - When `namespace-from-path` is true (the default), output directory paths are now always included in namespaces, even for default directories. This ensures consistent path-based namespace derivation across all generated file types.
 
-
 ### Added
 
 - Added regression tests for:

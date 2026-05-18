@@ -25,7 +25,9 @@ describe("csharp emitter", () => {
       ok(results["Address.g.cs"], "expected Address.cs at root");
       // Helpers are always emitted to a Helpers/ subdir — exclude them from the
       // flat-layout check, which only concerns model and interface files.
-      const nonHelperKeys = Object.keys(results).filter((k) => !k.startsWith("Helpers/"));
+      const nonHelperKeys = Object.keys(results).filter(
+        (k) => !k.startsWith("Helpers/"),
+      );
       ok(
         nonHelperKeys.every((k) => k.startsWith("Models/")),
         "expected model/interface files under Models/",
@@ -61,7 +63,10 @@ describe("csharp emitter", () => {
       );
 
       const file = results["Models/User.g.cs"];
-      ok(file, `expected Models/User.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file,
+        `expected Models/User.cs, got ${Object.keys(results).join(", ")}`,
+      );
       ok(file.includes("namespace App.Users.Models"));
     });
 
@@ -113,7 +118,10 @@ describe("csharp emitter", () => {
       );
 
       const file = results["Models/User.g.cs"];
-      ok(file, `expected Models/User.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file,
+        `expected Models/User.cs, got ${Object.keys(results).join(", ")}`,
+      );
       ok(file.includes("namespace App.Api.V1.Users.Models"));
     });
   });
@@ -202,7 +210,9 @@ describe("csharp emitter", () => {
 
       const file = results["Bag.g.cs"];
       ok(file.includes("public IList<string>? Tags { get; set; }"));
-      ok(file.includes("public IDictionary<string, int>? Scores { get; set; }"));
+      ok(
+        file.includes("public IDictionary<string, int>? Scores { get; set; }"),
+      );
     });
 
     it("emits MergePatchUpdate properties as MergePatchValue wrappers", async () => {
@@ -224,21 +234,54 @@ describe("csharp emitter", () => {
       const file =
         results["WidgetMergePatchUpdate.g.cs"] ??
         results["Models/WidgetMergePatchUpdate.g.cs"];
-      ok(file, `expected WidgetMergePatchUpdate.g.cs, got ${Object.keys(results).join(", ")}`);
-      ok(file.includes("using Demo.Helpers;"), `expected helper namespace using in:\n${file}`);
-      ok(file.includes("public MergePatchValue<string?> Id { get; set; } = MergePatchValue<string?>.Absent;"), `expected wrapped id property in:\n${file}`);
-      ok(file.includes("public MergePatchValue<int?> Weight { get; set; } = MergePatchValue<int?>.Absent;"), `expected wrapped weight property in:\n${file}`);
-      ok(file.includes("public MergePatchValue<string?> Color { get; set; } = MergePatchValue<string?>.Absent;"), `expected wrapped color property in:\n${file}`);
+      ok(
+        file,
+        `expected WidgetMergePatchUpdate.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        file.includes("using Demo.Helpers;"),
+        `expected helper namespace using in:\n${file}`,
+      );
+      ok(
+        file.includes(
+          "public MergePatchValue<string?> Id { get; set; } = MergePatchValue<string?>.Absent;",
+        ),
+        `expected wrapped id property in:\n${file}`,
+      );
+      ok(
+        file.includes(
+          "public MergePatchValue<int?> Weight { get; set; } = MergePatchValue<int?>.Absent;",
+        ),
+        `expected wrapped weight property in:\n${file}`,
+      );
+      ok(
+        file.includes(
+          "public MergePatchValue<string?> Color { get; set; } = MergePatchValue<string?>.Absent;",
+        ),
+        `expected wrapped color property in:\n${file}`,
+      );
 
       const iface =
         results["IWidgetMergePatchUpdate.g.cs"] ??
         results["Interfaces/IWidgetMergePatchUpdate.g.cs"];
-      ok(iface, `expected IWidgetMergePatchUpdate.g.cs, got ${Object.keys(results).join(", ")}`);
-      ok(iface.includes("using Demo.Helpers;"), `expected helper namespace using in interface:\n${iface}`);
-      ok(iface.includes("MergePatchValue<string?> Id { get; set; }"), `expected wrapped id in interface:\n${iface}`);
+      ok(
+        iface,
+        `expected IWidgetMergePatchUpdate.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        iface.includes("using Demo.Helpers;"),
+        `expected helper namespace using in interface:\n${iface}`,
+      );
+      ok(
+        iface.includes("MergePatchValue<string?> Id { get; set; }"),
+        `expected wrapped id in interface:\n${iface}`,
+      );
 
       const helper = results["Helpers/MergePatchValue.g.cs"];
-      ok(helper, "expected MergePatchValue helper when MergePatchUpdate model is emitted");
+      ok(
+        helper,
+        "expected MergePatchValue helper when MergePatchUpdate model is emitted",
+      );
     });
 
     it("resolves inferred enum types in versioned models and merge patch models", async () => {
@@ -265,26 +308,54 @@ describe("csharp emitter", () => {
       `);
 
       const widget = results["Models/Widget.g.cs"];
-      ok(widget, `expected Models/Widget.g.cs, got ${Object.keys(results).join(", ")}`);
-      ok(widget.includes("public WidgetColor? Color { get; set; }"), `expected WidgetColor in:\n${widget}`);
-      ok(!widget.includes("public object? Color { get; set; }"), `did not expect object for Color in:\n${widget}`);
+      ok(
+        widget,
+        `expected Models/Widget.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        widget.includes("public WidgetColor? Color { get; set; }"),
+        `expected WidgetColor in:\n${widget}`,
+      );
+      ok(
+        !widget.includes("public object? Color { get; set; }"),
+        `did not expect object for Color in:\n${widget}`,
+      );
 
       const mergePatch = results["Models/WidgetMergePatchUpdate.g.cs"];
-      ok(mergePatch, `expected Models/WidgetMergePatchUpdate.g.cs, got ${Object.keys(results).join(", ")}`);
       ok(
-        mergePatch.includes("public MergePatchValue<WidgetColor?> Color { get; set; } = MergePatchValue<WidgetColor?>.Absent;"),
+        mergePatch,
+        `expected Models/WidgetMergePatchUpdate.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        mergePatch.includes(
+          "public MergePatchValue<WidgetColor?> Color { get; set; } = MergePatchValue<WidgetColor?>.Absent;",
+        ),
         `expected MergePatchValue<WidgetColor?> in:\n${mergePatch}`,
       );
       ok(
-        !mergePatch.includes("public MergePatchValue<object?> Color { get; set; } = MergePatchValue<object?>.Absent;"),
+        !mergePatch.includes(
+          "public MergePatchValue<object?> Color { get; set; } = MergePatchValue<object?>.Absent;",
+        ),
         `did not expect MergePatchValue<object?> in:\n${mergePatch}`,
       );
 
       const inferredEnum = results["Models/WidgetColor.g.cs"];
-      ok(inferredEnum, `expected inferred enum Models/WidgetColor.g.cs, got ${Object.keys(results).join(", ")}`);
-      ok(inferredEnum.includes("public enum WidgetColor"), `expected WidgetColor enum in:\n${inferredEnum}`);
-      ok(inferredEnum.includes('EnumMember(Value = "red")'), `expected red member value in:\n${inferredEnum}`);
-      ok(inferredEnum.includes('EnumMember(Value = "blue")'), `expected blue member value in:\n${inferredEnum}`);
+      ok(
+        inferredEnum,
+        `expected inferred enum Models/WidgetColor.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        inferredEnum.includes("public enum WidgetColor"),
+        `expected WidgetColor enum in:\n${inferredEnum}`,
+      );
+      ok(
+        inferredEnum.includes('EnumMember(Value = "red")'),
+        `expected red member value in:\n${inferredEnum}`,
+      );
+      ok(
+        inferredEnum.includes('EnumMember(Value = "blue")'),
+        `expected blue member value in:\n${inferredEnum}`,
+      );
     });
 
     it("emits enums with numeric values", async () => {
@@ -405,8 +476,12 @@ describe("csharp emitter", () => {
         model Pagination { pageSize: int32 = 20; }
       `);
 
-      const file = results["Pagination.g.cs"] ?? results["Models/Pagination.g.cs"];
-      ok(file, `expected Pagination.g.cs, got ${Object.keys(results).join(", ")}`);
+      const file =
+        results["Pagination.g.cs"] ?? results["Models/Pagination.g.cs"];
+      ok(
+        file,
+        `expected Pagination.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
       ok(
         file.includes("public int? PageSize { get; set; } = 20;"),
         `expected numeric default initializer in:\n${file}`,
@@ -462,7 +537,10 @@ describe("csharp emitter", () => {
       `);
       const file = results["User.g.cs"];
       ok(file.includes("namespace App.Users.Models"));
-      ok(file.includes("using App.Common.Models;"), `expected using App.Common.Models; in:\n${file}`);
+      ok(
+        file.includes("using App.Common.Models;"),
+        `expected using App.Common.Models; in:\n${file}`,
+      );
       ok(file.includes("public Address? Home { get; set; }"));
     });
 
@@ -479,7 +557,11 @@ describe("csharp emitter", () => {
       const file = results["User.g.cs"];
       ok(file.includes("using App.Common.Models;"));
       ok(file.includes("public IList<Tag>? Tags { get; set; }"));
-      ok(file.includes("public IDictionary<string, Tag>? ScoresByTag { get; set; }"));
+      ok(
+        file.includes(
+          "public IDictionary<string, Tag>? ScoresByTag { get; set; }",
+        ),
+      );
     });
 
     it("adds a using for a base model in another namespace", async () => {
@@ -504,7 +586,10 @@ describe("csharp emitter", () => {
       );
       const file = results["Widget.g.cs"];
       ok(file, `expected Widget.cs, got ${Object.keys(results).join(", ")}`);
-      ok(file.includes("namespace Acme.Things"), `wrong namespace in:\n${file}`);
+      ok(
+        file.includes("namespace Acme.Things"),
+        `wrong namespace in:\n${file}`,
+      );
     });
 
     it("applies the mapping as a prefix replacement to nested namespaces", async () => {
@@ -516,7 +601,10 @@ describe("csharp emitter", () => {
         { "namespace-map": { "Foo.Bar": "Acme.Things" } },
       );
       const file = results["Widget.g.cs"];
-      ok(file.includes("namespace Acme.Things.Sub"), `wrong namespace in:\n${file}`);
+      ok(
+        file.includes("namespace Acme.Things.Sub"),
+        `wrong namespace in:\n${file}`,
+      );
     });
 
     it("uses the longest matching key when multiple mappings could apply", async () => {
@@ -566,7 +654,10 @@ describe("csharp emitter", () => {
         },
       );
       const file = results["Models/Address.g.cs"];
-      ok(file, `expected Models/Address.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file,
+        `expected Models/Address.cs, got ${Object.keys(results).join(", ")}`,
+      );
       ok(file.includes("namespace Acme.Common.Models"));
     });
 
@@ -579,7 +670,10 @@ describe("csharp emitter", () => {
         { "namespace-map": { "Legacy.Common": "App.Users" } },
       );
       const file = results["User.g.cs"];
-      ok(!file.includes("using App.Users;"), `unexpected self-using in:\n${file}`);
+      ok(
+        !file.includes("using App.Users;"),
+        `unexpected self-using in:\n${file}`,
+      );
       ok(file.includes("public Address? Home { get; set; }"));
     });
   });
@@ -602,7 +696,10 @@ describe("csharp emitter", () => {
       ok(iface.includes("public partial interface IUser"));
       ok(iface.includes("string? Id { get; set; }"));
       ok(iface.includes("string? Name { get; set; }"));
-      ok(!iface.includes("public string"), "interface members should not have access modifiers");
+      ok(
+        !iface.includes("public string"),
+        "interface members should not have access modifiers",
+      );
     });
 
     it("includes the interface alongside the base class on extends", async () => {
@@ -651,9 +748,18 @@ describe("csharp emitter", () => {
         { "models-output-dir": "models" },
       );
 
-      ok(results["models/User.g.cs"], `expected models/User.cs, got ${Object.keys(results).join(", ")}`);
-      ok(results["Models/IUser.g.cs"], "interface should still be at default Models output dir");
-      ok(!results["User.g.cs"], "class should not be at default location when override is set");
+      ok(
+        results["models/User.g.cs"],
+        `expected models/User.cs, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        results["Models/IUser.g.cs"],
+        "interface should still be at default Models output dir",
+      );
+      ok(
+        !results["User.g.cs"],
+        "class should not be at default location when override is set",
+      );
     });
 
     it("routes interface files into interfaces-output-dir", async () => {
@@ -665,9 +771,15 @@ describe("csharp emitter", () => {
         { "interfaces-output-dir": "interfaces" },
       );
 
-      ok(results["User.g.cs"], "class should still be at default emitter-output-dir");
+      ok(
+        results["User.g.cs"],
+        "class should still be at default emitter-output-dir",
+      );
       ok(results["interfaces/IUser.g.cs"]);
-      ok(!results["IUser.g.cs"], "interface should not be at default location when override is set");
+      ok(
+        !results["IUser.g.cs"],
+        "interface should not be at default location when override is set",
+      );
     });
 
     it("routes both when both overrides are provided", async () => {
@@ -701,10 +813,20 @@ describe("csharp emitter", () => {
 
       // Files are flat under each output dir; the dir segment is appended to
       // the TypeSpec namespace.
-      ok(results["models/User.g.cs"], `expected flat models/User.g.cs, got ${Object.keys(results).join(", ")}`);
-      ok(results["interfaces/IUser.g.cs"], "expected flat interfaces/IUser.g.cs");
+      ok(
+        results["models/User.g.cs"],
+        `expected flat models/User.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        results["interfaces/IUser.g.cs"],
+        "expected flat interfaces/IUser.g.cs",
+      );
       ok(results["models/User.g.cs"].includes("namespace App.Users.Models"));
-      ok(results["interfaces/IUser.g.cs"].includes("namespace App.Users.Interfaces"));
+      ok(
+        results["interfaces/IUser.g.cs"].includes(
+          "namespace App.Users.Interfaces",
+        ),
+      );
     });
 
     it("uses subfolder layout (not dir-suffix) when namespace-from-path is disabled", async () => {
@@ -721,7 +843,10 @@ describe("csharp emitter", () => {
         },
       );
 
-      ok(results["models/Users/User.g.cs"], `expected models/Users/User.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        results["models/Users/User.g.cs"],
+        `expected models/Users/User.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
       ok(results["interfaces/Users/IUser.g.cs"]);
     });
 
@@ -753,8 +878,14 @@ describe("csharp emitter", () => {
       for (const key of ["User.g.cs", "IUser.g.cs", "Color.g.cs"]) {
         const file = results[key];
         ok(file, `expected ${key}`);
-        ok(file.includes("using System.Text.Json;"), `missing System.Text.Json in ${key}`);
-        ok(file.includes("using Newtonsoft.Json;"), `missing Newtonsoft.Json in ${key}`);
+        ok(
+          file.includes("using System.Text.Json;"),
+          `missing System.Text.Json in ${key}`,
+        );
+        ok(
+          file.includes("using Newtonsoft.Json;"),
+          `missing Newtonsoft.Json in ${key}`,
+        );
       }
     });
 
@@ -773,7 +904,10 @@ describe("csharp emitter", () => {
       const newtonIdx = file.indexOf("using Newtonsoft.Json;");
       ok(sysIdx >= 0 && sysJsonIdx >= 0 && newtonIdx >= 0);
       ok(sysIdx < newtonIdx, "System should come before Newtonsoft");
-      ok(sysJsonIdx < newtonIdx, "System.Text.Json should come before Newtonsoft");
+      ok(
+        sysJsonIdx < newtonIdx,
+        "System.Text.Json should come before Newtonsoft",
+      );
     });
 
     it("does not duplicate a using already implied by a cross-namespace reference", async () => {
@@ -786,7 +920,11 @@ describe("csharp emitter", () => {
       );
       const file = results["User.g.cs"];
       const occurrences = file.split("using App.Common;").length - 1;
-      strictEqual(occurrences, 1, `expected exactly one 'using App.Common;' in:\n${file}`);
+      strictEqual(
+        occurrences,
+        1,
+        `expected exactly one 'using App.Common;' in:\n${file}`,
+      );
     });
   });
 
@@ -868,8 +1006,14 @@ describe("csharp emitter", () => {
         model M { firstName: string; userId: string; }
       `);
       const cls = results["M.g.cs"];
-      ok(cls.includes('[JsonPropertyName("firstName")]'), `missing firstName attr in:\n${cls}`);
-      ok(cls.includes('[JsonPropertyName("userId")]'), `missing userId attr in:\n${cls}`);
+      ok(
+        cls.includes('[JsonPropertyName("firstName")]'),
+        `missing firstName attr in:\n${cls}`,
+      );
+      ok(
+        cls.includes('[JsonPropertyName("userId")]'),
+        `missing userId attr in:\n${cls}`,
+      );
     });
 
     it("converts snake_case property names to camelCase JSON keys", async () => {
@@ -878,8 +1022,14 @@ describe("csharp emitter", () => {
         model M { first_name: string; user_id: string; }
       `);
       const cls = results["M.g.cs"];
-      ok(cls.includes('[JsonPropertyName("firstName")]'), `missing firstName attr in:\n${cls}`);
-      ok(cls.includes('[JsonPropertyName("userId")]'), `missing userId attr in:\n${cls}`);
+      ok(
+        cls.includes('[JsonPropertyName("firstName")]'),
+        `missing firstName attr in:\n${cls}`,
+      );
+      ok(
+        cls.includes('[JsonPropertyName("userId")]'),
+        `missing userId attr in:\n${cls}`,
+      );
     });
 
     it("adds [JsonIgnore] to nullable properties but not non-nullable", async () => {
@@ -891,7 +1041,12 @@ describe("csharp emitter", () => {
         { "nullable-properties": false },
       );
       const cls = results["M.g.cs"];
-      ok(cls.includes('[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]'), `missing JsonIgnore in:\n${cls}`);
+      ok(
+        cls.includes(
+          "[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]",
+        ),
+        `missing JsonIgnore in:\n${cls}`,
+      );
       // Count occurrences: only the nullable optional property should have it
       const count = (cls.match(/\[JsonIgnore\(/g) ?? []).length;
       strictEqual(count, 1, `expected 1 JsonIgnore, got ${count} in:\n${cls}`);
@@ -903,8 +1058,16 @@ describe("csharp emitter", () => {
         model M { name: string; }
       `);
       const iface = results["IM.g.cs"];
-      ok(iface.includes('[JsonPropertyName("name")]'), `missing JsonPropertyName in:\n${iface}`);
-      ok(iface.includes('[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]'), `missing JsonIgnore in:\n${iface}`);
+      ok(
+        iface.includes('[JsonPropertyName("name")]'),
+        `missing JsonPropertyName in:\n${iface}`,
+      );
+      ok(
+        iface.includes(
+          "[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]",
+        ),
+        `missing JsonIgnore in:\n${iface}`,
+      );
     });
 
     it("adds [JsonConverter(typeof(EnumMemberConverterFactory))] to enums", async () => {
@@ -913,7 +1076,10 @@ describe("csharp emitter", () => {
         enum Color { Red, Green, Blue }
       `);
       const file = results["Color.g.cs"];
-      ok(file.includes("[JsonConverter(typeof(EnumMemberConverterFactory))]"), `missing converter in:\n${file}`);
+      ok(
+        file.includes("[JsonConverter(typeof(EnumMemberConverterFactory))]"),
+        `missing converter in:\n${file}`,
+      );
     });
 
     it("includes using System.Text.Json.Serialization in model files", async () => {
@@ -924,7 +1090,11 @@ describe("csharp emitter", () => {
       `);
       ok(results["M.g.cs"].includes("using System.Text.Json.Serialization;"));
       ok(results["IM.g.cs"].includes("using System.Text.Json.Serialization;"));
-      ok(results["Status.g.cs"].includes("using System.Text.Json.Serialization;"));
+      ok(
+        results["Status.g.cs"].includes(
+          "using System.Text.Json.Serialization;",
+        ),
+      );
     });
   });
 
@@ -976,8 +1146,14 @@ public partial class {{className}} : {{bases}}
 
       const iface = results["IUser.g.cs"];
       ok(iface.includes("public partial interface IUser"));
-      ok(iface.includes("string? Id { get; }"), `expected get-only prop in:\n${iface}`);
-      ok(!iface.includes("set;"), `interface should not contain setters in:\n${iface}`);
+      ok(
+        iface.includes("string? Id { get; }"),
+        `expected get-only prop in:\n${iface}`,
+      );
+      ok(
+        !iface.includes("set;"),
+        `interface should not contain setters in:\n${iface}`,
+      );
     });
 
     it("uses a custom enum template when provided", async () => {
@@ -1024,7 +1200,10 @@ namespace {{namespace}}
       );
 
       const file = results["User.g.cs"];
-      ok(file.startsWith("// CUSTOM HEADER"), `expected custom header in:\n${file}`);
+      ok(
+        file.startsWith("// CUSTOM HEADER"),
+        `expected custom header in:\n${file}`,
+      );
       ok(!file.includes("// <auto-generated/>"));
       ok(file.includes("namespace Demo"));
       ok(file.includes("public partial class User"));
@@ -1061,10 +1240,17 @@ namespace {{namespace}}
       );
 
       const failure = diagnostics.find(
-        (d) => d.code === "@massivescale/tsp-aspnetcore-api/template-load-failed",
+        (d) =>
+          d.code === "@massivescale/tsp-aspnetcore-api/template-load-failed",
       );
-      ok(failure, `expected template-load-failed diagnostic, got: ${JSON.stringify(diagnostics)}`);
-      ok(failure.message.includes("class"), `diagnostic should name template: ${failure.message}`);
+      ok(
+        failure,
+        `expected template-load-failed diagnostic, got: ${JSON.stringify(diagnostics)}`,
+      );
+      ok(
+        failure.message.includes("class"),
+        `diagnostic should name template: ${failure.message}`,
+      );
     });
   });
 
@@ -1087,8 +1273,14 @@ namespace {{namespace}}
         }
       `);
 
-      ok(results["Controllers/UsersControllerBase.g.cs"], "expected Controllers/UsersControllerBase.g.cs");
-      ok(results["Services/IUsersService.g.cs"], "expected Services/IUsersService.g.cs");
+      ok(
+        results["Controllers/UsersControllerBase.g.cs"],
+        "expected Controllers/UsersControllerBase.g.cs",
+      );
+      ok(
+        results["Services/IUsersService.g.cs"],
+        "expected Services/IUsersService.g.cs",
+      );
     });
 
     it("controller has ApiController and ControllerBase; route is on each method", async () => {
@@ -1108,11 +1300,26 @@ namespace {{namespace}}
       `);
 
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
-      ok(!ctrl.includes("[Route("), `class-level [Route] should not be present:\n${ctrl}`);
-      ok(ctrl.includes('[HttpGet("/api/items")]'), `expected method-level route in:\n${ctrl}`);
-      ok(ctrl.includes("[ApiController]"), `expected [ApiController] in:\n${ctrl}`);
-      ok(ctrl.includes("ControllerBase"), `expected ControllerBase in:\n${ctrl}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        !ctrl.includes("[Route("),
+        `class-level [Route] should not be present:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes('[HttpGet("/api/items")]'),
+        `expected method-level route in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes("[ApiController]"),
+        `expected [ApiController] in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes("ControllerBase"),
+        `expected ControllerBase in:\n${ctrl}`,
+      );
     });
 
     it("controller is abstract and the service interface file is emitted", async () => {
@@ -1132,12 +1339,21 @@ namespace {{namespace}}
       `);
 
       const ctrl = results["Controllers/OrdersControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
-      ok(ctrl.includes("public abstract class OrdersControllerBase"), `expected abstract class in:\n${ctrl}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        ctrl.includes("public abstract class OrdersControllerBase"),
+        `expected abstract class in:\n${ctrl}`,
+      );
 
       const svc = results["Services/IOrdersService.g.cs"];
       ok(svc, `expected Services/IOrdersService.g.cs`);
-      ok(svc.includes("public interface IOrdersService"), `expected interface decl in:\n${svc}`);
+      ok(
+        svc.includes("public interface IOrdersService"),
+        `expected interface decl in:\n${svc}`,
+      );
     });
 
     it("emits action methods with correct HTTP verb attributes", async () => {
@@ -1161,12 +1377,30 @@ namespace {{namespace}}
       `);
 
       const ctrl = results["Controllers/ThingsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
-      ok(ctrl.includes('[HttpGet("/api/things")]'), `expected root HttpGet in:\n${ctrl}`);
-      ok(ctrl.includes('[HttpPost("/api/things")]'), `expected HttpPost in:\n${ctrl}`);
-      ok(ctrl.includes('[HttpGet("/api/things/{id}")]'), `expected HttpGet with id in:\n${ctrl}`);
-      ok(ctrl.includes('[HttpPut("/api/things/{id}")]'), `expected HttpPut in:\n${ctrl}`);
-      ok(ctrl.includes('[HttpDelete("/api/things/{id}")]'), `expected HttpDelete in:\n${ctrl}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        ctrl.includes('[HttpGet("/api/things")]'),
+        `expected root HttpGet in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes('[HttpPost("/api/things")]'),
+        `expected HttpPost in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes('[HttpGet("/api/things/{id}")]'),
+        `expected HttpGet with id in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes('[HttpPut("/api/things/{id}")]'),
+        `expected HttpPut in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes('[HttpDelete("/api/things/{id}")]'),
+        `expected HttpDelete in:\n${ctrl}`,
+      );
     });
 
     it("emits path and query parameters with correct binding attributes", async () => {
@@ -1187,11 +1421,17 @@ namespace {{namespace}}
       `);
 
       const ctrl = results["Controllers/ResultsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
       ok(ctrl.includes("[FromQuery]"), `expected [FromQuery] in:\n${ctrl}`);
       ok(ctrl.includes("[FromRoute]"), `expected [FromRoute] in:\n${ctrl}`);
       ok(ctrl.includes("string q"), `expected q param in:\n${ctrl}`);
-      ok(ctrl.includes("int? page"), `expected optional page param in:\n${ctrl}`);
+      ok(
+        ctrl.includes("int? page"),
+        `expected optional page param in:\n${ctrl}`,
+      );
       ok(ctrl.includes("string id"), `expected id param in:\n${ctrl}`);
     });
 
@@ -1212,7 +1452,10 @@ namespace {{namespace}}
       `);
 
       const ctrl = results["Controllers/PostsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
       ok(ctrl.includes("[FromBody]"), `expected [FromBody] in:\n${ctrl}`);
       ok(ctrl.includes("Post body"), `expected body param in:\n${ctrl}`);
     });
@@ -1235,7 +1478,10 @@ namespace {{namespace}}
       `);
 
       const svc = results["Services/IUsersService.g.cs"];
-      ok(svc, `expected Services/IUsersService.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        svc,
+        `expected Services/IUsersService.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
       ok(svc.includes("Task<"), `expected Task<> in:\n${svc}`);
       ok(svc.includes("ListAsync("), `expected ListAsync method in:\n${svc}`);
       ok(svc.includes("ReadAsync("), `expected ReadAsync method in:\n${svc}`);
@@ -1259,7 +1505,10 @@ namespace {{namespace}}
 
       const svc = results["Services/IUsersService.g.cs"];
       ok(svc, `expected Services/IUsersService.g.cs`);
-      ok(svc.includes("public interface IUsersService"), `expected interface decl in:\n${svc}`);
+      ok(
+        svc.includes("public interface IUsersService"),
+        `expected interface decl in:\n${svc}`,
+      );
       ok(svc.includes("Task<"), `expected Task<> signature in:\n${svc}`);
     });
 
@@ -1282,8 +1531,14 @@ namespace {{namespace}}
 
       const svc = results["Services/IItemsService.g.cs"];
       ok(svc, `expected Services/IItemsService.g.cs`);
-      ok(svc.includes("Task RemoveAsync("), `expected plain Task for void response in:\n${svc}`);
-      ok(svc.includes("Task ReplaceAsync("), `expected plain Task for 204 response in:\n${svc}`);
+      ok(
+        svc.includes("Task RemoveAsync("),
+        `expected plain Task for void response in:\n${svc}`,
+      );
+      ok(
+        svc.includes("Task ReplaceAsync("),
+        `expected plain Task for 204 response in:\n${svc}`,
+      );
       ok(!svc.includes("Task<"), `did not expect Task<T> in:\n${svc}`);
     });
 
@@ -1310,10 +1565,19 @@ namespace {{namespace}}
 
       const svc = results["Services/IWidgetsService.g.cs"];
       ok(svc, `expected Services/IWidgetsService.g.cs`);
-      ok(svc.includes("Task<IList<Widget>?>"), `expected IList<Widget> return in:\n${svc}`);
+      ok(
+        svc.includes("Task<IList<Widget>?>"),
+        `expected IList<Widget> return in:\n${svc}`,
+      );
       ok(svc.includes("Task<Widget?>"), `expected Widget return in:\n${svc}`);
-      ok(svc.includes("Task RemoveAsync("), `expected plain Task for void|error response in:\n${svc}`);
-      ok(!svc.includes("ApiError"), `did not expect ApiError in service interface:\n${svc}`);
+      ok(
+        svc.includes("Task RemoveAsync("),
+        `expected plain Task for void|error response in:\n${svc}`,
+      );
+      ok(
+        !svc.includes("ApiError"),
+        `did not expect ApiError in service interface:\n${svc}`,
+      );
     });
 
     it("service interface uses @body type for complex responses with status codes and headers", async () => {
@@ -1338,7 +1602,10 @@ namespace {{namespace}}
 
       const svc = results["Services/IWidgetsService.g.cs"];
       ok(svc, `expected Services/IWidgetsService.g.cs`);
-      ok(svc.includes("Task<Widget?>"), `expected Task<Widget?> for @body response in:\n${svc}`);
+      ok(
+        svc.includes("Task<Widget?>"),
+        `expected Task<Widget?> for @body response in:\n${svc}`,
+      );
     });
 
     it("generates one route attribute per API version on each method", async () => {
@@ -1363,13 +1630,23 @@ namespace {{namespace}}
       `);
 
       const ctrl = results["Controllers/WidgetsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
-      ok(!ctrl.includes("[Route("), `class-level [Route] should not be present:\n${ctrl}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        !ctrl.includes("[Route("),
+        `class-level [Route] should not be present:\n${ctrl}`,
+      );
       ok(ctrl.includes("v1"), `expected v1 route in:\n${ctrl}`);
       ok(ctrl.includes("v2"), `expected v2 route in:\n${ctrl}`);
       // list() has one [HttpGet] per version
       const verbCount = (ctrl.match(/\[HttpGet\(/g) ?? []).length;
-      strictEqual(verbCount, 2, `expected 2 [HttpGet] attributes, got ${verbCount} in:\n${ctrl}`);
+      strictEqual(
+        verbCount,
+        2,
+        `expected 2 [HttpGet] attributes, got ${verbCount} in:\n${ctrl}`,
+      );
     });
 
     it("includes path parameters in versioned operation routes", async () => {
@@ -1394,9 +1671,18 @@ namespace {{namespace}}
       `);
 
       const ctrl = results["Controllers/WidgetsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
-      ok(ctrl.includes('[HttpGet("/api/v1/widgets/{id}")]'), `expected v1 id route in:\n${ctrl}`);
-      ok(ctrl.includes('[HttpGet("/api/v2/widgets/{id}")]'), `expected v2 id route in:\n${ctrl}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        ctrl.includes('[HttpGet("/api/v1/widgets/{id}")]'),
+        `expected v1 id route in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes('[HttpGet("/api/v2/widgets/{id}")]'),
+        `expected v2 id route in:\n${ctrl}`,
+      );
     });
 
     it("emits versioned routes only for versions where each operation exists", async () => {
@@ -1429,15 +1715,36 @@ namespace {{namespace}}
       `);
 
       const ctrl = results["Controllers/WidgetsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
 
-      ok(ctrl.includes('[HttpGet("/api/v2/widgets/{id}/audit")]'), `expected v2 audit route in:\n${ctrl}`);
-      ok(ctrl.includes('[HttpGet("/api/v3/widgets/{id}/audit")]'), `expected v3 audit route in:\n${ctrl}`);
-      ok(!ctrl.includes('[HttpGet("/api/v1/widgets/{id}/audit")]'), `did not expect v1 audit route in:\n${ctrl}`);
+      ok(
+        ctrl.includes('[HttpGet("/api/v2/widgets/{id}/audit")]'),
+        `expected v2 audit route in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes('[HttpGet("/api/v3/widgets/{id}/audit")]'),
+        `expected v3 audit route in:\n${ctrl}`,
+      );
+      ok(
+        !ctrl.includes('[HttpGet("/api/v1/widgets/{id}/audit")]'),
+        `did not expect v1 audit route in:\n${ctrl}`,
+      );
 
-      ok(ctrl.includes('[HttpGet("/api/v1/widgets/{id}/legacy")]'), `expected v1 legacy route in:\n${ctrl}`);
-      ok(ctrl.includes('[HttpGet("/api/v2/widgets/{id}/legacy")]'), `expected v2 legacy route in:\n${ctrl}`);
-      ok(!ctrl.includes('[HttpGet("/api/v3/widgets/{id}/legacy")]'), `did not expect v3 legacy route in:\n${ctrl}`);
+      ok(
+        ctrl.includes('[HttpGet("/api/v1/widgets/{id}/legacy")]'),
+        `expected v1 legacy route in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes('[HttpGet("/api/v2/widgets/{id}/legacy")]'),
+        `expected v2 legacy route in:\n${ctrl}`,
+      );
+      ok(
+        !ctrl.includes('[HttpGet("/api/v3/widgets/{id}/legacy")]'),
+        `did not expect v3 legacy route in:\n${ctrl}`,
+      );
     });
 
     it("respects operation availability when version values differ from version names", async () => {
@@ -1467,10 +1774,22 @@ namespace {{namespace}}
       `);
 
       const ctrl = results["Controllers/WidgetsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
-      ok(!ctrl.includes('[HttpPost("/api/1.0/widgets")]'), `did not expect v1.0 create route in:\n${ctrl}`);
-      ok(ctrl.includes('[HttpPost("/api/1.1/widgets")]'), `expected v1.1 create route in:\n${ctrl}`);
-      ok(ctrl.includes('[HttpPost("/api/2.0/widgets")]'), `expected v2.0 create route in:\n${ctrl}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        !ctrl.includes('[HttpPost("/api/1.0/widgets")]'),
+        `did not expect v1.0 create route in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes('[HttpPost("/api/1.1/widgets")]'),
+        `expected v1.1 create route in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes('[HttpPost("/api/2.0/widgets")]'),
+        `expected v2.0 create route in:\n${ctrl}`,
+      );
     });
 
     it("respects route-prefix option", async () => {
@@ -1493,8 +1812,14 @@ namespace {{namespace}}
       );
 
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
-      ok(ctrl.includes("v2/api/items"), `expected v2/api/items route in:\n${ctrl}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        ctrl.includes("v2/api/items"),
+        `expected v2/api/items route in:\n${ctrl}`,
+      );
     });
 
     it("routes controllers and services to separate dirs when configured", async () => {
@@ -1519,8 +1844,14 @@ namespace {{namespace}}
         },
       );
 
-      ok(results["Controllers/TasksControllerBase.g.cs"], `expected Controllers/TasksControllerBase.g.cs, got ${Object.keys(results).join(", ")}`);
-      ok(results["Services/ITasksService.g.cs"], "expected Services/ITasksService.g.cs");
+      ok(
+        results["Controllers/TasksControllerBase.g.cs"],
+        `expected Controllers/TasksControllerBase.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        results["Services/ITasksService.g.cs"],
+        "expected Services/ITasksService.g.cs",
+      );
     });
 
     it("infers controller namespace from the TypeSpec namespace when root-namespace is not set", async () => {
@@ -1540,12 +1871,21 @@ namespace {{namespace}}
       `);
 
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
-      ok(ctrl.includes("namespace Demo.Controllers"), `expected 'namespace Demo.Controllers' in:\n${ctrl}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        ctrl.includes("namespace Demo.Controllers"),
+        `expected 'namespace Demo.Controllers' in:\n${ctrl}`,
+      );
 
       const svc = results["Services/IItemsService.g.cs"];
       ok(svc, "expected service file");
-      ok(svc.includes("namespace Demo.Services"), `expected 'namespace Demo.Services' in:\n${svc}`);
+      ok(
+        svc.includes("namespace Demo.Services"),
+        `expected 'namespace Demo.Services' in:\n${svc}`,
+      );
     });
 
     it("infers a multi-segment controller namespace when the TypeSpec namespace is multi-segment", async () => {
@@ -1565,32 +1905,53 @@ namespace {{namespace}}
       `);
 
       const ctrl = results["Controllers/OrdersControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
-      ok(ctrl.includes("namespace My.Company.Orders.Controllers"), `expected 'namespace My.Company.Orders.Controllers' in:\n${ctrl}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        ctrl.includes("namespace My.Company.Orders.Controllers"),
+        `expected 'namespace My.Company.Orders.Controllers' in:\n${ctrl}`,
+      );
     });
   });
 
   describe("helpers generation", () => {
     it("infers helper namespace from the TypeSpec namespace when root-namespace is not set", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         namespace Demo;
         model M { x: int32; }
-      `, { "emit-helpers": true });
+      `,
+        { "emit-helpers": true },
+      );
 
       const helper = results["Helpers/EnumMemberConverter.g.cs"];
-      ok(helper, `expected Helpers/EnumMemberConverter.g.cs, got ${Object.keys(results).join(", ")}`);
-      ok(helper.includes("namespace Demo.Helpers"), `expected 'namespace Demo.Helpers' in:\n${helper}`);
+      ok(
+        helper,
+        `expected Helpers/EnumMemberConverter.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        helper.includes("namespace Demo.Helpers"),
+        `expected 'namespace Demo.Helpers' in:\n${helper}`,
+      );
     });
 
     it("uses explicit root-namespace for helpers when provided", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         namespace Demo;
         model M { x: int32; }
-      `, { "emit-helpers": true, "root-namespace": "MyApp" });
+      `,
+        { "emit-helpers": true, "root-namespace": "MyApp" },
+      );
 
       const helper = results["Helpers/EnumMemberConverter.g.cs"];
       ok(helper, `expected Helpers/EnumMemberConverter.g.cs`);
-      ok(helper.includes("namespace MyApp.Helpers"), `expected 'namespace MyApp.Helpers' in:\n${helper}`);
+      ok(
+        helper.includes("namespace MyApp.Helpers"),
+        `expected 'namespace MyApp.Helpers' in:\n${helper}`,
+      );
     });
   });
 
@@ -1604,7 +1965,10 @@ namespace {{namespace}}
       // Default models-output-dir is "Models", so the suffix is appended.
       const file = results["Free.g.cs"];
       ok(file, "expected Free.g.cs");
-      ok(file.includes("namespace Acme.Core.Models"), `expected 'namespace Acme.Core.Models' in:\n${file}`);
+      ok(
+        file.includes("namespace Acme.Core.Models"),
+        `expected 'namespace Acme.Core.Models' in:\n${file}`,
+      );
     });
 
     it("interfaces-root-namespace overrides root-namespace for interface files", async () => {
@@ -1616,7 +1980,10 @@ namespace {{namespace}}
       // Default interfaces-output-dir is "Models", so the suffix is appended.
       const iface = results["IFree.g.cs"];
       ok(iface, "expected IFree.g.cs");
-      ok(iface.includes("namespace Acme.Contracts.Models"), `expected 'namespace Acme.Contracts.Models' in:\n${iface}`);
+      ok(
+        iface.includes("namespace Acme.Contracts.Models"),
+        `expected 'namespace Acme.Contracts.Models' in:\n${iface}`,
+      );
     });
 
     it("models-root-namespace and interfaces-root-namespace can differ from each other", async () => {
@@ -1627,14 +1994,21 @@ namespace {{namespace}}
       });
 
       const file = results["Free.g.cs"];
-      ok(file.includes("namespace Acme.Models.Models"), `expected 'namespace Acme.Models.Models' in:\n${file}`);
+      ok(
+        file.includes("namespace Acme.Models.Models"),
+        `expected 'namespace Acme.Models.Models' in:\n${file}`,
+      );
 
       const iface = results["IFree.g.cs"];
-      ok(iface.includes("namespace Acme.Contracts.Models"), `expected 'namespace Acme.Contracts.Models' in:\n${iface}`);
+      ok(
+        iface.includes("namespace Acme.Contracts.Models"),
+        `expected 'namespace Acme.Contracts.Models' in:\n${iface}`,
+      );
     });
 
     it("controllers-root-namespace overrides root-namespace for controller files", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         import "@typespec/http";
         using TypeSpec.Http;
 
@@ -1647,18 +2021,27 @@ namespace {{namespace}}
         interface Items {
           @get list(): Item[];
         }
-      `, {
-        "root-namespace": "Demo",
-        "controllers-root-namespace": "MyCompany.Web",
-      });
+      `,
+        {
+          "root-namespace": "Demo",
+          "controllers-root-namespace": "MyCompany.Web",
+        },
+      );
 
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
-      ok(ctrl, `expected Controllers/ItemsControllerBase.g.cs, got ${Object.keys(results).join(", ")}`);
-      ok(ctrl.includes("namespace MyCompany.Web.Controllers"), `expected 'namespace MyCompany.Web.Controllers' in:\n${ctrl}`);
+      ok(
+        ctrl,
+        `expected Controllers/ItemsControllerBase.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        ctrl.includes("namespace MyCompany.Web.Controllers"),
+        `expected 'namespace MyCompany.Web.Controllers' in:\n${ctrl}`,
+      );
     });
 
     it("services-root-namespace overrides root-namespace for service files", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         import "@typespec/http";
         using TypeSpec.Http;
 
@@ -1671,18 +2054,27 @@ namespace {{namespace}}
         interface Items {
           @get list(): Item[];
         }
-      `, {
-        "root-namespace": "Demo",
-        "services-root-namespace": "MyCompany.Application",
-      });
+      `,
+        {
+          "root-namespace": "Demo",
+          "services-root-namespace": "MyCompany.Application",
+        },
+      );
 
       const svc = results["Services/IItemsService.g.cs"];
-      ok(svc, `expected Services/IItemsService.g.cs, got ${Object.keys(results).join(", ")}`);
-      ok(svc.includes("namespace MyCompany.Application.Services"), `expected 'namespace MyCompany.Application.Services' in:\n${svc}`);
+      ok(
+        svc,
+        `expected Services/IItemsService.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        svc.includes("namespace MyCompany.Application.Services"),
+        `expected 'namespace MyCompany.Application.Services' in:\n${svc}`,
+      );
     });
 
     it("validators-root-namespace overrides root-namespace for validator files", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         import "@typespec/http";
         using TypeSpec.Http;
 
@@ -1695,19 +2087,28 @@ namespace {{namespace}}
         interface Widgets {
           @post create(@body widget: Widget): Widget;
         }
-      `, {
-        "root-namespace": "Demo",
-        "validators-root-namespace": "MyCompany.Validators",
-        "emit-validators": true,
-      });
+      `,
+        {
+          "root-namespace": "Demo",
+          "validators-root-namespace": "MyCompany.Validators",
+          "emit-validators": true,
+        },
+      );
 
       const validator = results["Validators/WidgetValidator.g.cs"];
-      ok(validator, `expected Validators/WidgetValidator.g.cs, got ${Object.keys(results).join(", ")}`);
-      ok(validator.includes("namespace MyCompany.Validators.Validators"), `expected 'namespace MyCompany.Validators.Validators' in:\n${validator}`);
+      ok(
+        validator,
+        `expected Validators/WidgetValidator.g.cs, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        validator.includes("namespace MyCompany.Validators.Validators"),
+        `expected 'namespace MyCompany.Validators.Validators' in:\n${validator}`,
+      );
     });
 
     it("per-section overrides are independent — unset sections fall back to root-namespace", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         import "@typespec/http";
         using TypeSpec.Http;
 
@@ -1720,18 +2121,26 @@ namespace {{namespace}}
         interface Items {
           @get list(): Item[];
         }
-      `, {
-        "root-namespace": "App",
-        "controllers-root-namespace": "MyCompany.Web",
-      });
+      `,
+        {
+          "root-namespace": "App",
+          "controllers-root-namespace": "MyCompany.Web",
+        },
+      );
 
       // controller uses the override
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
-      ok(ctrl.includes("namespace MyCompany.Web.Controllers"), `expected override ns in ctrl:\n${ctrl}`);
+      ok(
+        ctrl.includes("namespace MyCompany.Web.Controllers"),
+        `expected override ns in ctrl:\n${ctrl}`,
+      );
 
       // service uses the global root unchanged
       const svc = results["Services/IItemsService.g.cs"];
-      ok(svc.includes("namespace App.Services"), `expected global ns in svc:\n${svc}`);
+      ok(
+        svc.includes("namespace App.Services"),
+        `expected global ns in svc:\n${svc}`,
+      );
     });
   });
 });

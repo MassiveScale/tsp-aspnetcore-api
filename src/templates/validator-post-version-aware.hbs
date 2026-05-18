@@ -19,6 +19,7 @@ namespace {{{namespace}}};
 /// (URL segment, <c>api-version</c> header, or <c>api-version</c> query parameter).
 /// Extend this partial class to add custom validation rules.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public partial class {{{modelName}}}Validator : AbstractValidator<{{{modelName}}}>
 {
     private static readonly string[] _versions = new[] { {{#each allVersions}}"{{this}}"{{#unless @last}}, {{/unless}}{{/each}} };
