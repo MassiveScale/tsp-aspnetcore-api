@@ -80,7 +80,7 @@
       public {{type}} {{name}} { get; set; }
 --}}
 {{#if doc}}{{doc}}
-{{/if}}[ExcludeFromCodeCoverage]
+{{/if}}[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public partial class {{className}} : {{bases}}
 {
 {{#each properties}}{{#if doc}}{{indent doc}}

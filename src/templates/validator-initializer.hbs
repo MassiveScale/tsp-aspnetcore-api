@@ -20,7 +20,7 @@ namespace {{{namespace}}};
 /// Extension methods for registering the auto-generated FluentValidation validators
 /// with the ASP.NET Core dependency injection container.
 /// </summary>
-[ExcludeFromCodeCoverage]
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public static class ValidatorsInitializer
 {
     /// <summary>
@@ -35,7 +35,7 @@ public static class ValidatorsInitializer
     /// </para>
     {{/if}}
     /// </summary>
-    [ExcludeFromCodeCoverage]
+    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     public static IServiceCollection AddGeneratedValidators(this IServiceCollection services)
     {
 {{#each registrations}}
