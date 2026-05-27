@@ -1254,6 +1254,51 @@ namespace {{namespace}}
     });
   });
 
+  describe("cancellation-token option", () => {
+    it("adds CancellationToken parameter when cancellation-token is true", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service(#{title: "Items" })
+        namespace Demo;
+
+        model Item { id: string; }
+
+        @route("/items")
+        interface Items {
+          @get list(): Item[];
+          @post create(@body item: Item): void;
+        }
+      `,
+        { "cancellation-token": true },
+      );
+
+      const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
+      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl.includes("public abstract Task<IActionResult> List(CancellationToken cancellationToken = default);"),
+        `missing List in controller:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes("public abstract Task<IActionResult> Create([FromBody] Item body, CancellationToken cancellationToken = default);"),
+        `missing Create in controller:\n${ctrl}`,
+      );
+
+      const svc = results["Services/IItemsService.g.cs"];
+      ok(svc, "expected service interface");
+      ok(
+        svc.includes("Task<IList<Item>?> ListAsync(CancellationToken cancellationToken = default);"),
+        `missing ListAsync in service:\n${svc}`,
+      );
+      ok(
+        svc.includes("Task CreateAsync(Item body, CancellationToken cancellationToken = default);"),
+        `missing CreateAsync in service:\n${svc}`,
+      );
+    });
+  });
+
   describe("controller generation", () => {
     it("emits a controller and service interface pair for an HTTP interface", async () => {
       const results = await emit(`

@@ -207,6 +207,13 @@ export interface EmitterOptions {
    */
   "abstract-suffix"?: string;
 
+  /**
+   * When `true`, a `CancellationToken cancellationToken = default` parameter is
+   * added to every generated controller action and service method.
+   * Defaults to `false`.
+   */
+  "cancellation-token"?: boolean;
+
   /** Custom Handlebars template paths keyed by template name. */
   templates?: TemplateOverrides;
 
@@ -283,6 +290,7 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
     },
     "nullable-properties": { type: "boolean", nullable: true },
     "abstract-suffix": { type: "string", nullable: true },
+    "cancellation-token": { type: "boolean", nullable: true },
     templates: {
       type: "object",
       nullable: true,
