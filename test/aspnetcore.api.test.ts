@@ -1276,24 +1276,35 @@ namespace {{namespace}}
       );
 
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
       ok(
-        ctrl.includes("public abstract Task<IActionResult> List(CancellationToken cancellationToken = default);"),
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        ctrl.includes(
+          "public abstract Task<IActionResult> List(CancellationToken cancellationToken = default);",
+        ),
         `missing List in controller:\n${ctrl}`,
       );
       ok(
-        ctrl.includes("public abstract Task<IActionResult> Create([FromBody] Item body, CancellationToken cancellationToken = default);"),
+        ctrl.includes(
+          "public abstract Task<IActionResult> Create([FromBody] Item body, CancellationToken cancellationToken = default);",
+        ),
         `missing Create in controller:\n${ctrl}`,
       );
 
       const svc = results["Services/IItemsService.g.cs"];
       ok(svc, "expected service interface");
       ok(
-        svc.includes("Task<IList<Item>?> ListAsync(CancellationToken cancellationToken = default);"),
+        svc.includes(
+          "Task<IList<Item>?> ListAsync(CancellationToken cancellationToken = default);",
+        ),
         `missing ListAsync in service:\n${svc}`,
       );
       ok(
-        svc.includes("Task CreateAsync(Item body, CancellationToken cancellationToken = default);"),
+        svc.includes(
+          "Task CreateAsync(Item body, CancellationToken cancellationToken = default);",
+        ),
         `missing CreateAsync in service:\n${svc}`,
       );
     });
