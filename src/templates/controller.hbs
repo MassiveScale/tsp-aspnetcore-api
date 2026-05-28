@@ -107,7 +107,7 @@ public abstract class {{controllerName}} : ControllerBase
 {
 {{#each operations}}{{#if doc}}{{indent doc}}
 {{/if}}{{#each routes}}    [Http{{../httpVerb}}("{{this}}")]
-{{/each}}    public abstract Task<IActionResult> {{name}}({{#each params}}[{{binding}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}});
+{{/each}}    public abstract Task<IActionResult> {{name}}({{#each params}}[{{binding}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}}{{#if cancellationToken}}{{#if params}}, {{/if}}CancellationToken cancellationToken{{/if}});
 {{#unless @last}}
 
 {{/unless}}{{/each}}

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- `cancellation-token` option (default `true`): adds `CancellationToken cancellationToken` to every generated controller action and service method, and emits `using System.Threading;` in controller and service files. Set `cancellation-token: false` in `tspconfig.yaml` to opt out.
+
 ## [1.5.0] - 2026-05-15
 
 ### Fixed
