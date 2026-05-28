@@ -3,4 +3,3 @@ emit:
 options:
   "@massivescale/tsp-aspnetcore-api":
     emitter-output-dir: "{output-dir}/defaults"
-    

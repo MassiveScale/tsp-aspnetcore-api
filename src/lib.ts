@@ -6,7 +6,11 @@
  * library instance.
  */
 
-import { createTypeSpecLibrary, JSONSchemaType, paramMessage } from "@typespec/compiler";
+import {
+  createTypeSpecLibrary,
+  JSONSchemaType,
+  paramMessage,
+} from "@typespec/compiler";
 
 /**
  * Paths to custom Handlebars templates that replace the built-in defaults.
@@ -203,6 +207,14 @@ export interface EmitterOptions {
    */
   "abstract-suffix"?: string;
 
+  /**
+   * When `true`, a `CancellationToken cancellationToken` parameter is
+   * added to every generated controller action and service method, and
+   * `using System.Threading;` is emitted in controller and service files.
+   * Defaults to `true`.
+   */
+  "cancellation-token"?: boolean;
+
   /** Custom Handlebars template paths keyed by template name. */
   templates?: TemplateOverrides;
 
@@ -228,7 +240,7 @@ export interface EmitterOptions {
    * - `"patch"` — emits `{Model}PatchValidator.g.cs` with conditional patch-aware rules.
    * - `"both"` — emits both files (default).
    */
-  "validators"?: "post" | "patch" | "both";
+  validators?: "post" | "patch" | "both";
 
   /**
    * Controls how versioning affects validator generation when the TypeSpec spec
@@ -241,8 +253,11 @@ export interface EmitterOptions {
    *
    * When unset, auto-detected: `"version-aware"` if `@versioned` is present, `"earliest"` otherwise.
    */
-  "validators-version-strategy"?: "earliest" | "latest" | "per-version" | "version-aware";
-
+  "validators-version-strategy"?:
+    | "earliest"
+    | "latest"
+    | "per-version"
+    | "version-aware";
 }
 
 /** JSON Schema used by the TypeSpec compiler to validate emitter options. */
@@ -276,6 +291,7 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
     },
     "nullable-properties": { type: "boolean", nullable: true },
     "abstract-suffix": { type: "string", nullable: true },
+    "cancellation-token": { type: "boolean", nullable: true },
     templates: {
       type: "object",
       nullable: true,

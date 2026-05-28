@@ -55,6 +55,8 @@ export interface ControllerOptions {
   nullableProperties: boolean;
   /** Suffix appended to generated abstract class names, e.g. `"Base"`. */
   abstractSuffix: string;
+  /** Whether to add a CancellationToken parameter to operations. */
+  cancellationToken: boolean;
 }
 
 /**
@@ -186,7 +188,10 @@ function collectOperationReferences(
     // Collect response body types, excluding @error models (never used in service/controller signatures)
     for (const response of op.responses) {
       for (const content of response.responses) {
-        if (content.body?.bodyKind === "single" && !isErrorModel(program, content.body.type)) {
+        if (
+          content.body?.bodyKind === "single" &&
+          !isErrorModel(program, content.body.type)
+        ) {
           references.add(content.body.type);
         }
       }
@@ -217,10 +222,7 @@ function getOperationVersions(
 
   return serviceVersions.filter((version) => {
     const state = availability.get(version.name);
-    return (
-      state === Availability.Added ||
-      state === Availability.Available
-    );
+    return state === Availability.Added || state === Availability.Available;
   });
 }
 
@@ -285,11 +287,7 @@ function buildOperationView(
   );
   const returnType = resolveReturnType(program, op, options);
   const versions = getOperationVersions(program, op, serviceVersions);
-  const routes = buildOperationRoutes(
-    options.routePrefix,
-    op.path,
-    versions,
-  );
+  const routes = buildOperationRoutes(options.routePrefix, op.path, versions);
 
   return {
     doc: doc ? renderDocComment(doc) : undefined,
@@ -298,6 +296,7 @@ function buildOperationView(
     routes,
     routeSuffix,
     params,
+    cancellationToken: options.cancellationToken,
     returnType,
   };
 }
@@ -495,4 +494,3 @@ function typeRef(
       return "object";
   }
 }
-

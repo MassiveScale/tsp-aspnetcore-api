@@ -45,8 +45,15 @@ import {
   resolvePath,
 } from "@typespec/compiler";
 import { getAllHttpServices, type HttpOperationBody } from "@typespec/http";
-import { getMergePatchSource, isMergePatch } from "@typespec/http/experimental/merge-patch";
-import { getAllVersions, getAvailabilityMap, Availability } from "@typespec/versioning";
+import {
+  getMergePatchSource,
+  isMergePatch,
+} from "@typespec/http/experimental/merge-patch";
+import {
+  getAllVersions,
+  getAvailabilityMap,
+  Availability,
+} from "@typespec/versioning";
 import type { Version } from "@typespec/versioning";
 import Handlebars from "handlebars";
 import { readFileSync } from "node:fs";
@@ -65,13 +72,21 @@ import {
   createRenderer,
   renderDocComment,
 } from "./renderer.js";
-import { ControllerGroup, ControllerOptions, collectControllers } from "./controllers.js";
+import {
+  ControllerGroup,
+  ControllerOptions,
+  collectControllers,
+} from "./controllers.js";
 
 /** Default C# namespace used for top-level TypeSpec models with no namespace. */
 const DEFAULT_NAMESPACE = "Models";
 
 /** `using` directives included in every model / interface / enum file. */
-const SYSTEM_USINGS = ["System", "System.Collections.Generic", "System.Text.Json.Serialization"];
+const SYSTEM_USINGS = [
+  "System",
+  "System.Collections.Generic",
+  "System.Text.Json.Serialization",
+];
 
 /** `using` directives included in every controller and service file. */
 const CONTROLLER_USINGS = [
@@ -82,7 +97,11 @@ const CONTROLLER_USINGS = [
 ];
 
 /** `using` directives included in the MergePatchValue helper file. */
-const HELPER_USINGS = ["System", "System.Text.Json", "System.Text.Json.Serialization"];
+const HELPER_USINGS = [
+  "System",
+  "System.Text.Json",
+  "System.Text.Json.Serialization",
+];
 
 /** `using` directives included in the EnumMemberConverter helper file. */
 const ENUM_CONVERTER_HELPER_USINGS = [
@@ -95,7 +114,11 @@ const ENUM_CONVERTER_HELPER_USINGS = [
 ];
 
 /** `using` directives included in every service interface file. */
-const SERVICE_USINGS = ["System", "System.Collections.Generic", "System.Threading.Tasks"];
+const SERVICE_USINGS = [
+  "System",
+  "System.Collections.Generic",
+  "System.Threading.Tasks",
+];
 
 /** `using` directives included in every enum file. */
 const ENUM_USINGS = [
@@ -108,38 +131,67 @@ const ENUM_USINGS = [
 // ── Validator template support ───────────────────────────────────────────────
 
 /** Absolute path to the bundled templates directory (shared with renderer). */
-const TEMPLATES_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../templates");
+const TEMPLATES_DIR = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../templates",
+);
 
 // Lazily compiled Handlebars validator templates — each loaded on first use.
 let _compiledValidatorPostTemplate: Handlebars.TemplateDelegate | undefined;
 let _compiledValidatorPatchTemplate: Handlebars.TemplateDelegate | undefined;
-let _compiledValidatorPostVersionAwareTemplate: Handlebars.TemplateDelegate | undefined;
-let _compiledValidatorPatchVersionAwareTemplate: Handlebars.TemplateDelegate | undefined;
-let _compiledValidatorInitializerTemplate: Handlebars.TemplateDelegate | undefined;
+let _compiledValidatorPostVersionAwareTemplate:
+  | Handlebars.TemplateDelegate
+  | undefined;
+let _compiledValidatorPatchVersionAwareTemplate:
+  | Handlebars.TemplateDelegate
+  | undefined;
+let _compiledValidatorInitializerTemplate:
+  | Handlebars.TemplateDelegate
+  | undefined;
 
 function loadValidatorTemplate(path: string): Handlebars.TemplateDelegate {
   return Handlebars.compile(readFileSync(path, "utf-8"));
 }
 
-function getValidatorPostTemplate(override?: string): Handlebars.TemplateDelegate {
+function getValidatorPostTemplate(
+  override?: string,
+): Handlebars.TemplateDelegate {
   if (override) return loadValidatorTemplate(override);
-  return (_compiledValidatorPostTemplate ??= loadValidatorTemplate(resolve(TEMPLATES_DIR, "validator-post.hbs")));
+  return (_compiledValidatorPostTemplate ??= loadValidatorTemplate(
+    resolve(TEMPLATES_DIR, "validator-post.hbs"),
+  ));
 }
-function getValidatorPatchTemplate(override?: string): Handlebars.TemplateDelegate {
+function getValidatorPatchTemplate(
+  override?: string,
+): Handlebars.TemplateDelegate {
   if (override) return loadValidatorTemplate(override);
-  return (_compiledValidatorPatchTemplate ??= loadValidatorTemplate(resolve(TEMPLATES_DIR, "validator-patch.hbs")));
+  return (_compiledValidatorPatchTemplate ??= loadValidatorTemplate(
+    resolve(TEMPLATES_DIR, "validator-patch.hbs"),
+  ));
 }
-function getValidatorPostVersionAwareTemplate(override?: string): Handlebars.TemplateDelegate {
+function getValidatorPostVersionAwareTemplate(
+  override?: string,
+): Handlebars.TemplateDelegate {
   if (override) return loadValidatorTemplate(override);
-  return (_compiledValidatorPostVersionAwareTemplate ??= loadValidatorTemplate(resolve(TEMPLATES_DIR, "validator-post-version-aware.hbs")));
+  return (_compiledValidatorPostVersionAwareTemplate ??= loadValidatorTemplate(
+    resolve(TEMPLATES_DIR, "validator-post-version-aware.hbs"),
+  ));
 }
-function getValidatorPatchVersionAwareTemplate(override?: string): Handlebars.TemplateDelegate {
+function getValidatorPatchVersionAwareTemplate(
+  override?: string,
+): Handlebars.TemplateDelegate {
   if (override) return loadValidatorTemplate(override);
-  return (_compiledValidatorPatchVersionAwareTemplate ??= loadValidatorTemplate(resolve(TEMPLATES_DIR, "validator-patch-version-aware.hbs")));
+  return (_compiledValidatorPatchVersionAwareTemplate ??= loadValidatorTemplate(
+    resolve(TEMPLATES_DIR, "validator-patch-version-aware.hbs"),
+  ));
 }
-function getValidatorInitializerTemplate(override?: string): Handlebars.TemplateDelegate {
+function getValidatorInitializerTemplate(
+  override?: string,
+): Handlebars.TemplateDelegate {
   if (override) return loadValidatorTemplate(override);
-  return (_compiledValidatorInitializerTemplate ??= loadValidatorTemplate(resolve(TEMPLATES_DIR, "validator-initializer.hbs")));
+  return (_compiledValidatorInitializerTemplate ??= loadValidatorTemplate(
+    resolve(TEMPLATES_DIR, "validator-initializer.hbs"),
+  ));
 }
 
 // ── Validator data types (ported from tsp-fluent-validators) ─────────────────
@@ -267,6 +319,8 @@ interface ResolvedOptions {
   nullableProperties: boolean;
   /** Suffix appended to generated abstract class names. */
   abstractSuffix: string;
+  /** Whether to add a CancellationToken parameter to operations. */
+  cancellationToken: boolean;
   /** Resolved template override paths (absolute). */
   templates: TemplateOverrides;
   /** Whether to emit helper files (`MergePatchValue`, `EnumMemberConverter`). */
@@ -305,7 +359,12 @@ interface ResolvedOptions {
    * `undefined` means auto-detect: "version-aware" when `@versioned` is present,
    * "earliest" otherwise.
    */
-  validatorsVersionStrategy: "earliest" | "latest" | "per-version" | "version-aware" | undefined;
+  validatorsVersionStrategy:
+    | "earliest"
+    | "latest"
+    | "per-version"
+    | "version-aware"
+    | undefined;
 }
 
 /** Inferred enum derived from a string-literal union property. */
@@ -333,7 +392,9 @@ interface InferredEnum {
  * @param context - Emit context provided by the TypeSpec compiler, carrying the
  *   compiled program, resolved options, and output directory path.
  */
-export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<void> {
+export async function $onEmit(
+  context: EmitContext<EmitterOptions>,
+): Promise<void> {
   if (context.program.compilerOptions.noEmit) {
     return;
   }
@@ -362,11 +423,19 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
 
   for (const model of models) {
     const isMergePatchModel = isMergePatchUpdateModel(model);
-    const typespecNs = csharpNamespaceFor(model.namespace, options, options.modelsEffectiveRootNs);
+    const typespecNs = csharpNamespaceFor(
+      model.namespace,
+      options,
+      options.modelsEffectiveRootNs,
+    );
     // When `interfaces-root-namespace` differs from `models-root-namespace`, the
     // fallback for top-level (unnamespaced) types must be resolved separately so
     // interface files land under the correct root.
-    const typespecIfaceNs = csharpNamespaceFor(model.namespace, options, options.interfacesEffectiveRootNs);
+    const typespecIfaceNs = csharpNamespaceFor(
+      model.namespace,
+      options,
+      options.interfacesEffectiveRootNs,
+    );
     // When `namespaceFromPath` is enabled and an output-dir is configured,
     // append the PascalCased dir segments to the TypeSpec namespace so the C#
     // namespace reflects the physical output path
@@ -416,14 +485,20 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
         fileName: classFileName,
         namespace: classNs,
         usings: classUsings,
-        body: renderer.renderClass(buildClassView(program, model, options, isMergePatchModel)),
+        body: renderer.renderClass(
+          buildClassView(program, model, options, isMergePatchModel),
+        ),
       }),
     });
 
     if (options.emitInterfaces) {
       const interfaceFileName = `I${pascalCase(model.name)}${options.fileExtension}`;
       await emitFile(program, {
-        path: resolvePath(options.interfacesOutputDir, ...interfaceFolder, interfaceFileName),
+        path: resolvePath(
+          options.interfacesOutputDir,
+          ...interfaceFolder,
+          interfaceFileName,
+        ),
         content: renderer.renderFile({
           fileName: interfaceFileName,
           namespace: interfaceNs,
@@ -438,7 +513,11 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
 
   for (const en of enums) {
     // Enums follow the same namespace strategy as model classes.
-    const typespecEnumNs = csharpNamespaceFor(en.namespace, options, options.modelsEffectiveRootNs);
+    const typespecEnumNs = csharpNamespaceFor(
+      en.namespace,
+      options,
+      options.modelsEffectiveRootNs,
+    );
     const ns =
       options.namespaceFromPath && options.modelsDirSuffix
         ? `${typespecEnumNs}.${options.modelsDirSuffix}`
@@ -462,7 +541,11 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
   for (const inferred of inferredEnums) {
     const enumFileName = `${inferred.name}${options.fileExtension}`;
     await emitFile(program, {
-      path: resolvePath(options.modelsOutputDir, ...inferred.folder, enumFileName),
+      path: resolvePath(
+        options.modelsOutputDir,
+        ...inferred.folder,
+        enumFileName,
+      ),
       content: renderer.renderFile({
         fileName: enumFileName,
         namespace: inferred.namespace,
@@ -477,6 +560,7 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     routePrefix: options.routePrefix,
     nullableProperties: options.nullableProperties,
     abstractSuffix: options.abstractSuffix,
+    cancellationToken: options.cancellationToken,
   };
 
   const groups = collectControllers(
@@ -546,7 +630,8 @@ function shouldSkipValidatorModel(model: Model): boolean {
     if (ns.name === "TypeSpec") return true;
     ns = ns.namespace;
   }
-  const filePath: string = (model.node as { file?: { path?: string } } | undefined)?.file?.path ?? "";
+  const filePath: string =
+    (model.node as { file?: { path?: string } } | undefined)?.file?.path ?? "";
   return filePath.replace(/\\/g, "/").includes("node_modules/");
 }
 
@@ -555,7 +640,9 @@ function shouldSkipValidatorModel(model: Model): boolean {
  * the referenced model and whether it is a collection. Returns `undefined` for
  * scalars, enums, unions, built-in models, and arrays of non-models.
  */
-function getValidatorModelReference(type: Type): { model: Model; isCollection: boolean } | undefined {
+function getValidatorModelReference(
+  type: Type,
+): { model: Model; isCollection: boolean } | undefined {
   if (type.kind !== "Model") return undefined;
   const m = type as Model;
   if (m.indexer !== undefined) {
@@ -570,29 +657,47 @@ function getValidatorModelReference(type: Type): { model: Model; isCollection: b
 }
 
 /** Extracts all constraint data for a single model property. */
-function buildSinglePropertyData(program: Program, prop: ModelProperty): PropertyData {
+function buildSinglePropertyData(
+  program: Program,
+  prop: ModelProperty,
+): PropertyData {
   const hasDefault = prop.defaultValue !== undefined;
-  const notEmpty = !prop.optional && !hasDefault && (isStringScalar(prop.type) || isStringLiteralUnion(prop.type));
-  const minLength = getMinLength(program, prop) ?? getMinLength(program, prop.type);
-  const maxLength = getMaxLength(program, prop) ?? getMaxLength(program, prop.type);
+  const notEmpty =
+    !prop.optional &&
+    !hasDefault &&
+    (isStringScalar(prop.type) || isStringLiteralUnion(prop.type));
+  const minLength =
+    getMinLength(program, prop) ?? getMinLength(program, prop.type);
+  const maxLength =
+    getMaxLength(program, prop) ?? getMaxLength(program, prop.type);
   const pattern = getPattern(program, prop) ?? getPattern(program, prop.type);
   const format = getFormat(program, prop) ?? getFormat(program, prop.type);
   const emailAddress = format === "email";
 
   const isInEnum = prop.type.kind === "Enum";
-  const enumTypeName = isInEnum ? pascalCase((prop.type as Enum).name) : undefined;
+  const enumTypeName = isInEnum
+    ? pascalCase((prop.type as Enum).name)
+    : undefined;
 
   const rawMin = getMinValue(program, prop) ?? getMinValue(program, prop.type);
   const rawMax = getMaxValue(program, prop) ?? getMaxValue(program, prop.type);
   const minValue: NumericRule | undefined =
-    rawMin !== undefined ? { value: rawMin, formatted: String(rawMin) } : undefined;
+    rawMin !== undefined
+      ? { value: rawMin, formatted: String(rawMin) }
+      : undefined;
   const maxValue: NumericRule | undefined =
-    rawMax !== undefined ? { value: rawMax, formatted: String(rawMax) } : undefined;
+    rawMax !== undefined
+      ? { value: rawMax, formatted: String(rawMax) }
+      : undefined;
 
   const modelRef = getValidatorModelReference(prop.type);
-  const referencedModelName = modelRef ? pascalCase(modelRef.model.name) : undefined;
+  const referencedModelName = modelRef
+    ? pascalCase(modelRef.model.name)
+    : undefined;
   const referencedParamName = modelRef
-    ? modelRef.model.name.charAt(0).toLowerCase() + modelRef.model.name.slice(1) + "Validator"
+    ? modelRef.model.name.charAt(0).toLowerCase() +
+      modelRef.model.name.slice(1) +
+      "Validator"
     : undefined;
   const isCollectionReference = modelRef?.isCollection;
 
@@ -641,8 +746,15 @@ function buildValidatorProperties(
   const result: PropertyData[] = [];
   for (const [, prop] of model.properties) {
     // Exclude read-only (non-writable) properties regardless of the lifecycle filter.
-    if (writeMembers.size > 0 && !isVisible(program, prop, { any: writeMembers })) continue;
-    if (visibilityMember && !isVisible(program, prop, { any: new Set([visibilityMember]) })) {
+    if (
+      writeMembers.size > 0 &&
+      !isVisible(program, prop, { any: writeMembers })
+    )
+      continue;
+    if (
+      visibilityMember &&
+      !isVisible(program, prop, { any: new Set([visibilityMember]) })
+    ) {
       continue;
     }
     if (versionFilter && !versionFilter(prop)) continue;
@@ -669,8 +781,15 @@ function buildVersionAwareValidatorProperties(
 
   for (const [, prop] of model.properties) {
     // Exclude read-only (non-writable) properties regardless of the lifecycle filter.
-    if (writeMembers.size > 0 && !isVisible(program, prop, { any: writeMembers })) continue;
-    if (visibilityMember && !isVisible(program, prop, { any: new Set([visibilityMember]) })) {
+    if (
+      writeMembers.size > 0 &&
+      !isVisible(program, prop, { any: writeMembers })
+    )
+      continue;
+    if (
+      visibilityMember &&
+      !isVisible(program, prop, { any: new Set([visibilityMember]) })
+    ) {
       continue;
     }
     const propData = buildSinglePropertyData(program, prop);
@@ -722,14 +841,19 @@ function makeValidatorVersionFilter(
 }
 
 /** Collects unique `ReferencedValidator` entries from one or more property lists. */
-function deriveReferencedValidators(...propertyGroups: PropertyData[][]): ReferencedValidator[] {
+function deriveReferencedValidators(
+  ...propertyGroups: PropertyData[][]
+): ReferencedValidator[] {
   const seen = new Set<string>();
   const result: ReferencedValidator[] = [];
   for (const props of propertyGroups) {
     for (const p of props) {
       if (p.referencedModelName && !seen.has(p.referencedModelName)) {
         seen.add(p.referencedModelName);
-        result.push({ modelName: p.referencedModelName, paramName: p.referencedParamName! });
+        result.push({
+          modelName: p.referencedModelName,
+          paramName: p.referencedParamName!,
+        });
       }
     }
   }
@@ -762,7 +886,11 @@ function collectValidatorTransitiveDeps(
 }
 
 /** Adds the given model and all its direct descendants to the target set. */
-function addModelWithDescendants(allModels: Model[], model: Model, target: Set<Model>): void {
+function addModelWithDescendants(
+  allModels: Model[],
+  model: Model,
+  target: Set<Model>,
+): void {
   target.add(model);
   for (const candidate of allModels) {
     if (candidate.baseModel === model) target.add(candidate);
@@ -849,7 +977,9 @@ function resolveValidatorNamespace(
 async function emitValidatorModels(
   program: Program,
   allModels: Model[],
-  routeModels: { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined,
+  routeModels:
+    | { postModels: Set<Model>; patchModels: Map<Model, string> }
+    | undefined,
   createMember: EnumMember | undefined,
   updateMember: EnumMember | undefined,
   options: ResolvedOptions,
@@ -860,17 +990,29 @@ async function emitValidatorModels(
   const { versionFilter, versionDirName, versionNsSuffix } = singleOpts;
   const namespace = resolveValidatorNamespace(options, versionNsSuffix);
   const writeMembers = new Set(
-    [createMember, updateMember].filter((m): m is EnumMember => m !== undefined),
+    [createMember, updateMember].filter(
+      (m): m is EnumMember => m !== undefined,
+    ),
   );
 
   for (const model of allModels) {
     const versionDir = versionDirName ? `${versionDirName}/` : "";
 
-    const doPost = emitPost && (routeModels === undefined || routeModels.postModels.has(model));
-    const doPatch = emitPatch && (routeModels === undefined || routeModels.patchModels.has(model));
+    const doPost =
+      emitPost &&
+      (routeModels === undefined || routeModels.postModels.has(model));
+    const doPatch =
+      emitPatch &&
+      (routeModels === undefined || routeModels.patchModels.has(model));
 
     if (doPost) {
-      const postProps = buildValidatorProperties(program, model, writeMembers, createMember, versionFilter);
+      const postProps = buildValidatorProperties(
+        program,
+        model,
+        writeMembers,
+        createMember,
+        versionFilter,
+      );
       const postRefs = deriveReferencedValidators(postProps);
       const data: ValidatorTemplateData = {
         namespace,
@@ -879,14 +1021,26 @@ async function emitValidatorModels(
         referencedValidators: postRefs.length > 0 ? postRefs : undefined,
       };
       await emitFile(program, {
-        path: resolvePath(options.validatorsOutputDir, `${versionDir}${model.name}Validator${options.fileExtension}`),
-        content: getValidatorPostTemplate(options.templates["validator-post"])(data),
+        path: resolvePath(
+          options.validatorsOutputDir,
+          `${versionDir}${model.name}Validator${options.fileExtension}`,
+        ),
+        content: getValidatorPostTemplate(options.templates["validator-post"])(
+          data,
+        ),
       });
     }
 
     if (doPatch) {
-      const patchBodyTypeName = routeModels?.patchModels.get(model) ?? model.name;
-      const patchProps = buildValidatorProperties(program, model, writeMembers, updateMember, versionFilter);
+      const patchBodyTypeName =
+        routeModels?.patchModels.get(model) ?? model.name;
+      const patchProps = buildValidatorProperties(
+        program,
+        model,
+        writeMembers,
+        updateMember,
+        versionFilter,
+      );
       const patchRefs = deriveReferencedValidators(patchProps);
       const data: ValidatorTemplateData = {
         namespace,
@@ -896,8 +1050,13 @@ async function emitValidatorModels(
         referencedValidators: patchRefs.length > 0 ? patchRefs : undefined,
       };
       await emitFile(program, {
-        path: resolvePath(options.validatorsOutputDir, `${versionDir}${model.name}PatchValidator${options.fileExtension}`),
-        content: getValidatorPatchTemplate(options.templates["validator-patch"])(data),
+        path: resolvePath(
+          options.validatorsOutputDir,
+          `${versionDir}${model.name}PatchValidator${options.fileExtension}`,
+        ),
+        content: getValidatorPatchTemplate(
+          options.templates["validator-patch"],
+        )(data),
       });
     }
   }
@@ -907,7 +1066,9 @@ async function emitValidatorModels(
 async function emitVersionAwareValidatorModels(
   program: Program,
   allModels: Model[],
-  routeModels: { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined,
+  routeModels:
+    | { postModels: Set<Model>; patchModels: Map<Model, string> }
+    | undefined,
   createMember: EnumMember | undefined,
   updateMember: EnumMember | undefined,
   options: ResolvedOptions,
@@ -919,18 +1080,32 @@ async function emitVersionAwareValidatorModels(
   const defaultVersion = versionValues[0];
   const namespace = resolveValidatorNamespace(options);
   const writeMembers = new Set(
-    [createMember, updateMember].filter((m): m is EnumMember => m !== undefined),
+    [createMember, updateMember].filter(
+      (m): m is EnumMember => m !== undefined,
+    ),
   );
 
   for (const model of allModels) {
-    const doPost = emitPost && (routeModels === undefined || routeModels.postModels.has(model));
-    const doPatch = emitPatch && (routeModels === undefined || routeModels.patchModels.has(model));
+    const doPost =
+      emitPost &&
+      (routeModels === undefined || routeModels.postModels.has(model));
+    const doPatch =
+      emitPatch &&
+      (routeModels === undefined || routeModels.patchModels.has(model));
 
     if (doPost) {
-      const { baseProperties, versionGroups } = buildVersionAwareValidatorProperties(
-        program, model, writeMembers, createMember, allVersions,
+      const { baseProperties, versionGroups } =
+        buildVersionAwareValidatorProperties(
+          program,
+          model,
+          writeMembers,
+          createMember,
+          allVersions,
+        );
+      const postRefs = deriveReferencedValidators(
+        baseProperties,
+        ...versionGroups.map((g) => g.properties),
       );
-      const postRefs = deriveReferencedValidators(baseProperties, ...versionGroups.map((g) => g.properties));
       const data: VersionAwareValidatorTemplateData = {
         namespace,
         modelName: model.name,
@@ -941,17 +1116,31 @@ async function emitVersionAwareValidatorModels(
         referencedValidators: postRefs.length > 0 ? postRefs : undefined,
       };
       await emitFile(program, {
-        path: resolvePath(options.validatorsOutputDir, `${model.name}Validator${options.fileExtension}`),
-        content: getValidatorPostVersionAwareTemplate(options.templates["validator-post-version-aware"])(data),
+        path: resolvePath(
+          options.validatorsOutputDir,
+          `${model.name}Validator${options.fileExtension}`,
+        ),
+        content: getValidatorPostVersionAwareTemplate(
+          options.templates["validator-post-version-aware"],
+        )(data),
       });
     }
 
     if (doPatch) {
-      const patchBodyTypeName = routeModels?.patchModels.get(model) ?? model.name;
-      const { baseProperties, versionGroups } = buildVersionAwareValidatorProperties(
-        program, model, writeMembers, updateMember, allVersions,
+      const patchBodyTypeName =
+        routeModels?.patchModels.get(model) ?? model.name;
+      const { baseProperties, versionGroups } =
+        buildVersionAwareValidatorProperties(
+          program,
+          model,
+          writeMembers,
+          updateMember,
+          allVersions,
+        );
+      const patchRefs = deriveReferencedValidators(
+        baseProperties,
+        ...versionGroups.map((g) => g.properties),
       );
-      const patchRefs = deriveReferencedValidators(baseProperties, ...versionGroups.map((g) => g.properties));
       const data: VersionAwareValidatorTemplateData = {
         namespace,
         modelName: model.name,
@@ -963,8 +1152,13 @@ async function emitVersionAwareValidatorModels(
         referencedValidators: patchRefs.length > 0 ? patchRefs : undefined,
       };
       await emitFile(program, {
-        path: resolvePath(options.validatorsOutputDir, `${model.name}PatchValidator${options.fileExtension}`),
-        content: getValidatorPatchVersionAwareTemplate(options.templates["validator-patch-version-aware"])(data),
+        path: resolvePath(
+          options.validatorsOutputDir,
+          `${model.name}PatchValidator${options.fileExtension}`,
+        ),
+        content: getValidatorPatchVersionAwareTemplate(
+          options.templates["validator-patch-version-aware"],
+        )(data),
       });
     }
   }
@@ -979,7 +1173,9 @@ interface EmitValidatorInitializerOptions {
 async function emitValidatorsInitializer(
   program: Program,
   allModels: Model[],
-  routeModels: { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined,
+  routeModels:
+    | { postModels: Set<Model>; patchModels: Map<Model, string> }
+    | undefined,
   options: ResolvedOptions,
   emitPost: boolean,
   emitPatch: boolean,
@@ -990,28 +1186,51 @@ async function emitValidatorsInitializer(
 
   const registrations: ValidatorRegistration[] = [];
   for (const model of allModels) {
-    if (emitPost && (routeModels === undefined || routeModels.postModels.has(model))) {
-      registrations.push({ modelTypeName: model.name, validatorName: `${model.name}Validator` });
+    if (
+      emitPost &&
+      (routeModels === undefined || routeModels.postModels.has(model))
+    ) {
+      registrations.push({
+        modelTypeName: model.name,
+        validatorName: `${model.name}Validator`,
+      });
     }
-    if (emitPatch && (routeModels === undefined || routeModels.patchModels.has(model))) {
-      const patchBodyTypeName = routeModels?.patchModels.get(model) ?? model.name;
-      registrations.push({ modelTypeName: patchBodyTypeName, validatorName: `${model.name}PatchValidator` });
+    if (
+      emitPatch &&
+      (routeModels === undefined || routeModels.patchModels.has(model))
+    ) {
+      const patchBodyTypeName =
+        routeModels?.patchModels.get(model) ?? model.name;
+      registrations.push({
+        modelTypeName: patchBodyTypeName,
+        validatorName: `${model.name}PatchValidator`,
+      });
     }
   }
 
   if (registrations.length === 0) return;
 
-  let namespace: string | undefined = options.validatorsPathNamespace || undefined;
+  let namespace: string | undefined =
+    options.validatorsPathNamespace || undefined;
   if (versionNsSuffix) {
     namespace = namespace ? `${namespace}.${versionNsSuffix}` : versionNsSuffix;
   }
 
   const versionDir = versionDirName ? `${versionDirName}/` : "";
 
-  const data: InitializerTemplateData = { namespace, registrations, isVersionAware };
+  const data: InitializerTemplateData = {
+    namespace,
+    registrations,
+    isVersionAware,
+  };
   await emitFile(program, {
-    path: resolvePath(options.validatorsOutputDir, `${versionDir}ValidatorsInitializer${options.fileExtension}`),
-    content: getValidatorInitializerTemplate(options.templates["validator-initializer"])(data),
+    path: resolvePath(
+      options.validatorsOutputDir,
+      `${versionDir}ValidatorsInitializer${options.fileExtension}`,
+    ),
+    content: getValidatorInitializerTemplate(
+      options.templates["validator-initializer"],
+    )(data),
   });
 }
 
@@ -1024,8 +1243,10 @@ async function emitValidators(
   program: Program,
   options: ResolvedOptions,
 ): Promise<void> {
-  const emitPost = options.validatorsTypes === "post" || options.validatorsTypes === "both";
-  const emitPatch = options.validatorsTypes === "patch" || options.validatorsTypes === "both";
+  const emitPost =
+    options.validatorsTypes === "post" || options.validatorsTypes === "both";
+  const emitPatch =
+    options.validatorsTypes === "patch" || options.validatorsTypes === "both";
 
   // Collect all user-defined, non-template models.
   const allModels: Model[] = [];
@@ -1052,7 +1273,8 @@ async function emitValidators(
   }
 
   const effectiveStrategy =
-    options.validatorsVersionStrategy ?? (allVersions ? "version-aware" : "earliest");
+    options.validatorsVersionStrategy ??
+    (allVersions ? "version-aware" : "earliest");
 
   if (effectiveStrategy === "latest") {
     reportDiagnostic(program, {
@@ -1062,53 +1284,119 @@ async function emitValidators(
     });
   }
 
-  if (effectiveStrategy === "per-version" && allVersions && allVersions.length > 0) {
+  if (
+    effectiveStrategy === "per-version" &&
+    allVersions &&
+    allVersions.length > 0
+  ) {
     for (const version of allVersions) {
       const vf = makeValidatorVersionFilter(program, version.name);
-      const versionNsSuffix = version.name.charAt(0).toUpperCase() + version.name.slice(1);
+      const versionNsSuffix =
+        version.name.charAt(0).toUpperCase() + version.name.slice(1);
       const expandedRouteModels = routeModels
-        ? { postModels: collectValidatorTransitiveDeps(program, routeModels.postModels, vf), patchModels: routeModels.patchModels }
+        ? {
+            postModels: collectValidatorTransitiveDeps(
+              program,
+              routeModels.postModels,
+              vf,
+            ),
+            patchModels: routeModels.patchModels,
+          }
         : undefined;
       await emitValidatorModels(
-        program, allModels, expandedRouteModels, createMember, updateMember, options,
-        emitPost, emitPatch,
+        program,
+        allModels,
+        expandedRouteModels,
+        createMember,
+        updateMember,
+        options,
+        emitPost,
+        emitPatch,
         { versionFilter: vf, versionDirName: version.name, versionNsSuffix },
       );
       await emitValidatorsInitializer(
-        program, allModels, expandedRouteModels, options, emitPost, emitPatch,
-        /* isVersionAware */ false, { versionDirName: version.name, versionNsSuffix },
+        program,
+        allModels,
+        expandedRouteModels,
+        options,
+        emitPost,
+        emitPatch,
+        /* isVersionAware */ false,
+        { versionDirName: version.name, versionNsSuffix },
       );
     }
-  } else if (effectiveStrategy === "version-aware" && allVersions && allVersions.length > 0) {
+  } else if (
+    effectiveStrategy === "version-aware" &&
+    allVersions &&
+    allVersions.length > 0
+  ) {
     const expandedRouteModels = routeModels
-      ? { postModels: collectValidatorTransitiveDeps(program, routeModels.postModels), patchModels: routeModels.patchModels }
+      ? {
+          postModels: collectValidatorTransitiveDeps(
+            program,
+            routeModels.postModels,
+          ),
+          patchModels: routeModels.patchModels,
+        }
       : undefined;
     await emitVersionAwareValidatorModels(
-      program, allModels, expandedRouteModels, createMember, updateMember, options,
-      emitPost, emitPatch, allVersions,
+      program,
+      allModels,
+      expandedRouteModels,
+      createMember,
+      updateMember,
+      options,
+      emitPost,
+      emitPatch,
+      allVersions,
     );
     await emitValidatorsInitializer(
-      program, allModels, expandedRouteModels, options, emitPost, emitPatch,
+      program,
+      allModels,
+      expandedRouteModels,
+      options,
+      emitPost,
+      emitPatch,
       /* isVersionAware */ true,
     );
   } else {
     // "earliest" or "latest" (or no versioning)
     let versionFilter: ((prop: ModelProperty) => boolean) | undefined;
     if (allVersions && allVersions.length > 0) {
-      const targetVersionName = effectiveStrategy === "latest"
-        ? allVersions[allVersions.length - 1].name
-        : allVersions[0].name;
+      const targetVersionName =
+        effectiveStrategy === "latest"
+          ? allVersions[allVersions.length - 1].name
+          : allVersions[0].name;
       versionFilter = makeValidatorVersionFilter(program, targetVersionName);
     }
     const expandedRouteModels = routeModels
-      ? { postModels: collectValidatorTransitiveDeps(program, routeModels.postModels, versionFilter), patchModels: routeModels.patchModels }
+      ? {
+          postModels: collectValidatorTransitiveDeps(
+            program,
+            routeModels.postModels,
+            versionFilter,
+          ),
+          patchModels: routeModels.patchModels,
+        }
       : undefined;
     await emitValidatorModels(
-      program, allModels, expandedRouteModels, createMember, updateMember, options,
-      emitPost, emitPatch, { versionFilter },
+      program,
+      allModels,
+      expandedRouteModels,
+      createMember,
+      updateMember,
+      options,
+      emitPost,
+      emitPatch,
+      { versionFilter },
     );
     await emitValidatorsInitializer(
-      program, allModels, expandedRouteModels, options, emitPost, emitPatch,
+      program,
+      allModels,
+      expandedRouteModels,
+      options,
+      emitPost,
+      emitPatch,
       /* isVersionAware */ false,
     );
   }
@@ -1151,7 +1439,11 @@ async function emitControllerGroup(
       ctrlNamespace,
     );
     await emitFile(program, {
-      path: resolvePath(options.controllersOutputDir, ...folder, controllerFileName),
+      path: resolvePath(
+        options.controllersOutputDir,
+        ...folder,
+        controllerFileName,
+      ),
       content: renderer.renderFile({
         fileName: controllerFileName,
         namespace: ctrlNamespace,
@@ -1169,7 +1461,11 @@ async function emitControllerGroup(
       svcNamespace,
     );
     await emitFile(program, {
-      path: resolvePath(options.servicesOutputDir, ...folder, serviceInterfaceFileName),
+      path: resolvePath(
+        options.servicesOutputDir,
+        ...folder,
+        serviceInterfaceFileName,
+      ),
       content: renderer.renderFile({
         fileName: serviceInterfaceFileName,
         namespace: svcNamespace,
@@ -1248,10 +1544,15 @@ function buildControllerUsings(
   ownNamespace: string,
 ): string[] {
   const usings = new Set<string>(CONTROLLER_USINGS);
+  if (options.cancellationToken) usings.add("System.Threading");
   for (const u of options.additionalUsings) usings.add(u);
   for (const ref of references) {
     for (const type of collectReferencedTypes(ref)) {
-      const typespecNs = csharpNamespaceFor(type.namespace, options, options.modelsEffectiveRootNs);
+      const typespecNs = csharpNamespaceFor(
+        type.namespace,
+        options,
+        options.modelsEffectiveRootNs,
+      );
       // When namespace-from-path is enabled, apply the appropriate directory suffix
       // (modelsDirSuffix for models/enums that go in the models output dir)
       const ns =
@@ -1281,10 +1582,15 @@ function buildServiceUsings(
   ownNamespace: string,
 ): string[] {
   const usings = new Set<string>(SERVICE_USINGS);
+  if (options.cancellationToken) usings.add("System.Threading");
   for (const u of options.additionalUsings) usings.add(u);
   for (const ref of references) {
     for (const type of collectReferencedTypes(ref)) {
-      const typespecNs = csharpNamespaceFor(type.namespace, options, options.modelsEffectiveRootNs);
+      const typespecNs = csharpNamespaceFor(
+        type.namespace,
+        options,
+        options.modelsEffectiveRootNs,
+      );
       // When namespace-from-path is enabled, apply the appropriate directory suffix
       // (modelsDirSuffix for models/enums that go in the models output dir)
       const ns =
@@ -1329,8 +1635,9 @@ function buildRenderer(
     return createRenderer(options.templates);
   } catch (err) {
     const path = findFailingTemplatePath(options.templates, err);
-    const name = (Object.entries(options.templates).find(([, p]) => p === path)?.[0] ??
-      "unknown") as TemplateName;
+    const name = (Object.entries(options.templates).find(
+      ([, p]) => p === path,
+    )?.[0] ?? "unknown") as TemplateName;
     reportDiagnostic(program, {
       code: "template-load-failed",
       target: NoTarget,
@@ -1421,7 +1728,9 @@ function inferRootNamespace(program: Program): string | undefined {
 
   // Walk the single-child chain downward to find the most specific common root.
   function walk(ns: Namespace): Namespace {
-    const children = [...ns.namespaces.values()].filter((n) => !isStdNamespace(n));
+    const children = [...ns.namespaces.values()].filter(
+      (n) => !isStdNamespace(n),
+    );
     // Single child: keep descending.  Zero or multiple children: this is the
     // deepest common ancestor, return it.
     return children.length === 1 ? walk(children[0]) : ns;
@@ -1469,16 +1778,22 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
   const effectiveRootNs = rootNs ?? inferRootNamespace(context.program);
   // Per-section effective roots — fall back to the global effective root when not set.
   const modelsEffectiveRootNs = raw["models-root-namespace"] ?? effectiveRootNs;
-  const interfacesEffectiveRootNs = raw["interfaces-root-namespace"] ?? effectiveRootNs;
-  const controllersRootNs = raw["controllers-root-namespace"] ?? effectiveRootNs;
+  const interfacesEffectiveRootNs =
+    raw["interfaces-root-namespace"] ?? effectiveRootNs;
+  const controllersRootNs =
+    raw["controllers-root-namespace"] ?? effectiveRootNs;
   const servicesRootNs = raw["services-root-namespace"] ?? effectiveRootNs;
   const validatorsRootNs = raw["validators-root-namespace"] ?? effectiveRootNs;
   // Determine if we should use namespace-from-path mode
   const useNamespaceFromPath = raw["namespace-from-path"] ?? true;
   // When namespace-from-path is enabled, always compute the dir suffixes
   // to include output directories in namespaces. Otherwise, leave them empty.
-  const modelsDirSuffix = useNamespaceFromPath ? pathNamespace(undefined, modelsDir) : "";
-  const interfacesDirSuffix = useNamespaceFromPath ? pathNamespace(undefined, interfacesDir) : "";
+  const modelsDirSuffix = useNamespaceFromPath
+    ? pathNamespace(undefined, modelsDir)
+    : "";
+  const interfacesDirSuffix = useNamespaceFromPath
+    ? pathNamespace(undefined, interfacesDir)
+    : "";
   return {
     rootNamespace: rootNs,
     effectiveRootNamespace: effectiveRootNs,
@@ -1505,6 +1820,7 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     additionalUsings: raw["additional-usings"] ?? [],
     nullableProperties: raw["nullable-properties"] ?? true,
     abstractSuffix: raw["abstract-suffix"] ?? "Base",
+    cancellationToken: raw["cancellation-token"] ?? true,
     templates: resolveTemplatePaths(raw.templates),
     emitValidators: raw["emit-validators"] ?? false,
     validatorsPathNamespace: pathNamespace(validatorsRootNs, validatorsDir),
@@ -1521,7 +1837,9 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
  * @param templates - Raw template override map from user config.
  * @returns Template override map with all paths made absolute.
  */
-function resolveTemplatePaths(templates: EmitterOptions["templates"]): TemplateOverrides {
+function resolveTemplatePaths(
+  templates: EmitterOptions["templates"],
+): TemplateOverrides {
   if (!templates) return {};
   const out: TemplateOverrides = {};
   const keys: (keyof TemplateOverrides)[] = [
@@ -1628,7 +1946,8 @@ function csharpNamespaceFor(
   sectionRootNs?: string,
 ): string {
   const fullNs = namespaceFullName(ns);
-  if (!fullNs) return sectionRootNs ?? options.rootNamespace ?? DEFAULT_NAMESPACE;
+  if (!fullNs)
+    return sectionRootNs ?? options.rootNamespace ?? DEFAULT_NAMESPACE;
   const mapped = applyNamespaceMap(fullNs, options.namespaceMap);
   return mapped.split(".").map(pascalCase).join(".");
 }
@@ -1668,7 +1987,10 @@ function applyNamespaceMap(
  * @param csharpNs - The C# namespace for the type being emitted.
  * @returns Array of folder name segments (may be empty).
  */
-function folderSegments(rootNs: string | undefined, csharpNs: string): string[] {
+function folderSegments(
+  rootNs: string | undefined,
+  csharpNs: string,
+): string[] {
   if (!rootNs) return [];
   if (csharpNs === rootNs) return [];
   if (csharpNs.startsWith(rootNs + ".")) {
@@ -1746,7 +2068,11 @@ function collectUsings(
   for (const u of options.additionalUsings) usings.add(u);
   for (const ref of references) {
     for (const type of collectReferencedTypes(ref)) {
-      const typespecNs = csharpNamespaceFor(type.namespace, options, options.modelsEffectiveRootNs);
+      const typespecNs = csharpNamespaceFor(
+        type.namespace,
+        options,
+        options.modelsEffectiveRootNs,
+      );
       // When a dir-suffix has been applied to the emitting file's namespace,
       // the same suffix must be applied to referenced types so that
       // using-directives point at the correct C# namespace.
@@ -1773,7 +2099,10 @@ function collectUsings(
  * @param options - Resolved options (helpers namespace, additional usings).
  * @returns Sorted, deduplicated array of `using` namespace strings.
  */
-function collectEnumUsings(ownNamespace: string, options: ResolvedOptions): string[] {
+function collectEnumUsings(
+  ownNamespace: string,
+  options: ResolvedOptions,
+): string[] {
   const usings = new Set<string>(ENUM_USINGS);
   for (const u of options.additionalUsings) usings.add(u);
   if (options.helpersNamespace && options.helpersNamespace !== ownNamespace) {
@@ -1823,7 +2152,9 @@ function buildInterfaceView(
   return {
     doc: docFor(program, model),
     interfaceName: `I${pascalCase(model.name)}`,
-    baseInterface: model.baseModel ? `I${pascalCase(model.baseModel.name)}` : undefined,
+    baseInterface: model.baseModel
+      ? `I${pascalCase(model.baseModel.name)}`
+      : undefined,
     properties: buildPropertyViews(program, model, options, isMergePatchModel),
   };
 }
@@ -1846,7 +2177,8 @@ function buildEnumView(program: Program, en: Enum): EnumView {
         doc: memberDoc ? renderDocComment(memberDoc) : undefined,
         name: pascalCase(member.name),
         value: typeof member.value === "number" ? member.value : undefined,
-        memberValue: typeof member.value === "string" ? member.value : member.name,
+        memberValue:
+          typeof member.value === "string" ? member.value : member.name,
       };
     }),
   };
@@ -1933,7 +2265,10 @@ function buildPropertyViews(
  * @param target - The annotated model or model property.
  * @returns Pre-rendered XML summary string, or `undefined` if no doc is present.
  */
-function docFor(program: Program, target: Model | ModelProperty): string | undefined {
+function docFor(
+  program: Program,
+  target: Model | ModelProperty,
+): string | undefined {
   const doc = getDoc(program, target);
   return doc ? renderDocComment(doc) : undefined;
 }
@@ -2029,7 +2364,11 @@ function collectInferredEnums(
   const byKey = new Map<string, InferredEnum>();
   const explicitEnumKeys = new Set(
     explicitEnums.map((en) => {
-      const typespecNs = csharpNamespaceFor(en.namespace, options, options.modelsEffectiveRootNs);
+      const typespecNs = csharpNamespaceFor(
+        en.namespace,
+        options,
+        options.modelsEffectiveRootNs,
+      );
       const ns =
         options.namespaceFromPath && options.modelsDirSuffix
           ? `${typespecNs}.${options.modelsDirSuffix}`
@@ -2040,7 +2379,11 @@ function collectInferredEnums(
 
   for (const model of models) {
     const isMergePatchModel = isMergePatchUpdateModel(model);
-    const typespecNs = csharpNamespaceFor(model.namespace, options, options.modelsEffectiveRootNs);
+    const typespecNs = csharpNamespaceFor(
+      model.namespace,
+      options,
+      options.modelsEffectiveRootNs,
+    );
     const ns =
       options.namespaceFromPath && options.modelsDirSuffix
         ? `${typespecNs}.${options.modelsDirSuffix}`
@@ -2054,7 +2397,11 @@ function collectInferredEnums(
       const values = getStringLiteralUnionValues(prop.type);
       if (!values) continue;
 
-      const name = inferredEnumTypeNameForProperty(model, prop, isMergePatchModel);
+      const name = inferredEnumTypeNameForProperty(
+        model,
+        prop,
+        isMergePatchModel,
+      );
       if (!name) continue;
 
       const key = `${ns}.${name}`;
@@ -2154,4 +2501,3 @@ function typeReference(type: Type): string {
       return "object";
   }
 }
-

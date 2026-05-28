@@ -4,6 +4,7 @@
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 #pragma warning disable CS0612 // Type or member is obsolete
 #pragma warning disable CS0618 // Type or member is obsolete
+#nullable enable
 
 using FluentValidation;
 {{#if namespace}}
@@ -16,6 +17,7 @@ namespace {{{namespace}}};
 /// Each rule fires only when the corresponding property is present in the patch.
 /// Extend this partial class to add custom validation rules.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{patchBodyTypeName}}}>
 {
     /// <summary>

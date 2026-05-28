@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- `cancellation-token` option (default `true`): adds `CancellationToken cancellationToken` to every generated controller action and service method, and emits `using System.Threading;` in controller and service files. Set `cancellation-token: false` in `tspconfig.yaml` to opt out.
+
 ## [1.5.0] - 2026-05-15
 
 ### Fixed
@@ -89,7 +95,6 @@ All notable changes to this project will be documented in this file.
 - Default value for `interfaces-output-dir` changed from `emitter-output-dir` to `"Models"`.
 - Service interface and controller files now include any `additional-usings` specified in the emitter configuration.
 - When `namespace-from-path` is true (the default), output directory paths are now always included in namespaces, even for default directories. This ensures consistent path-based namespace derivation across all generated file types.
-
 
 ### Added
 

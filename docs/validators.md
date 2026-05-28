@@ -4,11 +4,11 @@ When `emit-validators: true`, the emitter generates [FluentValidation](https://d
 
 ## Generated files
 
-| File                         | Content                                                                                 |
-| ---------------------------- | --------------------------------------------------------------------------------------- |
-| `{Model}Validator.g.cs`      | `AbstractValidator<{Model}>` with rules for POST bodies.                                |
+| File                         | Content                                                                                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{Model}Validator.g.cs`      | `AbstractValidator<{Model}>` with rules for POST bodies.                                                                                     |
 | `{Model}PatchValidator.g.cs` | Patch-aware `AbstractValidator<{Model}MergePatchUpdate>` whose rules fire only when the corresponding property is present in the patch body. |
-| `ValidatorsInitializer.g.cs` | Static `AddGeneratedValidators(this IServiceCollection)` extension method for DI setup. |
+| `ValidatorsInitializer.g.cs` | Static `AddGeneratedValidators(this IServiceCollection)` extension method for DI setup.                                                      |
 
 ## Setup
 
@@ -73,10 +73,10 @@ Version-aware validators accept `IHttpContextAccessor` to resolve the API versio
 
 ## Related options
 
-| Option                        | Default        | Description                                                          |
-| ----------------------------- | -------------- | -------------------------------------------------------------------- |
-| `emit-validators`             | `false`        | Enable validator generation.                                         |
-| `validators`                  | `"both"`       | Which validator types to emit: `"post"`, `"patch"`, or `"both"`.     |
-| `validators-output-dir`       | `"Validators"` | Output directory for validator and initializer files.                |
-| `validators-root-namespace`   | _(global root)_ | Root namespace for validator files.                                  |
-| `validators-version-strategy` | _(auto)_       | Version strategy. Auto-detected from spec; see table above.          |
+| Option                        | Default         | Description                                                      |
+| ----------------------------- | --------------- | ---------------------------------------------------------------- |
+| `emit-validators`             | `false`         | Enable validator generation.                                     |
+| `validators`                  | `"both"`        | Which validator types to emit: `"post"`, `"patch"`, or `"both"`. |
+| `validators-output-dir`       | `"Validators"`  | Output directory for validator and initializer files.            |
+| `validators-root-namespace`   | _(global root)_ | Root namespace for validator files.                              |
+| `validators-version-strategy` | _(auto)_        | Version strategy. Auto-detected from spec; see table above.      |
