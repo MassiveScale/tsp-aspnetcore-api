@@ -55,6 +55,8 @@ export interface ControllerOptions {
   nullableProperties: boolean;
   /** Suffix appended to generated abstract class names, e.g. `"Base"`. */
   abstractSuffix: string;
+  /** Whether to add a CancellationToken parameter to operations. */
+  cancellationToken: boolean;
 }
 
 /**
@@ -294,6 +296,7 @@ function buildOperationView(
     routes,
     routeSuffix,
     params,
+    cancellationToken: options.cancellationToken,
     returnType,
   };
 }

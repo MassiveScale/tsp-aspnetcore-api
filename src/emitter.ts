@@ -319,6 +319,8 @@ interface ResolvedOptions {
   nullableProperties: boolean;
   /** Suffix appended to generated abstract class names. */
   abstractSuffix: string;
+  /** Whether to add a CancellationToken parameter to operations. */
+  cancellationToken: boolean;
   /** Resolved template override paths (absolute). */
   templates: TemplateOverrides;
   /** Whether to emit helper files (`MergePatchValue`, `EnumMemberConverter`). */
@@ -558,6 +560,7 @@ export async function $onEmit(
     routePrefix: options.routePrefix,
     nullableProperties: options.nullableProperties,
     abstractSuffix: options.abstractSuffix,
+    cancellationToken: options.cancellationToken,
   };
 
   const groups = collectControllers(
@@ -1541,6 +1544,7 @@ function buildControllerUsings(
   ownNamespace: string,
 ): string[] {
   const usings = new Set<string>(CONTROLLER_USINGS);
+  if (options.cancellationToken) usings.add("System.Threading");
   for (const u of options.additionalUsings) usings.add(u);
   for (const ref of references) {
     for (const type of collectReferencedTypes(ref)) {
@@ -1578,6 +1582,7 @@ function buildServiceUsings(
   ownNamespace: string,
 ): string[] {
   const usings = new Set<string>(SERVICE_USINGS);
+  if (options.cancellationToken) usings.add("System.Threading");
   for (const u of options.additionalUsings) usings.add(u);
   for (const ref of references) {
     for (const type of collectReferencedTypes(ref)) {
@@ -1815,6 +1820,7 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     additionalUsings: raw["additional-usings"] ?? [],
     nullableProperties: raw["nullable-properties"] ?? true,
     abstractSuffix: raw["abstract-suffix"] ?? "Base",
+    cancellationToken: raw["cancellation-token"] ?? true,
     templates: resolveTemplatePaths(raw.templates),
     emitValidators: raw["emit-validators"] ?? false,
     validatorsPathNamespace: pathNamespace(validatorsRootNs, validatorsDir),
