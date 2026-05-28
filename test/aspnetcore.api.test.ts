@@ -1275,7 +1275,10 @@ namespace {{namespace}}
       const results = await emit(cancellationTokenSpec, {});
 
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
       ok(
         ctrl.includes("using System.Threading;"),
         `missing 'using System.Threading;' in controller:\n${ctrl}`,
@@ -1302,10 +1305,15 @@ namespace {{namespace}}
     });
 
     it("adds CancellationToken parameter when cancellation-token is true", async () => {
-      const results = await emit(cancellationTokenSpec, { "cancellation-token": true });
+      const results = await emit(cancellationTokenSpec, {
+        "cancellation-token": true,
+      });
 
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
       ok(
         ctrl.includes("using System.Threading;"),
         `missing 'using System.Threading;' in controller:\n${ctrl}`,
@@ -1344,10 +1352,15 @@ namespace {{namespace}}
     });
 
     it("omits CancellationToken parameter when cancellation-token is false", async () => {
-      const results = await emit(cancellationTokenSpec, { "cancellation-token": false });
+      const results = await emit(cancellationTokenSpec, {
+        "cancellation-token": false,
+      });
 
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
       ok(
         !ctrl.includes("CancellationToken"),
         `unexpected CancellationToken in controller:\n${ctrl}`,
