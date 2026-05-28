@@ -434,7 +434,7 @@ function controllerActionBlock(op: OperationView): string {
   }
   const paramList = op.params.map(operationParamDecl).join(", ");
   const fullParamList = op.cancellationToken
-    ? [paramList, "CancellationToken cancellationToken = default"]
+    ? [paramList, "CancellationToken cancellationToken"]
         .filter(Boolean)
         .join(", ")
     : paramList;
@@ -461,7 +461,7 @@ function serviceMethodDecl(op: OperationView): string {
     .map((p) => `${p.optional ? `${p.type}?` : p.type} ${p.name}`)
     .join(", ");
   const fullParamList = op.cancellationToken
-    ? [paramList, "CancellationToken cancellationToken = default"]
+    ? [paramList, "CancellationToken cancellationToken"]
         .filter(Boolean)
         .join(", ")
     : paramList;

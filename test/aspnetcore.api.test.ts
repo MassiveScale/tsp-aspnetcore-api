@@ -1255,40 +1255,70 @@ namespace {{namespace}}
   });
 
   describe("cancellation-token option", () => {
-    it("adds CancellationToken parameter when cancellation-token is true", async () => {
-      const results = await emit(
-        `
-        import "@typespec/http";
-        using TypeSpec.Http;
+    const cancellationTokenSpec = `
+      import "@typespec/http";
+      using TypeSpec.Http;
 
-        @service(#{title: "Items" })
-        namespace Demo;
+      @service(#{title: "Items" })
+      namespace Demo;
 
-        model Item { id: string; }
+      model Item { id: string; }
 
-        @route("/items")
-        interface Items {
-          @get list(): Item[];
-          @post create(@body item: Item): void;
-        }
-      `,
-        { "cancellation-token": true },
-      );
+      @route("/items")
+      interface Items {
+        @get list(): Item[];
+        @post create(@body item: Item): void;
+      }
+    `;
+
+    it("adds CancellationToken parameter by default (cancellation-token defaults to true)", async () => {
+      const results = await emit(cancellationTokenSpec, {});
 
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
+      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
       ok(
-        ctrl,
-        `expected controller file, got ${Object.keys(results).join(", ")}`,
+        ctrl.includes("using System.Threading;"),
+        `missing 'using System.Threading;' in controller:\n${ctrl}`,
       );
       ok(
         ctrl.includes(
-          "public abstract Task<IActionResult> List(CancellationToken cancellationToken = default);",
+          "public abstract Task<IActionResult> List(CancellationToken cancellationToken);",
+        ),
+        `missing List in controller:\n${ctrl}`,
+      );
+
+      const svc = results["Services/IItemsService.g.cs"];
+      ok(svc, "expected service interface");
+      ok(
+        svc.includes("using System.Threading;"),
+        `missing 'using System.Threading;' in service:\n${svc}`,
+      );
+      ok(
+        svc.includes(
+          "Task<IList<Item>?> ListAsync(CancellationToken cancellationToken);",
+        ),
+        `missing ListAsync in service:\n${svc}`,
+      );
+    });
+
+    it("adds CancellationToken parameter when cancellation-token is true", async () => {
+      const results = await emit(cancellationTokenSpec, { "cancellation-token": true });
+
+      const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
+      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl.includes("using System.Threading;"),
+        `missing 'using System.Threading;' in controller:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes(
+          "public abstract Task<IActionResult> List(CancellationToken cancellationToken);",
         ),
         `missing List in controller:\n${ctrl}`,
       );
       ok(
         ctrl.includes(
-          "public abstract Task<IActionResult> Create([FromBody] Item body, CancellationToken cancellationToken = default);",
+          "public abstract Task<IActionResult> Create([FromBody] Item body, CancellationToken cancellationToken);",
         ),
         `missing Create in controller:\n${ctrl}`,
       );
@@ -1296,16 +1326,46 @@ namespace {{namespace}}
       const svc = results["Services/IItemsService.g.cs"];
       ok(svc, "expected service interface");
       ok(
+        svc.includes("using System.Threading;"),
+        `missing 'using System.Threading;' in service:\n${svc}`,
+      );
+      ok(
         svc.includes(
-          "Task<IList<Item>?> ListAsync(CancellationToken cancellationToken = default);",
+          "Task<IList<Item>?> ListAsync(CancellationToken cancellationToken);",
         ),
         `missing ListAsync in service:\n${svc}`,
       );
       ok(
         svc.includes(
-          "Task CreateAsync(Item body, CancellationToken cancellationToken = default);",
+          "Task CreateAsync(Item body, CancellationToken cancellationToken);",
         ),
         `missing CreateAsync in service:\n${svc}`,
+      );
+    });
+
+    it("omits CancellationToken parameter when cancellation-token is false", async () => {
+      const results = await emit(cancellationTokenSpec, { "cancellation-token": false });
+
+      const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
+      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        !ctrl.includes("CancellationToken"),
+        `unexpected CancellationToken in controller:\n${ctrl}`,
+      );
+      ok(
+        !ctrl.includes("using System.Threading;"),
+        `unexpected 'using System.Threading;' in controller:\n${ctrl}`,
+      );
+
+      const svc = results["Services/IItemsService.g.cs"];
+      ok(svc, "expected service interface");
+      ok(
+        !svc.includes("CancellationToken"),
+        `unexpected CancellationToken in service:\n${svc}`,
+      );
+      ok(
+        !svc.includes("using System.Threading;"),
+        `unexpected 'using System.Threading;' in service:\n${svc}`,
       );
     });
   });

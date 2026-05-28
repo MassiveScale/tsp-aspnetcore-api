@@ -84,11 +84,12 @@ options:
 
 ## Related options
 
-| Option                       | Default         | Description                                                                    |
-| ---------------------------- | --------------- | ------------------------------------------------------------------------------ |
-| `abstract-suffix`            | `"Base"`        | Suffix appended to generated abstract class names, e.g. `UsersControllerBase`. |
-| `controllers-output-dir`     | `"Controllers"` | Destination for generated controller files.                                    |
-| `controllers-root-namespace` | _(global root)_ | Root namespace for controller files.                                           |
-| `route-prefix`               | `"api"`         | Prefix prepended to every controller route, e.g. `"api"` → `/api/v1/users`.    |
-| `services-output-dir`        | `"Services"`    | Destination for generated service interface files.                             |
-| `services-root-namespace`    | _(global root)_ | Root namespace for service interface files.                                    |
+| Option                       | Default         | Description                                                                                                                          |
+| ---------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `abstract-suffix`            | `"Base"`        | Suffix appended to generated abstract class names, e.g. `UsersControllerBase`.                                                       |
+| `cancellation-token`         | `true`          | When `true`, adds `CancellationToken cancellationToken` to every controller action and service method, and emits `using System.Threading;`. |
+| `controllers-output-dir`     | `"Controllers"` | Destination for generated controller files.                                                                                          |
+| `controllers-root-namespace` | _(global root)_ | Root namespace for controller files.                                                                                                  |
+| `route-prefix`               | `"api"`         | Prefix prepended to every controller route, e.g. `"api"` → `/api/v1/users`.                                                          |
+| `services-output-dir`        | `"Services"`    | Destination for generated service interface files.                                                                                   |
+| `services-root-namespace`    | _(global root)_ | Root namespace for service interface files.                                                                                          |

@@ -68,14 +68,14 @@
   • Add CancellationToken to every method:
       public abstract Task<{{returnType}}?> {{name}}Async(
           {{#each params}}{{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}},
-          {{/each}}CancellationToken cancellationToken = default);
+          {{/each}}CancellationToken cancellationToken);
 --}}
 {{#if doc}}{{doc}}
 {{/if}}[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public abstract class {{serviceName}} : {{interfaceName}}
 {
 {{#each operations}}{{#if doc}}{{indent doc}}
-{{/if}}{{#if (eq returnType "void")}}    public abstract Task {{name}}Async({{#each params}}{{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}}{{#if cancellationToken}}{{#if params}}, {{/if}}CancellationToken cancellationToken = default{{/if}});{{else}}    public abstract Task<{{returnType}}?> {{name}}Async({{#each params}}{{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}}{{#if cancellationToken}}{{#if params}}, {{/if}}CancellationToken cancellationToken = default{{/if}});{{/if}}
+{{/if}}{{#if (eq returnType "void")}}    public abstract Task {{name}}Async({{#each params}}{{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}}{{#if cancellationToken}}{{#if params}}, {{/if}}CancellationToken cancellationToken{{/if}});{{else}}    public abstract Task<{{returnType}}?> {{name}}Async({{#each params}}{{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}}{{#if cancellationToken}}{{#if params}}, {{/if}}CancellationToken cancellationToken{{/if}});{{/if}}
 {{#unless @last}}
 
 {{/unless}}{{/each}}

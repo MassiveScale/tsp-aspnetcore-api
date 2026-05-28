@@ -208,9 +208,10 @@ export interface EmitterOptions {
   "abstract-suffix"?: string;
 
   /**
-   * When `true`, a `CancellationToken cancellationToken = default` parameter is
-   * added to every generated controller action and service method.
-   * Defaults to `false`.
+   * When `true`, a `CancellationToken cancellationToken` parameter is
+   * added to every generated controller action and service method, and
+   * `using System.Threading;` is emitted in controller and service files.
+   * Defaults to `true`.
    */
   "cancellation-token"?: boolean;
 
