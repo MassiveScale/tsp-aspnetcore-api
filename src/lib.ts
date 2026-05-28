@@ -207,6 +207,14 @@ export interface EmitterOptions {
    */
   "abstract-suffix"?: string;
 
+  /**
+   * When `true`, a `CancellationToken cancellationToken` parameter is
+   * added to every generated controller action and service method, and
+   * `using System.Threading;` is emitted in controller and service files.
+   * Defaults to `true`.
+   */
+  "cancellation-token"?: boolean;
+
   /** Custom Handlebars template paths keyed by template name. */
   templates?: TemplateOverrides;
 
@@ -283,6 +291,7 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
     },
     "nullable-properties": { type: "boolean", nullable: true },
     "abstract-suffix": { type: "string", nullable: true },
+    "cancellation-token": { type: "boolean", nullable: true },
     templates: {
       type: "object",
       nullable: true,

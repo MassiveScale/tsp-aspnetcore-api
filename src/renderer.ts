@@ -180,6 +180,8 @@ export interface OperationView {
   routeSuffix?: string;
   /** Ordered list of parameter view models. */
   params: OperationParamView[];
+  /** Whether to add a CancellationToken parameter. */
+  cancellationToken: boolean;
   /** C# return type for the service method, e.g. `"User"` or `"IList<Widget>"`.  The
    * special value `"void"` indicates that the operation has no response body and the
    * service method should return a plain `Task` with no type parameter. */
@@ -431,8 +433,13 @@ function controllerActionBlock(op: OperationView): string {
     lines.push(`    [Http${op.httpVerb}("${route}")]`);
   }
   const paramList = op.params.map(operationParamDecl).join(", ");
+  const fullParamList = op.cancellationToken
+    ? [paramList, "CancellationToken cancellationToken"]
+        .filter(Boolean)
+        .join(", ")
+    : paramList;
   lines.push(
-    `    public abstract Task<IActionResult> ${op.name}(${paramList});`,
+    `    public abstract Task<IActionResult> ${op.name}(${fullParamList});`,
   );
   return lines.join("\n");
 }
@@ -453,9 +460,14 @@ function serviceMethodDecl(op: OperationView): string {
   const paramList = op.params
     .map((p) => `${p.optional ? `${p.type}?` : p.type} ${p.name}`)
     .join(", ");
+  const fullParamList = op.cancellationToken
+    ? [paramList, "CancellationToken cancellationToken"]
+        .filter(Boolean)
+        .join(", ")
+    : paramList;
   const returnDecl =
     op.returnType === "void" ? "Task" : `Task<${op.returnType}?>`;
-  lines.push(`    ${returnDecl} ${op.name}Async(${paramList});`);
+  lines.push(`    ${returnDecl} ${op.name}Async(${fullParamList});`);
   return lines.join("\n");
 }
 
