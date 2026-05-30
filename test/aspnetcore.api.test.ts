@@ -1973,7 +1973,10 @@ namespace {{namespace}}
       `);
 
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
       ok(
         ctrl.includes('[HttpGet("/api/v1.0/items")]'),
         `expected /api/v1.0/items route in:\n${ctrl}`,
@@ -2001,7 +2004,10 @@ namespace {{namespace}}
       `);
 
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
       ok(
         ctrl.includes('[HttpGet("/api/items")]'),
         `expected /api/items route in:\n${ctrl}`,
@@ -2033,7 +2039,10 @@ namespace {{namespace}}
       );
 
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
-      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
       ok(
         ctrl.includes('[HttpGet("/myapp/v1.0/api/items")]'),
         `expected /myapp/v1.0/api/items route in:\n${ctrl}`,

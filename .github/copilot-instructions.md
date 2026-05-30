@@ -101,10 +101,11 @@ Section-specific root overrides available: `controllers-root-namespace`, `servic
 Run all of these after any change:
 
 ```bash
+npm run format
 npm run build          # TypeScript compilation
 npm test               # all tests must pass, 0 failures
 npm run lint           # no lint errors
 npm run format:check   # no formatting violations
 ```
 
-If emitter behavior changed, also rebuild the example TypeSpec projects under `example/`.
+If emitter behavior changed, also rebuild all example projects under `example/`.
