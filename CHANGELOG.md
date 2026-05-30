@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-05-30
+
+### Added
+
+- `route-prefix` option: an optional string prefix prepended to every generated controller route. Supports `{version}` tokens — when the spec is versioned and `route-prefix` contains `{version}`, the token is replaced with each version's route value (e.g. `api/{version}` → `[Route("api/v1/pets")]`). Repeated slashes produced by prefix/path concatenation are normalized automatically.
+
 ## [1.6.0] - 2026-05-28
 
 ### Added

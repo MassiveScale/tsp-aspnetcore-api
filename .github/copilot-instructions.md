@@ -94,6 +94,8 @@ Section-specific root overrides available: `controllers-root-namespace`, `servic
 - `docs/` — one file per topic (type-mapping, models, namespace-resolution, controllers-and-services, merge-patch, validators, custom-templates, contributing). Update the relevant doc(s) when behavior changes.
 - `CHANGELOG.md` — maintain the `[Unreleased]` section with all notable changes.
 
+Alwasys update the documentation after any change.
+
 ---
 
 ## Validation Checklist
@@ -108,4 +110,4 @@ npm run lint           # no lint errors
 npm run format:check   # no formatting violations
 ```
 
-If emitter behavior changed, also rebuild all example projects under `example/`.
+Always rebuild all example projects under `example/`.
