@@ -1951,6 +1951,95 @@ namespace {{namespace}}
       );
     });
 
+    it("replaces {version} token in route-prefix for versioned services", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+
+        @service(#{title: "API" })
+        @versioned(Versions)
+        namespace Demo;
+
+        enum Versions { v1: "v1.0", v2: "v2.0" }
+
+        model Item { id: string; }
+
+        @route("/items")
+        interface Items {
+          @get list(): Item[];
+        }
+      `);
+
+      const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
+      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl.includes('[HttpGet("/api/v1.0/items")]'),
+        `expected /api/v1.0/items route in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes('[HttpGet("/api/v2.0/items")]'),
+        `expected /api/v2.0/items route in:\n${ctrl}`,
+      );
+    });
+
+    it("strips {version} token from route-prefix for unversioned services", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service(#{title: "API" })
+        namespace Demo;
+
+        model Item { id: string; }
+
+        @route("/items")
+        interface Items {
+          @get list(): Item[];
+        }
+      `);
+
+      const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
+      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl.includes('[HttpGet("/api/items")]'),
+        `expected /api/items route in:\n${ctrl}`,
+      );
+    });
+
+    it("supports {version} token in a custom route-prefix", async () => {
+      const results = await emit(
+        `
+          import "@typespec/http";
+          import "@typespec/versioning";
+          using TypeSpec.Http;
+          using TypeSpec.Versioning;
+
+          @service(#{title: "API" })
+          @versioned(Versions)
+          namespace Demo;
+
+          enum Versions { v1: "v1.0" }
+
+          model Item { id: string; }
+
+          @route("/items")
+          interface Items {
+            @get list(): Item[];
+          }
+        `,
+        { "route-prefix": "myapp/{version}/api" },
+      );
+
+      const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
+      ok(ctrl, `expected controller file, got ${Object.keys(results).join(", ")}`);
+      ok(
+        ctrl.includes('[HttpGet("/myapp/v1.0/api/items")]'),
+        `expected /myapp/v1.0/api/items route in:\n${ctrl}`,
+      );
+    });
+
     it("routes controllers and services to separate dirs when configured", async () => {
       const results = await emit(
         `

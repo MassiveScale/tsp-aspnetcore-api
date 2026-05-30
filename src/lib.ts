@@ -163,8 +163,14 @@ export interface EmitterOptions {
 
   /**
    * Route prefix prepended to every controller route attribute.
-   * Defaults to `"api"`.
-   * @example `"api/v2"` → `[HttpGet("/api/v2/widgets")]`
+   * Defaults to `"api/{version}"`.
+   *
+   * The `{version}` token is replaced with the actual API version value when
+   * the service is versioned (`@versioned`), and stripped (along with any
+   * adjacent slashes) for unversioned services.
+   *
+   * @example `"api/{version}"` + version `v1.0` → `[HttpGet("/api/v1.0/widgets")]`
+   * @example `"api/{version}"` (unversioned) → `[HttpGet("/api/widgets")]`
    */
   "route-prefix"?: string;
 
