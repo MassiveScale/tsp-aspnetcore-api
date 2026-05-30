@@ -94,6 +94,8 @@ Section-specific root overrides available: `controllers-root-namespace`, `servic
 - `docs/` — one file per topic (type-mapping, models, namespace-resolution, controllers-and-services, merge-patch, validators, custom-templates, contributing). Update the relevant doc(s) when behavior changes.
 - `CHANGELOG.md` — maintain the `[Unreleased]` section with all notable changes.
 
+Alwasys update the documentation after any change.
+
 ---
 
 ## Validation Checklist
@@ -101,10 +103,11 @@ Section-specific root overrides available: `controllers-root-namespace`, `servic
 Run all of these after any change:
 
 ```bash
+npm run format
 npm run build          # TypeScript compilation
 npm test               # all tests must pass, 0 failures
 npm run lint           # no lint errors
 npm run format:check   # no formatting violations
 ```
 
-If emitter behavior changed, also rebuild the example TypeSpec projects under `example/`.
+Always rebuild all example projects under `example/`.

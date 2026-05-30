@@ -244,13 +244,31 @@ function buildOperationRoutes(
   versions: Version[],
 ): string[] {
   const trimmedPath = operationPath.replace(/^\/+|\/+$/g, "");
-  const trimmedPrefix = prefix.replace(/^\/|\/$/g, "");
 
+  if (prefix.includes("{version}")) {
+    if (versions.length === 0) {
+      const resolvedPrefix = prefix
+        .replace(/\{version\}/g, "")
+        .replace(/\/+/g, "/")
+        .replace(/^\/|\/$/g, "");
+      const parts = [resolvedPrefix, trimmedPath].filter(Boolean);
+      return ["/" + parts.join("/")];
+    }
+    return versions.map((v) => {
+      const resolvedPrefix = prefix
+        .replace(/\{version\}/g, v.value)
+        .replace(/\/+/g, "/")
+        .replace(/^\/|\/$/g, "");
+      const parts = [resolvedPrefix, trimmedPath].filter(Boolean);
+      return "/" + parts.join("/");
+    });
+  }
+
+  const trimmedPrefix = prefix.replace(/^\/|\/$/g, "");
   if (versions.length === 0) {
     const parts = [trimmedPrefix, trimmedPath].filter(Boolean);
     return ["/" + parts.join("/")];
   }
-
   return versions.map((v) => {
     const parts = [trimmedPrefix, v.value, trimmedPath].filter(Boolean);
     return "/" + parts.join("/");

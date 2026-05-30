@@ -1810,7 +1810,7 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     servicesOutputDir: resolvePath(baseDir, servicesDir),
     emitHelpers: raw["emit-helpers"] ?? false,
     helpersOutputDir: resolvePath(baseDir, helpersDir),
-    routePrefix: raw["route-prefix"] ?? "api",
+    routePrefix: raw["route-prefix"] ?? "api/{version}",
     namespaceFromPath: useNamespaceFromPath,
     modelsDirSuffix,
     interfacesDirSuffix,
