@@ -257,6 +257,7 @@ function buildOperationRoutes(
     return versions.map((v) => {
       const resolvedPrefix = prefix
         .replace(/\{version\}/g, v.value)
+        .replace(/\/+/g, "/")
         .replace(/^\/|\/$/g, "");
       const parts = [resolvedPrefix, trimmedPath].filter(Boolean);
       return "/" + parts.join("/");

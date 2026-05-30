@@ -2014,6 +2014,45 @@ namespace {{namespace}}
       );
     });
 
+    it("normalizes repeated slashes in the versioned {version} prefix branch", async () => {
+      const results = await emit(
+        `
+          import "@typespec/http";
+          import "@typespec/versioning";
+          using TypeSpec.Http;
+          using TypeSpec.Versioning;
+
+          @service(#{title: "API" })
+          @versioned(Versions)
+          namespace Demo;
+
+          enum Versions { v1: "v1.0" }
+
+          model Item { id: string; }
+
+          @route("/items")
+          interface Items {
+            @get list(): Item[];
+          }
+        `,
+        { "route-prefix": "api//{version}" },
+      );
+
+      const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        ctrl.includes('[HttpGet("/api/v1.0/items")]'),
+        `expected normalized /api/v1.0/items (no double slash) in:\n${ctrl}`,
+      );
+      ok(
+        !ctrl.includes('"/api//'),
+        `did not expect double slash in route paths:\n${ctrl}`,
+      );
+    });
+
     it("supports {version} token in a custom route-prefix", async () => {
       const results = await emit(
         `
