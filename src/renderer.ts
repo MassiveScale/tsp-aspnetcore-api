@@ -66,6 +66,32 @@ export interface PropertyView {
   initializer?: string;
 }
 
+/** A property whose inner type matches the target entity exactly, included in the generated `Patch` method. */
+export interface PatchablePropertyView {
+  /** PascalCase property name, e.g. `"Name"`. */
+  name: string;
+}
+
+/** A property excluded from the generated `Patch` method because its MergePatch inner type differs from the entity property type. */
+export interface SkippedPropertyView {
+  /** PascalCase property name, e.g. `"Tags"`. */
+  name: string;
+  /** The inner type of the `MergePatchValue<T>` wrapper, e.g. `"IList<TagMergePatchUpdateReplaceOnly>?"`. */
+  patchInnerType: string;
+  /** The C# type of the corresponding property on the target entity, e.g. `"IList<Tag>?"`. */
+  entityType: string;
+}
+
+/** View model for the `Patch(TEntity target)` method generated on MergePatch classes. */
+export interface PatchMethodView {
+  /** C# type name of the target entity, e.g. `"Pet"`. */
+  targetType: string;
+  /** Properties whose inner type exactly matches the source entity property type. */
+  properties: PatchablePropertyView[];
+  /** Properties excluded because their inner type differs from the entity property type. */
+  skippedProperties: SkippedPropertyView[];
+}
+
 /** View model for a C# class (`public partial class`). */
 export interface ClassView {
   /** Optional XML `<summary>` doc comment (pre-rendered). */
@@ -78,6 +104,8 @@ export interface ClassView {
   baseClass?: string;
   /** Ordered list of property view models for this class. */
   properties: PropertyView[];
+  /** Present only on MergePatch classes; drives the generated `Patch(TEntity)` method. */
+  patchMethod?: PatchMethodView;
 }
 
 /** View model for a C# interface (`public partial interface`). */
@@ -349,6 +377,60 @@ function loadTemplate(
 // ---------------------------------------------------------------------------
 
 /**
+ * Renders the `Patch(TEntity target)` method body for a MergePatch class.
+ *
+ * Only properties whose inner type exactly matches the target entity property
+ * type are included in the generated assignments. Properties with type
+ * mismatches (e.g. nested models with different patch types) are listed in a
+ * comment so the developer can handle them manually.
+ *
+ * @param pm - Patch method view model.
+ * @returns Multi-line C# method text (no trailing newline), indented at 4 spaces.
+ */
+function renderPatchMethod(pm: PatchMethodView): string {
+  const lines: string[] = [];
+  lines.push(`    /// <summary>`);
+  lines.push(
+    `    /// Applies all present fields in this patch to <paramref name="target"/>.`,
+  );
+  lines.push(
+    `    /// Only properties explicitly set in the JSON Merge Patch payload`,
+  );
+  lines.push(
+    `    /// (<see cref="MergePatchValue{T}.IsPresent"/> is <see langword="true"/>)`,
+  );
+  lines.push(
+    `    /// are copied; all other properties on <paramref name="target"/> are left unchanged.`,
+  );
+  lines.push(`    /// </summary>`);
+  lines.push(
+    `    /// <param name="target">The entity to patch in place.</param>`,
+  );
+  lines.push(`    public void Patch(${pm.targetType} target)`);
+  lines.push(`    {`);
+  for (const prop of pm.properties) {
+    lines.push(
+      `        if (${prop.name}.IsPresent) target.${prop.name} = ${prop.name}.Value;`,
+    );
+  }
+  if (pm.skippedProperties.length > 0) {
+    lines.push(
+      `        // The following properties were not applied because the MergePatch inner type`,
+    );
+    lines.push(
+      `        // differs from the entity property type. Handle them manually after calling Patch():`,
+    );
+    for (const skipped of pm.skippedProperties) {
+      lines.push(
+        `        //   ${skipped.name} (patch inner: ${skipped.patchInnerType} vs entity: ${skipped.entityType})`,
+      );
+    }
+  }
+  lines.push(`    }`);
+  return lines.join("\n");
+}
+
+/**
  * Renders a single class property declaration, including JSON serialization
  * attributes and an optional doc comment line.
  *
@@ -525,6 +607,9 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
         ...view,
         bases: bases.join(", "),
         propertiesBlock: view.properties.map(classPropertyText).join("\n\n"),
+        patchMethodBlock: view.patchMethod
+          ? renderPatchMethod(view.patchMethod)
+          : undefined,
       });
     },
     renderInterface(view) {

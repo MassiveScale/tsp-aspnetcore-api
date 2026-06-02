@@ -37,6 +37,19 @@
                         iterating {{properties}} with the default formatting.
                         Pass through {{indent}} to get 4-space indentation.
 
+  {{patchMethod}}     — present only on MergePatch classes. Structured view:
+                          .targetType         — C# name of the target entity, e.g. "Pet"
+                          .properties[]       — patchable properties (inner type matches entity):
+                            .name             —   PascalCase property name
+                          .skippedProperties[]— excluded properties (type mismatch):
+                            .name             —   PascalCase property name
+                            .patchInnerType   —   inner type of MergePatchValue<T>
+                            .entityType       —   corresponding entity property type
+
+  {{patchMethodBlock}}— shortcut: the Patch method pre-rendered as a C# method
+                        string (4-space indented, no trailing newline). Falsy
+                        when the class is not a MergePatch model.
+
   ── Built-in helpers ────────────────────────────────────────────────────────
 
   {{indent <text>}}        — prefixes every non-empty line of <text> with
@@ -90,4 +103,7 @@ public partial class {{className}} : {{bases}}
 {{#unless @last}}
 
 {{/unless}}{{/each}}
+{{#if patchMethodBlock}}
+{{patchMethodBlock}}
+{{/if}}
 }

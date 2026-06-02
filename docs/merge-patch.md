@@ -52,6 +52,49 @@ public partial class WidgetMergePatchUpdate : IWidgetMergePatchUpdate
 }
 ```
 
+## Patch method
+
+Each generated MergePatch class includes a `Patch(TEntity target)` method that applies the patch in-place, similar to the `Delta<T>.Patch()` method from `Microsoft.AspNetCore.OData`.
+
+```csharp
+var patch = await JsonSerializer.DeserializeAsync<WidgetMergePatchUpdate>(requestBody);
+var entity = await repository.GetAsync(id);
+patch.Patch(entity);
+await repository.SaveAsync(entity);
+```
+
+Only properties that were **explicitly set** in the JSON payload (i.e. `IsPresent == true`) are copied to the target entity. Properties that were absent from the payload are left unchanged.
+
+### Type-compatible properties
+
+The emitter compares the inner type of each `MergePatchValue<T>` property against the corresponding property type on the source entity. Properties whose types match exactly are included in the generated assignments:
+
+```csharp
+public void Patch(Widget target)
+{
+    if (Name.IsPresent) target.Name = Name.Value;
+    if (Weight.IsPresent) target.Weight = Weight.Value;
+}
+```
+
+### Skipped properties
+
+Properties where the MergePatch inner type differs from the entity property type are excluded from the generated assignments. The most common case is nested-model array properties, where the patch model uses a `ReplaceOnly` variant (e.g. `IList<TagMergePatchUpdateReplaceOnly>?`) while the entity uses the original type (e.g. `IList<Tag>?`).
+
+A comment is generated to identify each skipped property and explain the mismatch, so developers know exactly what to handle manually:
+
+```csharp
+public void Patch(Pet target)
+{
+    if (Name.IsPresent) target.Name = Name.Value;
+    if (PhotoUrls.IsPresent) target.PhotoUrls = PhotoUrls.Value;
+    // The following properties were not applied because the MergePatch inner type
+    // differs from the entity property type. Handle them manually after calling Patch():
+    //   Tags (patch inner: IList<TagMergePatchUpdateReplaceOnly>? vs entity: IList<Tag>?)
+    //   Status (patch inner: object? vs entity: PetStatus?)
+}
+```
+
 ## Helper file emission
 
 The `MergePatchValue<T>` helper class is automatically emitted to the helpers directory whenever any `MergePatchUpdate` model is generated, regardless of the `emit-helpers` option setting. This ensures merge-patch models always have access to the required helper type.
