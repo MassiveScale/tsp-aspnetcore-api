@@ -17,7 +17,7 @@ Templates are compiled with `noEscape: true` (so `<`, `>`, and `&` pass through 
 | Template                | View model                                                                                                                                                                                                                                                         |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `file`                  | `{ namespace: string, usings: string[], body: string }` — `body` is the already-rendered inner block.                                                                                                                                                              |
-| `class`                 | `{ doc?: string, className: string, interfaceName: string, baseClass?: string, bases: string, properties: Property[], propertiesBlock: string }` — `bases` is `baseClass` and `interfaceName` joined by `, `; `propertiesBlock` is the pre-rendered property list. |
+| `class`                 | `{ doc?: string, className: string, interfaceName: string, baseClass?: string, bases: string, properties: Property[], propertiesBlock: string, patchMethod?: PatchMethod, patchMethodBlock?: string }` — `bases` is `baseClass` and `interfaceName` joined by `, `; `propertiesBlock` is the pre-rendered property list; `patchMethod` is present on MergePatch classes and carries the structured Patch method data; `patchMethodBlock` is the same data pre-rendered as a C# method string. |
 | `interface`             | `{ doc?: string, interfaceName: string, baseInterface?: string, baseClause: string, properties: Property[], propertiesBlock: string }` — `baseClause` is `" : <baseInterface>"` or `""`.                                                                           |
 | `enum`                  | `{ doc?: string, enumName: string, members: Member[], membersBlock: string }` — `membersBlock` is each member pre-rendered with trailing commas.                                                                                                                   |
 | `controller`            | `{ doc?: string, controllerName: string, serviceName: string, serviceInterfaceName: string, routes: string[], operations: Operation[], actionsBlock: string }` — `routes` has one entry per API version.                                                           |
@@ -32,6 +32,9 @@ Templates are compiled with `noEscape: true` (so `<`, `>`, and `&` pass through 
 - `Member` — `{ doc?: string, name: string, memberValue: string, value?: number }`
 - `Operation` — `{ doc?: string, name: string, httpVerb: string, routeSuffix?: string, params: Param[], returnType: string }`
 - `Param` — `{ name: string, type: string, binding: string, optional: boolean }`
+- `PatchMethod` — `{ targetType: string, properties: PatchableProperty[], skippedProperties: SkippedProperty[] }` — present on MergePatch class view models only
+- `PatchableProperty` — `{ name: string }` — a property whose inner type matches the target entity exactly
+- `SkippedProperty` — `{ name: string, patchInnerType: string, entityType: string }` — a property excluded because its `MergePatchValue<T>` inner type differs from the entity property type
 
 `doc`, when present, is a fully formatted XML doc-comment block — emit it verbatim above the declaration.
 

@@ -65,6 +65,9 @@ import {
   ClassView,
   EnumView,
   InterfaceView,
+  PatchMethodView,
+  PatchablePropertyView,
+  SkippedPropertyView,
   PropertyView,
   Renderer,
   TemplateName,
@@ -2126,12 +2129,61 @@ function buildClassView(
   isMergePatchModel: boolean,
 ): ClassView {
   const className = pascalCase(model.name);
+
+  let patchMethod: PatchMethodView | undefined;
+  if (isMergePatchModel) {
+    const sourceModel = getMergePatchSource(program, model);
+    if (sourceModel) {
+      const sourcePropTypes = new Map<string, string>();
+      for (const sp of sourceModel.properties.values()) {
+        sourcePropTypes.set(
+          sp.name,
+          propertyTypeName(program, sourceModel, sp, options, false),
+        );
+      }
+
+      const properties: PatchablePropertyView[] = [];
+      const skippedProperties: SkippedPropertyView[] = [];
+
+      for (const prop of model.properties.values()) {
+        const fullPatchType = propertyTypeName(
+          program,
+          model,
+          prop,
+          options,
+          true,
+        );
+        const patchInnerType =
+          fullPatchType.startsWith("MergePatchValue<") &&
+          fullPatchType.endsWith(">")
+            ? fullPatchType.slice("MergePatchValue<".length, -1)
+            : fullPatchType;
+
+        const entityType = sourcePropTypes.get(prop.name);
+        const propName = pascalCase(prop.name);
+
+        if (entityType !== undefined && patchInnerType === entityType) {
+          properties.push({ name: propName });
+        } else if (entityType !== undefined) {
+          skippedProperties.push({ name: propName, patchInnerType, entityType });
+        }
+      }
+
+      patchMethod = {
+        targetType: pascalCase(sourceModel.name),
+        properties,
+        skippedProperties,
+      };
+    }
+  }
+
   return {
     doc: docFor(program, model),
     className,
     interfaceName: `I${className}`,
     baseClass: model.baseModel ? typeReference(model.baseModel) : undefined,
     properties: buildPropertyViews(program, model, options, isMergePatchModel),
+    patchMethod,
   };
 }
 

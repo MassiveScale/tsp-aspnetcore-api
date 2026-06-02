@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- `Patch(TEntity target)` method on generated MergePatch classes. Applies all present fields from the patch to an existing entity instance in-place — only properties that were explicitly set in the JSON Merge Patch payload (`IsPresent == true`) are copied; absent properties leave the target unchanged. Mirrors the `Delta<T>.Patch()` pattern from `Microsoft.AspNetCore.OData`. Properties whose `MergePatchValue<T>` inner type differs from the corresponding entity property type (e.g. nested-model array properties that use a `ReplaceOnly` variant) are excluded from the generated assignments; a comment identifies each skipped property and its type mismatch so developers know what to handle manually.
+
 ## [1.7.0] - 2026-05-30
 
 ### Added

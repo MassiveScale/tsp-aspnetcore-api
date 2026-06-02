@@ -358,6 +358,116 @@ describe("csharp emitter", () => {
       );
     });
 
+    it("emits Patch method for all type-compatible properties", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        namespace Demo;
+
+        model Widget {
+          name: string | null;
+          count: int32;
+        }
+
+        model WidgetMergePatchUpdate is MergePatchUpdate<Widget>;
+      `);
+
+      const file =
+        results["WidgetMergePatchUpdate.g.cs"] ??
+        results["Models/WidgetMergePatchUpdate.g.cs"];
+      ok(
+        file,
+        `expected WidgetMergePatchUpdate.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        file.includes("public void Patch(Widget target)"),
+        `expected Patch method in:\n${file}`,
+      );
+      ok(
+        file.includes("if (Name.IsPresent) target.Name = Name.Value;"),
+        `expected Name patch line in:\n${file}`,
+      );
+      ok(
+        file.includes("if (Count.IsPresent) target.Count = Count.Value;"),
+        `expected Count patch line in:\n${file}`,
+      );
+      ok(
+        !file.includes("// The following properties were not applied"),
+        `expected no skipped-properties comment in:\n${file}`,
+      );
+    });
+
+    it("emits Patch method and skips nested-model array properties with type mismatches", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        namespace Demo;
+
+        model Tag {
+          value: string;
+        }
+
+        model Widget {
+          name: string | null;
+          tags: Tag[];
+        }
+
+        model WidgetMergePatchUpdate is MergePatchUpdate<Widget>;
+      `);
+
+      const file =
+        results["WidgetMergePatchUpdate.g.cs"] ??
+        results["Models/WidgetMergePatchUpdate.g.cs"];
+      ok(
+        file,
+        `expected WidgetMergePatchUpdate.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        file.includes("public void Patch(Widget target)"),
+        `expected Patch method in:\n${file}`,
+      );
+      ok(
+        file.includes("if (Name.IsPresent) target.Name = Name.Value;"),
+        `expected Name patch line in:\n${file}`,
+      );
+      ok(
+        !file.includes("if (Tags.IsPresent)"),
+        `expected Tags to be absent from patch assignments in:\n${file}`,
+      );
+      ok(
+        file.includes("// The following properties were not applied"),
+        `expected skipped-properties comment in:\n${file}`,
+      );
+      ok(
+        file.includes("//   Tags"),
+        `expected Tags in skipped comment in:\n${file}`,
+      );
+    });
+
+    it("does not emit Patch method on models merely named MergePatchUpdate", async () => {
+      const results = await emit(`
+        namespace Demo;
+
+        model WidgetMergePatchUpdate {
+          name: string;
+        }
+      `);
+
+      const file =
+        results["WidgetMergePatchUpdate.g.cs"] ??
+        results["Models/WidgetMergePatchUpdate.g.cs"];
+      ok(
+        file,
+        `expected WidgetMergePatchUpdate.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        !file.includes("public void Patch("),
+        `expected no Patch method on a plain model in:\n${file}`,
+      );
+    });
+
     it("emits enums with numeric values", async () => {
       const results = await emit(`
         namespace Demo;
