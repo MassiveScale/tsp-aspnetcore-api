@@ -2165,7 +2165,11 @@ function buildClassView(
         if (entityType !== undefined && patchInnerType === entityType) {
           properties.push({ name: propName });
         } else if (entityType !== undefined) {
-          skippedProperties.push({ name: propName, patchInnerType, entityType });
+          skippedProperties.push({
+            name: propName,
+            patchInnerType,
+            entityType,
+          });
         }
       }
 
