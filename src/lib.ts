@@ -370,8 +370,9 @@ export const $lib = createTypeSpecLibrary({
     "invalid-server-name": {
       severity: "error",
       messages: {
-        default: paramMessage`@serverName value "${"name"}" is not a valid C# identifier. Use only letters, digits, and underscores, starting with a letter or underscore (optionally prefixed with @).`,
+        default: paramMessage`@serverName value "${"name"}" is not a valid C# identifier. Use only letters, digits, and underscores, starting with a letter or underscore (optionally prefixed with @). Reserved keywords must be prefixed with @ (e.g. "@class").`,
       },
+    }
     },
   },
   emitter: {
