@@ -1,10 +1,12 @@
 {
   "name": "@massivescale/tsp-aspnetcore-api",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "type": "module",
   "main": "dist/src/index.js",
+  "tspMain": "lib/main.tsp",
   "exports": {
     ".": {
+      "typespec": "./lib/main.tsp",
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
     }

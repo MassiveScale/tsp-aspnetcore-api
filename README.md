@@ -80,6 +80,7 @@ namespace MyCompany.Api.Users
 | `abstract-suffix`             | `string`                                                           | `"Base"`          | Suffix appended to generated abstract controller class names, e.g. `UsersControllerBase`.                                                                                                                                                  |
 | `additional-usings`           | `string[]`                                                         | `[]`              | Extra `using` directives added to every generated file.                                                                                                                                                                                    |
 | `cancellation-token`          | `boolean`                                                          | `true`            | When `true`, adds `CancellationToken cancellationToken` to every controller action and service method, and emits `using System.Threading;` in controller and service files.                                                                |
+| `clean-output-dir`            | `boolean`                                                          | `true`            | When `true`, deletes all files from the emitter output directory before each emit run. Set to `false` to preserve previously generated files.                                                                                              |
 | `controllers-output-dir`      | `string`                                                           | `"Controllers"`   | Destination for generated controller files.                                                                                                                                                                                                |
 | `controllers-root-namespace`  | `string`                                                           | _(global root)_   | Overrides `root-namespace` for controller files. The full namespace is `<controllers-root-namespace>.<controllers-output-dir>`.                                                                                                            |
 | `emit-controllers`            | `boolean`                                                          | `true`            | When `false`, no controller base class files are emitted.                                                                                                                                                                                  |
@@ -105,6 +106,47 @@ namespace MyCompany.Api.Users
 | `validators-output-dir`       | `string`                                                           | `"Validators"`    | Output directory for generated validator and initializer files.                                                                                                                                                                            |
 | `validators-root-namespace`   | `string`                                                           | _(global root)_   | Overrides `root-namespace` for validator files. The full namespace is `<validators-root-namespace>.<validators-output-dir>`.                                                                                                               |
 | `validators-version-strategy` | `"earliest"` \| `"latest"` \| `"per-version"` \| `"version-aware"` | _(auto)_          | Controls how versioning affects validator generation. Auto-detected: `"version-aware"` when `@versioned` is present, `"earliest"` otherwise. See [Version strategies](docs/validators.md#version-strategies).                              |
+
+---
+
+## Decorators
+
+Import the package in your TypeSpec file to use these decorators:
+
+```typespec
+import "@massivescale/tsp-aspnetcore-api";
+using MassiveScale.AspNetCoreApi;
+```
+
+### `@serverName`
+
+Overrides the C# identifier for a model or model property. For models it also changes the generated file name and all generated references to that model (including controller/service signatures). The value must be a valid C# identifier. Bare reserved keywords (e.g. `class`, `string`) are rejected; prefix with `@` to form a verbatim identifier (e.g. `@class`).
+
+```typespec
+@serverName(name: valueof string)
+```
+
+| Target           | What changes                                       | What stays the same                   |
+| ---------------- | -------------------------------------------------- | ------------------------------------- |
+| `model`          | Class name, interface name (`I<Name>`), file names | `JsonPropertyName` values             |
+| `model property` | C# property identifier                             | `[JsonPropertyName("...")]` wire name |
+
+```typespec
+@serverName("PetRequest")
+model Pet {
+  @serverName("Identifier")
+  id: string;
+  name: string;
+}
+
+enum Status {
+  active: "active";
+}
+```
+
+Produces `PetRequest.g.cs` / `IPetRequest.g.cs` with a property named `Identifier` (still `[JsonPropertyName("id")]`).
+
+When a model server name starts with `@` (for a C# verbatim identifier), the class file keeps the `@` prefix (for example `@class.g.cs`) while the interface file and type use `I` plus the identifier without `@` (for example `Iclass.g.cs`, `interface Iclass`).
 
 ---
 

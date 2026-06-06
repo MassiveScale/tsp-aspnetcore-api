@@ -78,6 +78,64 @@ public enum TrafficLight
 
 The `EnumMemberConverterFactory` helper is emitted once into `helpers-output-dir` (default `Helpers/`). It implements `JsonConverterFactory` and serializes each member using the `[EnumMember(Value = "...")]` attribute; when the attribute is absent, the field name is used verbatim. Deserialization is case-insensitive.
 
+## @serverName
+
+The `@serverName` decorator overrides the C# identifier for a model or model property. Import the package and open the namespace to use it:
+
+```typespec
+import "@massivescale/tsp-aspnetcore-api";
+using MassiveScale.AspNetCoreApi;
+```
+
+The value must be a valid C# identifier: letters, digits, and underscores only, starting with a letter or underscore (optionally prefixed with `@` to escape a reserved keyword). Names containing path separators, spaces, or other punctuation are rejected with a compile-time diagnostic. Bare C# reserved keywords (e.g. `class`, `string`, `int`) are also rejected — prefix with `@` to form a verbatim identifier (e.g. `@class`).
+
+> **Note:** `@serverName` is **not** supported on `enum` types or `enum` members. Use it on `model` or `model property` targets only. Applying it to an unsupported target produces a TypeSpec compiler error.
+
+**Targets and effects:**
+
+| Target           | What changes                                                                            | What stays the same                    |
+| ---------------- | --------------------------------------------------------------------------------------- | -------------------------------------- |
+| `model`          | Class name, companion interface (`I<Name>`), file names, all references in other models | `[JsonPropertyName("...")]` wire names |
+| `model property` | C# property identifier                                                                  | `[JsonPropertyName("...")]` wire name  |
+
+```typespec
+@serverName("PetRequest")
+model Pet {
+  @serverName("Identifier")
+  id: string;
+  ownerName: string;
+}
+
+enum Status {
+  active: "active";
+  inactive: "inactive";
+}
+```
+
+```csharp
+// PetRequest.g.cs
+public partial class PetRequest : IPetRequest
+{
+    [JsonPropertyName("id")]           // wire name unchanged
+    public string? Identifier { get; set; }
+
+    [JsonPropertyName("ownerName")]
+    public string? OwnerName { get; set; }
+}
+
+// Status.g.cs
+public enum Status
+{
+    [EnumMember(Value = "active")]     // wire value unchanged
+  Active,
+
+    [EnumMember(Value = "inactive")]
+    Inactive,
+}
+```
+
+When a model is renamed with `@serverName`, all references to it — including base class declarations and property types in other models — automatically use the server name in the generated C#.
+
 ## Cross-namespace references
 
 When a model references a type from a different namespace, the corresponding `using` is added automatically. References inside `IList<T>`, `IDictionary<string, T>`, unions, and base classes are all tracked. The rewritten namespace from `namespace-map` is used in the generated `using` directive.
