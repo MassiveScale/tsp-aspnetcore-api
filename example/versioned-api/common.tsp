@@ -1,8 +1,12 @@
+import "@massivescale/tsp-aspnetcore-api";
+
 namespace MassiveScale.Sandbox.Api;
+using MassiveScale.AspNetCoreApi;
 
 /**
  * Base model for all entities in the API.
  */
+@friendlyName("BaseEntity")
 model EntityBase {
     @doc("Unique identifier of the entity.")
     @key
@@ -23,6 +27,7 @@ model EntityBase {
  * Represents an error response from the API.
  */
 @error
+@serverName("ErrorResponseBase")
 model ErrorResponse {
     @doc("The HTTP status of the error response. e.g. badRequest, notFound, internalServerError, etc.")
     code: string;
@@ -31,6 +36,7 @@ model ErrorResponse {
     message: string;
 
     @doc("Correlation id for the request that resulted in the error.")
+    @serverName("correlationId")
     trace: string;
 
     @doc("An optional array of inner errors that provide more details about the error.")

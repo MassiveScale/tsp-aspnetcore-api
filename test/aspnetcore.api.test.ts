@@ -2519,4 +2519,225 @@ namespace {{namespace}}
       );
     });
   });
+
+  // ── clean-output-dir ────────────────────────────────────────────────────────
+
+  describe("clean-output-dir option", () => {
+    it("accepts clean-output-dir: true without errors", async () => {
+      const results = await emit(
+        `namespace Demo; model Widget { id: string; }`,
+        { "clean-output-dir": true },
+      );
+      ok(results["Widget.g.cs"], "expected Widget.g.cs to be emitted");
+    });
+
+    it("accepts clean-output-dir: false without errors", async () => {
+      const results = await emit(
+        `namespace Demo; model Widget { id: string; }`,
+        { "clean-output-dir": false },
+      );
+      ok(results["Widget.g.cs"], "expected Widget.g.cs to be emitted");
+    });
+  });
+
+  // ── @serverName decorator ───────────────────────────────────────────────────
+
+  describe("@serverName decorator", () => {
+    it("overrides the emitted class name and file name for a model", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("WidgetResource")
+        model Widget { id: string; }
+      `);
+
+      ok(
+        results["WidgetResource.g.cs"],
+        `expected WidgetResource.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        !results["Widget.g.cs"],
+        "expected Widget.g.cs NOT to exist after @serverName",
+      );
+      ok(
+        results["WidgetResource.g.cs"].includes("class WidgetResource"),
+        "expected class declaration to use server name",
+      );
+    });
+
+    it("overrides the interface name and file name", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("WidgetResource")
+        model Widget { id: string; }
+      `);
+
+      ok(
+        results["IWidgetResource.g.cs"],
+        "expected IWidgetResource.g.cs to be emitted",
+      );
+      ok(
+        results["IWidgetResource.g.cs"].includes("interface IWidgetResource"),
+        "expected interface declaration to use server name",
+      );
+    });
+
+    it("does not change JsonPropertyName values", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("WidgetResource")
+        model Widget { myProp: string; }
+      `);
+
+      const file = results["WidgetResource.g.cs"];
+      ok(
+        file.includes('[JsonPropertyName("myProp")]'),
+        "expected JsonPropertyName to retain the original camelCase property name",
+      );
+    });
+
+    it("overrides the emitted enum name and file name", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("WidgetStatus")
+        enum Status { Active, Inactive }
+      `);
+
+      ok(
+        results["WidgetStatus.g.cs"],
+        `expected WidgetStatus.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        !results["Status.g.cs"],
+        "expected Status.g.cs NOT to exist after @serverName",
+      );
+      ok(
+        results["WidgetStatus.g.cs"].includes("enum WidgetStatus"),
+        "expected enum declaration to use server name",
+      );
+    });
+
+    it("does not change EnumMember values", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("WidgetStatus")
+        enum Status {
+          Active: "active",
+          Inactive: "inactive",
+        }
+      `);
+
+      const file = results["WidgetStatus.g.cs"];
+      ok(
+        file.includes('"active"') && file.includes('"inactive"'),
+        "expected EnumMember values to retain original wire values",
+      );
+    });
+
+    it("overrides the C# property name on a model property", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        model Widget {
+          @serverName("Identifier")
+          id: string;
+        }
+      `);
+
+      const file = results["Widget.g.cs"];
+      ok(
+        file.includes("public string? Identifier { get; set; }"),
+        "expected property to use server name as C# identifier",
+      );
+    });
+
+    it("does not change JsonPropertyName when @serverName is applied to a property", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        model Widget {
+          @serverName("Identifier")
+          id: string;
+        }
+      `);
+
+      const file = results["Widget.g.cs"];
+      ok(
+        file.includes('[JsonPropertyName("id")]'),
+        "expected JsonPropertyName to retain the original camelCase property name",
+      );
+    });
+
+    it("overrides the C# enum member identifier", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        enum Status {
+          @serverName("Running")
+          active: "active",
+          inactive: "inactive",
+        }
+      `);
+
+      const file = results["Status.g.cs"];
+      ok(
+        file.includes("Running,") || file.includes("Running\n"),
+        "expected enum member to use server name as C# identifier",
+      );
+      ok(
+        !file.includes("Active,") && !file.includes("Active\n"),
+        "expected original member name not to appear",
+      );
+    });
+
+    it("does not change EnumMember value when @serverName is applied to an enum member", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        enum Status {
+          @serverName("Running")
+          active: "active",
+        }
+      `);
+
+      const file = results["Status.g.cs"];
+      ok(
+        file.includes('[EnumMember(Value = "active")]'),
+        "expected EnumMember value to retain the original wire value",
+      );
+    });
+
+    it("falls back to TypeSpec name when @serverName is not applied", async () => {
+      const results = await emit(
+        `namespace Demo; model Widget { id: string; }`,
+      );
+      ok(results["Widget.g.cs"], "expected Widget.g.cs when no @serverName");
+      ok(
+        results["Widget.g.cs"].includes("class Widget"),
+        "expected class to use TypeSpec name",
+      );
+    });
+  });
 });

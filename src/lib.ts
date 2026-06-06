@@ -264,6 +264,13 @@ export interface EmitterOptions {
     | "latest"
     | "per-version"
     | "version-aware";
+
+  /**
+   * When `true` (the default), all previously emitted files in the emitter
+   * output directory are deleted before the current emit run begins.
+   * Set to `false` to preserve existing files and only add or overwrite.
+   */
+  "clean-output-dir"?: boolean;
 }
 
 /** JSON Schema used by the TypeSpec compiler to validate emitter options. */
@@ -336,6 +343,7 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
       enum: ["earliest", "latest", "per-version", "version-aware"],
       nullable: true,
     },
+    "clean-output-dir": { type: "boolean", nullable: true },
   },
   required: [],
 };

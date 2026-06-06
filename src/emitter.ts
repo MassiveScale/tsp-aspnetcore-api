@@ -56,9 +56,10 @@ import {
 } from "@typespec/versioning";
 import type { Version } from "@typespec/versioning";
 import Handlebars from "handlebars";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getServerName } from "./decorators.js";
 import { EmitterOptions, reportDiagnostic } from "./lib.js";
 import { SCALAR_MAP, FORMAT_MAP, pascalCase, camelCase } from "./utils.js";
 import {
@@ -80,6 +81,18 @@ import {
   ControllerOptions,
   collectControllers,
 } from "./controllers.js";
+
+/**
+ * Deletes all files and subdirectories inside `dir` without removing the
+ * directory itself.  If the directory does not exist on the real filesystem
+ * (e.g. during tests that use a virtual host) this is a safe no-op.
+ */
+function cleanDirectory(dir: string): void {
+  if (!existsSync(dir)) return;
+  for (const entry of readdirSync(dir)) {
+    rmSync(join(dir, entry), { recursive: true, force: true });
+  }
+}
 
 /** Default C# namespace used for top-level TypeSpec models with no namespace. */
 const DEFAULT_NAMESPACE = "Models";
@@ -368,6 +381,8 @@ interface ResolvedOptions {
     | "per-version"
     | "version-aware"
     | undefined;
+  /** Whether to delete all files in the emitter output directory before emitting. */
+  cleanOutputDir: boolean;
 }
 
 /** Inferred enum derived from a string-literal union property. */
@@ -404,6 +419,10 @@ export async function $onEmit(
 
   const program = context.program;
   const options = resolveOptions(context);
+
+  if (options.cleanOutputDir) {
+    cleanDirectory(context.emitterOutputDir);
+  }
 
   const renderer = buildRenderer(program, options);
   if (!renderer) return;
@@ -481,7 +500,9 @@ export async function $onEmit(
       isMergePatchModel,
     );
 
-    const classFileName = `${pascalCase(model.name)}${options.fileExtension}`;
+    const emittedModelName =
+      getServerName(program, model) ?? pascalCase(model.name);
+    const classFileName = `${emittedModelName}${options.fileExtension}`;
     await emitFile(program, {
       path: resolvePath(options.modelsOutputDir, ...classFolder, classFileName),
       content: renderer.renderFile({
@@ -495,7 +516,7 @@ export async function $onEmit(
     });
 
     if (options.emitInterfaces) {
-      const interfaceFileName = `I${pascalCase(model.name)}${options.fileExtension}`;
+      const interfaceFileName = `I${emittedModelName}${options.fileExtension}`;
       await emitFile(program, {
         path: resolvePath(
           options.interfacesOutputDir,
@@ -529,7 +550,8 @@ export async function $onEmit(
       options.namespaceFromPath && options.modelsDirSuffix
         ? []
         : folderSegments(options.modelsEffectiveRootNs, typespecEnumNs);
-    const enumFileName = `${pascalCase(en.name)}${options.fileExtension}`;
+    const emittedEnumName = getServerName(program, en) ?? pascalCase(en.name);
+    const enumFileName = `${emittedEnumName}${options.fileExtension}`;
     await emitFile(program, {
       path: resolvePath(options.modelsOutputDir, ...folder, enumFileName),
       content: renderer.renderFile({
@@ -716,7 +738,7 @@ function buildSinglePropertyData(
     referencedModelName !== undefined;
 
   return {
-    name: pascalCase(prop.name),
+    name: getServerName(program, prop) ?? pascalCase(prop.name),
     hasRules,
     notEmpty,
     minLength,
@@ -1830,6 +1852,7 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     validatorsOutputDir: resolvePath(baseDir, validatorsDir),
     validatorsTypes: raw["validators"] ?? "both",
     validatorsVersionStrategy: raw["validators-version-strategy"],
+    cleanOutputDir: raw["clean-output-dir"] ?? true,
   };
 }
 
@@ -2128,7 +2151,7 @@ function buildClassView(
   options: ResolvedOptions,
   isMergePatchModel: boolean,
 ): ClassView {
-  const className = pascalCase(model.name);
+  const className = getServerName(program, model) ?? pascalCase(model.name);
 
   let patchMethod: PatchMethodView | undefined;
   if (isMergePatchModel) {
@@ -2160,7 +2183,7 @@ function buildClassView(
             : fullPatchType;
 
         const entityType = sourcePropTypes.get(prop.name);
-        const propName = pascalCase(prop.name);
+        const propName = getServerName(program, prop) ?? pascalCase(prop.name);
 
         if (entityType !== undefined && patchInnerType === entityType) {
           properties.push({ name: propName });
@@ -2205,12 +2228,15 @@ function buildInterfaceView(
   options: ResolvedOptions,
   isMergePatchModel: boolean,
 ): InterfaceView {
+  const ifaceName = getServerName(program, model) ?? pascalCase(model.name);
+  const baseIfaceName = model.baseModel
+    ? (getServerName(program, model.baseModel) ??
+      pascalCase(model.baseModel.name))
+    : undefined;
   return {
     doc: docFor(program, model),
-    interfaceName: `I${pascalCase(model.name)}`,
-    baseInterface: model.baseModel
-      ? `I${pascalCase(model.baseModel.name)}`
-      : undefined,
+    interfaceName: `I${ifaceName}`,
+    baseInterface: baseIfaceName ? `I${baseIfaceName}` : undefined,
     properties: buildPropertyViews(program, model, options, isMergePatchModel),
   };
 }
@@ -2226,12 +2252,12 @@ function buildEnumView(program: Program, en: Enum): EnumView {
   const enumDoc = getDoc(program, en);
   return {
     doc: enumDoc ? renderDocComment(enumDoc) : undefined,
-    enumName: pascalCase(en.name),
+    enumName: getServerName(program, en) ?? pascalCase(en.name),
     members: [...en.members.values()].map((member) => {
       const memberDoc = getDoc(program, member);
       return {
         doc: memberDoc ? renderDocComment(memberDoc) : undefined,
-        name: pascalCase(member.name),
+        name: getServerName(program, member) ?? pascalCase(member.name),
         value: typeof member.value === "number" ? member.value : undefined,
         memberValue:
           typeof member.value === "string" ? member.value : member.name,
@@ -2256,11 +2282,14 @@ function buildEnumView(program: Program, en: Enum): EnumView {
  * @param value - The TypeSpec default value from `ModelProperty.defaultValue`.
  * @returns A C# initializer expression string, or `undefined` if unsupported.
  */
-function defaultValueInitializer(value: Value): string | undefined {
+function defaultValueInitializer(
+  program: Program,
+  value: Value,
+): string | undefined {
   switch (value.valueKind) {
     case "EnumValue": {
       const member = value.value;
-      return `${pascalCase(member.enum.name)}.${pascalCase(member.name)}`;
+      return `${getServerName(program, member.enum) ?? pascalCase(member.enum.name)}.${getServerName(program, member) ?? pascalCase(member.name)}`;
     }
     case "StringValue":
       return `"${value.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -2301,14 +2330,14 @@ function buildPropertyViews(
     return {
       doc: docFor(program, prop),
       type,
-      name: pascalCase(prop.name),
+      name: getServerName(program, prop) ?? pascalCase(prop.name),
       jsonName: camelCase(prop.name),
       nullable: type.endsWith("?"),
       initializer:
         isMergePatchModel && type.startsWith("MergePatchValue<")
           ? `${type}.Absent`
           : prop.defaultValue !== undefined
-            ? defaultValueInitializer(prop.defaultValue)
+            ? defaultValueInitializer(program, prop.defaultValue)
             : undefined,
     };
   });

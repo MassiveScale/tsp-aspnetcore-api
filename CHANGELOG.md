@@ -4,8 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-06-06
+
 ### Added
 
+- `clean-output-dir` option (default `true`): deletes all files from the emitter output directory before each emit run. Set to `false` to preserve previously generated files.
+- `@serverName` decorator: overrides the C# identifier for models, enums, enum members, and model properties. For models and enums it also changes the generated file name. `JsonPropertyName` attribute values, `EnumMember` values, and how other types reference a renamed model or enum in property signatures are all unchanged.
 - `Patch(TEntity target)` method on generated MergePatch classes. Applies all present fields from the patch to an existing entity instance in-place — only properties that were explicitly set in the JSON Merge Patch payload (`IsPresent == true`) are copied; absent properties leave the target unchanged. Mirrors the `Delta<T>.Patch()` pattern from `Microsoft.AspNetCore.OData`. Properties whose `MergePatchValue<T>` inner type differs from the corresponding entity property type (e.g. nested-model array properties that use a `ReplaceOnly` variant) are excluded from the generated assignments; a comment identifies each skipped property and its type mismatch so developers know what to handle manually.
 
 ## [1.7.0] - 2026-05-30
