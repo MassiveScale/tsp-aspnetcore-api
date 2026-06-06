@@ -2242,7 +2242,7 @@ function buildInterfaceView(
     interfaceName: `I${ifaceName.startsWith("@") ? ifaceName.slice(1) : ifaceName}`,
     baseInterface: baseIfaceName
       ? `I${baseIfaceName.startsWith("@") ? baseIfaceName.slice(1) : baseIfaceName}`
-      : undefined, 
+      : undefined,
     properties: buildPropertyViews(program, model, options, isMergePatchModel),
   };
 }
