@@ -2209,7 +2209,7 @@ function buildClassView(
   return {
     doc: docFor(program, model),
     className,
-    interfaceName: `I${className}`,
+    interfaceName: `I${className.startsWith("@") ? className.slice(1) : className}`,
     baseClass: model.baseModel
       ? typeReference(model.baseModel, program)
       : undefined,
