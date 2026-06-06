@@ -2239,8 +2239,10 @@ function buildInterfaceView(
     : undefined;
   return {
     doc: docFor(program, model),
-    interfaceName: `I${ifaceName}`,
-    baseInterface: baseIfaceName ? `I${baseIfaceName}` : undefined,
+    interfaceName: `I${ifaceName.startsWith("@") ? ifaceName.slice(1) : ifaceName}`,
+    baseInterface: baseIfaceName
+      ? `I${baseIfaceName.startsWith("@") ? baseIfaceName.slice(1) : baseIfaceName}`
+      : undefined, 
     properties: buildPropertyViews(program, model, options, isMergePatchModel),
   };
 }
