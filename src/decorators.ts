@@ -25,12 +25,105 @@ const serverNameKey = $lib.createStateSymbol("serverName");
  */
 const VALID_CSHARP_IDENTIFIER = /^@?[a-zA-Z_][a-zA-Z0-9_]*$/;
 
+/**
+ * Complete set of C# reserved keywords (ECMA-334 §6.4.4).
+ * A bare reserved word is not a valid C# identifier; the caller must
+ * prefix it with `@` to form a verbatim identifier (e.g. `@class`).
+ */
+const CSHARP_RESERVED_KEYWORDS = new Set([
+  "abstract",
+  "as",
+  "base",
+  "bool",
+  "break",
+  "byte",
+  "case",
+  "catch",
+  "char",
+  "checked",
+  "class",
+  "const",
+  "continue",
+  "decimal",
+  "default",
+  "delegate",
+  "do",
+  "double",
+  "else",
+  "enum",
+  "event",
+  "explicit",
+  "extern",
+  "false",
+  "finally",
+  "fixed",
+  "float",
+  "for",
+  "foreach",
+  "goto",
+  "if",
+  "implicit",
+  "in",
+  "int",
+  "interface",
+  "internal",
+  "is",
+  "lock",
+  "long",
+  "namespace",
+  "new",
+  "null",
+  "object",
+  "operator",
+  "out",
+  "override",
+  "params",
+  "private",
+  "protected",
+  "public",
+  "readonly",
+  "ref",
+  "return",
+  "sbyte",
+  "sealed",
+  "short",
+  "sizeof",
+  "stackalloc",
+  "static",
+  "string",
+  "struct",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "uint",
+  "ulong",
+  "unchecked",
+  "unsafe",
+  "ushort",
+  "using",
+  "virtual",
+  "void",
+  "volatile",
+  "while",
+]);
+
 function serverNameImpl(
   context: DecoratorContext,
   target: Model | ModelProperty,
   name: string,
 ): void {
   if (!VALID_CSHARP_IDENTIFIER.test(name)) {
+    reportDiagnostic(context.program, {
+      code: "invalid-server-name",
+      target,
+      format: { name },
+    });
+    return;
+  }
+  if (!name.startsWith("@") && CSHARP_RESERVED_KEYWORDS.has(name)) {
     reportDiagnostic(context.program, {
       code: "invalid-server-name",
       target,

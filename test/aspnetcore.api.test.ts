@@ -2762,6 +2762,22 @@ namespace {{namespace}}
       );
     });
 
+    it("reports a diagnostic for a C# reserved keyword without @", async () => {
+      const [, diagnostics] = await emitWithDiagnostics(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("class")
+        model Widget { id: string; }
+      `);
+
+      ok(
+        diagnostics.some((d) => d.code.includes("invalid-server-name")),
+        "expected invalid-server-name diagnostic for a bare C# reserved keyword",
+      );
+    });
+
     it("accepts a name with a leading @ (C# verbatim identifier)", async () => {
       const results = await emit(`
         import "@massivescale/tsp-aspnetcore-api";

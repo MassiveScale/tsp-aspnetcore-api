@@ -87,7 +87,7 @@ import "@massivescale/tsp-aspnetcore-api";
 using MassiveScale.AspNetCoreApi;
 ```
 
-The value must be a valid C# identifier: letters, digits, and underscores only, starting with a letter or underscore (optionally prefixed with `@` to escape a reserved keyword). Names containing path separators, spaces, or other punctuation are rejected with a compile-time diagnostic.
+The value must be a valid C# identifier: letters, digits, and underscores only, starting with a letter or underscore (optionally prefixed with `@` to escape a reserved keyword). Names containing path separators, spaces, or other punctuation are rejected with a compile-time diagnostic. Bare C# reserved keywords (e.g. `class`, `string`, `int`) are also rejected — prefix with `@` to form a verbatim identifier (e.g. `@class`).
 
 > **Note:** `@serverName` is **not** supported on `enum` types or `enum` members. Use it on `model` or `model property` targets only. Applying it to an unsupported target produces a TypeSpec compiler error.
 

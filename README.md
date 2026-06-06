@@ -120,7 +120,7 @@ using MassiveScale.AspNetCoreApi;
 
 ### `@serverName`
 
-Overrides the C# identifier for a model or model property. For models it also changes the generated file name and all generated references to that model (including controller/service signatures).
+Overrides the C# identifier for a model or model property. For models it also changes the generated file name and all generated references to that model (including controller/service signatures). The value must be a valid C# identifier. Bare reserved keywords (e.g. `class`, `string`) are rejected; prefix with `@` to form a verbatim identifier (e.g. `@class`).
 
 ```typespec
 @serverName(name: valueof string)

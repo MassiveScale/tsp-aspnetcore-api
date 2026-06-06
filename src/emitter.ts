@@ -2291,10 +2291,7 @@ function buildEnumView(program: Program, en: Enum): EnumView {
  * @param value - The TypeSpec default value from `ModelProperty.defaultValue`.
  * @returns A C# initializer expression string, or `undefined` if unsupported.
  */
-function defaultValueInitializer(
-  program: Program,
-  value: Value,
-): string | undefined {
+function defaultValueInitializer(value: Value): string | undefined {
   switch (value.valueKind) {
     case "EnumValue": {
       const member = value.value;
@@ -2346,7 +2343,7 @@ function buildPropertyViews(
         isMergePatchModel && type.startsWith("MergePatchValue<")
           ? `${type}.Absent`
           : prop.defaultValue !== undefined
-            ? defaultValueInitializer(program, prop.defaultValue)
+            ? defaultValueInitializer(prop.defaultValue)
             : undefined,
     };
   });
