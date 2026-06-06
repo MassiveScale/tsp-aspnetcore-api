@@ -108,6 +108,11 @@ const CSHARP_RESERVED_KEYWORDS = new Set([
   "void",
   "volatile",
   "while",
+  // Newer C# keywords that should be rejected unless prefixed with '@'.
+  "record",
+  "required",
+  "file",
+  "scoped",
 ]);
 
 function serverNameImpl(
