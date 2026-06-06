@@ -80,7 +80,7 @@ The `EnumMemberConverterFactory` helper is emitted once into `helpers-output-dir
 
 ## @serverName
 
-The `@serverName` decorator overrides the C# identifier for a model, enum member, or model property. Import the package and open the namespace to use it:
+The `@serverName` decorator overrides the C# identifier for a model or model property. Import the package and open the namespace to use it:
 
 ```typespec
 import "@massivescale/tsp-aspnetcore-api";
@@ -89,15 +89,14 @@ using MassiveScale.AspNetCoreApi;
 
 The value must be a valid C# identifier: letters, digits, and underscores only, starting with a letter or underscore (optionally prefixed with `@` to escape a reserved keyword). Names containing path separators, spaces, or other punctuation are rejected with a compile-time diagnostic.
 
-> **Note:** `@serverName` is **not** supported on `enum` types. Use it on `model`, `enum member`, or `model property` targets only. Applying it to an enum produces a TypeSpec compiler error.
+> **Note:** `@serverName` is **not** supported on `enum` types or `enum` members. Use it on `model` or `model property` targets only. Applying it to an unsupported target produces a TypeSpec compiler error.
 
 **Targets and effects:**
 
-| Target           | What changes                                                                            | What stays the same                      |
-| ---------------- | --------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `model`          | Class name, companion interface (`I<Name>`), file names, all references in other models | `[JsonPropertyName("...")]` wire names   |
-| `enum member`    | C# member identifier                                                                    | `[EnumMember(Value = "...")]` wire value |
-| `model property` | C# property identifier                                                                  | `[JsonPropertyName("...")]` wire name    |
+| Target           | What changes                                                                            | What stays the same                    |
+| ---------------- | --------------------------------------------------------------------------------------- | -------------------------------------- |
+| `model`          | Class name, companion interface (`I<Name>`), file names, all references in other models | `[JsonPropertyName("...")]` wire names |
+| `model property` | C# property identifier                                                                  | `[JsonPropertyName("...")]` wire name  |
 
 ```typespec
 @serverName("PetRequest")
@@ -108,7 +107,6 @@ model Pet {
 }
 
 enum Status {
-  @serverName("Running")
   active: "active";
   inactive: "inactive";
 }
@@ -129,7 +127,7 @@ public partial class PetRequest : IPetRequest
 public enum Status
 {
     [EnumMember(Value = "active")]     // wire value unchanged
-    Running,
+  Active,
 
     [EnumMember(Value = "inactive")]
     Inactive,

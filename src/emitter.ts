@@ -2261,7 +2261,7 @@ function buildEnumView(program: Program, en: Enum): EnumView {
       const memberDoc = getDoc(program, member);
       return {
         doc: memberDoc ? renderDocComment(memberDoc) : undefined,
-        name: getServerName(program, member) ?? pascalCase(member.name),
+        name: pascalCase(member.name),
         value: typeof member.value === "number" ? member.value : undefined,
         memberValue:
           typeof member.value === "string" ? member.value : member.name,
@@ -2293,7 +2293,7 @@ function defaultValueInitializer(
   switch (value.valueKind) {
     case "EnumValue": {
       const member = value.value;
-      return `${pascalCase(member.enum.name)}.${getServerName(program, member) ?? pascalCase(member.name)}`;
+      return `${pascalCase(member.enum.name)}.${pascalCase(member.name)}`;
     }
     case "StringValue":
       return `"${value.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;

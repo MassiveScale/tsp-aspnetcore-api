@@ -120,18 +120,16 @@ using MassiveScale.AspNetCoreApi;
 
 ### `@serverName`
 
-Overrides the C# identifier for a model, enum, enum member, or model property. For models and enums it also changes the generated file name.
+Overrides the C# identifier for a model or model property. For models it also changes the generated file name.
 
 ```typespec
 @serverName(name: valueof string)
 ```
 
-| Target           | What changes                                       | What stays the same                                                 |
-| ---------------- | -------------------------------------------------- | ------------------------------------------------------------------- |
-| `model`          | Class name, interface name (`I<Name>`), file names | Property type signatures in other models, `JsonPropertyName` values |
-| `enum`           | Enum type name, file name                          | `EnumMember` wire values                                            |
-| `enum member`    | C# member identifier                               | `[EnumMember(Value = "...")]` wire value                            |
-| `model property` | C# property identifier                             | `[JsonPropertyName("...")]` wire name                               |
+| Target           | What changes                                       | What stays the same                   |
+| ---------------- | -------------------------------------------------- | ------------------------------------- |
+| `model`          | Class name, interface name (`I<Name>`), file names | `JsonPropertyName` values             |
+| `model property` | C# property identifier                             | `[JsonPropertyName("...")]` wire name |
 
 ```typespec
 @serverName("PetRequest")
@@ -142,12 +140,11 @@ model Pet {
 }
 
 enum Status {
-  @serverName("Running")
   active: "active";
 }
 ```
 
-Produces `PetRequest.g.cs` / `IPetRequest.g.cs` with a property named `Identifier` (still `[JsonPropertyName("id")]`). The `Status` enum emits member `Running` (still `[EnumMember(Value = "active")]`).
+Produces `PetRequest.g.cs` / `IPetRequest.g.cs` with a property named `Identifier` (still `[JsonPropertyName("id")]`).
 
 ---
 

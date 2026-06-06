@@ -2685,32 +2685,8 @@ namespace {{namespace}}
       );
     });
 
-    it("overrides the C# enum member identifier", async () => {
-      const results = await emit(`
-        import "@massivescale/tsp-aspnetcore-api";
-        using MassiveScale.AspNetCoreApi;
-
-        namespace Demo;
-        enum Status {
-          @serverName("Running")
-          active: "active",
-          inactive: "inactive",
-        }
-      `);
-
-      const file = results["Status.g.cs"];
-      ok(
-        file.includes("Running,") || file.includes("Running\n"),
-        "expected enum member to use server name as C# identifier",
-      );
-      ok(
-        !file.includes("Active,") && !file.includes("Active\n"),
-        "expected original member name not to appear",
-      );
-    });
-
-    it("does not change EnumMember value when @serverName is applied to an enum member", async () => {
-      const results = await emit(`
+    it("is rejected when applied to an enum member", async () => {
+      const [, diagnostics] = await emitWithDiagnostics(`
         import "@massivescale/tsp-aspnetcore-api";
         using MassiveScale.AspNetCoreApi;
 
@@ -2721,10 +2697,9 @@ namespace {{namespace}}
         }
       `);
 
-      const file = results["Status.g.cs"];
       ok(
-        file.includes('[EnumMember(Value = "active")]'),
-        "expected EnumMember value to retain the original wire value",
+        diagnostics.length > 0,
+        "expected a diagnostic when @serverName is applied to an enum member",
       );
     });
 

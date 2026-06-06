@@ -7,7 +7,6 @@
 import type {
   DecoratorContext,
   DecoratorImplementations,
-  EnumMember,
   Model,
   ModelProperty,
   Program,
@@ -28,7 +27,7 @@ const VALID_CSHARP_IDENTIFIER = /^@?[a-zA-Z_][a-zA-Z0-9_]*$/;
 
 function serverNameImpl(
   context: DecoratorContext,
-  target: Model | EnumMember | ModelProperty,
+  target: Model | ModelProperty,
   name: string,
 ): void {
   if (!VALID_CSHARP_IDENTIFIER.test(name)) {
@@ -55,12 +54,12 @@ export const $decorators: DecoratorImplementations = {
 };
 
 /**
- * Returns the `@serverName` override for a model, enum member, or model
+ * Returns the `@serverName` override for a model or model
  * property, or `undefined` if the decorator was not applied.
  */
 export function getServerName(
   program: Program,
-  target: Model | EnumMember | ModelProperty,
+  target: Model | ModelProperty,
 ): string | undefined {
   return program.stateMap(serverNameKey).get(target) as string | undefined;
 }
