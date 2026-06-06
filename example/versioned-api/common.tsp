@@ -1,4 +1,5 @@
 import "@massivescale/tsp-aspnetcore-api";
+using TypeSpec.Reflection;
 
 namespace MassiveScale.Sandbox.Api;
 using MassiveScale.AspNetCoreApi;
