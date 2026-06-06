@@ -550,7 +550,7 @@ export async function $onEmit(
       options.namespaceFromPath && options.modelsDirSuffix
         ? []
         : folderSegments(options.modelsEffectiveRootNs, typespecEnumNs);
-    const emittedEnumName = getServerName(program, en) ?? pascalCase(en.name);
+    const emittedEnumName = pascalCase(en.name);
     const enumFileName = `${emittedEnumName}${options.fileExtension}`;
     await emitFile(program, {
       path: resolvePath(options.modelsOutputDir, ...folder, enumFileName),
@@ -717,11 +717,12 @@ function buildSinglePropertyData(
 
   const modelRef = getValidatorModelReference(prop.type);
   const referencedModelName = modelRef
-    ? pascalCase(modelRef.model.name)
+    ? (getServerName(program, modelRef.model) ??
+      pascalCase(modelRef.model.name))
     : undefined;
-  const referencedParamName = modelRef
-    ? modelRef.model.name.charAt(0).toLowerCase() +
-      modelRef.model.name.slice(1) +
+  const referencedParamName = referencedModelName
+    ? referencedModelName.charAt(0).toLowerCase() +
+      referencedModelName.slice(1) +
       "Validator"
     : undefined;
   const isCollectionReference = modelRef?.isCollection;
@@ -2197,7 +2198,8 @@ function buildClassView(
       }
 
       patchMethod = {
-        targetType: pascalCase(sourceModel.name),
+        targetType:
+          getServerName(program, sourceModel) ?? pascalCase(sourceModel.name),
         properties,
         skippedProperties,
       };
@@ -2208,7 +2210,9 @@ function buildClassView(
     doc: docFor(program, model),
     className,
     interfaceName: `I${className}`,
-    baseClass: model.baseModel ? typeReference(model.baseModel) : undefined,
+    baseClass: model.baseModel
+      ? typeReference(model.baseModel, program)
+      : undefined,
     properties: buildPropertyViews(program, model, options, isMergePatchModel),
     patchMethod,
   };
@@ -2252,7 +2256,7 @@ function buildEnumView(program: Program, en: Enum): EnumView {
   const enumDoc = getDoc(program, en);
   return {
     doc: enumDoc ? renderDocComment(enumDoc) : undefined,
-    enumName: getServerName(program, en) ?? pascalCase(en.name),
+    enumName: pascalCase(en.name),
     members: [...en.members.values()].map((member) => {
       const memberDoc = getDoc(program, member);
       return {
@@ -2289,7 +2293,7 @@ function defaultValueInitializer(
   switch (value.valueKind) {
     case "EnumValue": {
       const member = value.value;
-      return `${getServerName(program, member.enum) ?? pascalCase(member.enum.name)}.${getServerName(program, member) ?? pascalCase(member.name)}`;
+      return `${pascalCase(member.enum.name)}.${getServerName(program, member) ?? pascalCase(member.name)}`;
     }
     case "StringValue":
       return `"${value.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -2390,7 +2394,7 @@ function propertyTypeName(
       prop,
       isMergePatchModel,
     );
-    type = inferredEnumType ?? typeReference(prop.type);
+    type = inferredEnumType ?? typeReference(prop.type, program);
   }
   const nullable = prop.optional || options.nullableProperties;
   const nullableType = nullable && !type.endsWith("?") ? `${type}?` : type;
@@ -2532,10 +2536,15 @@ function isMergePatchUpdateModel(model: Model): boolean {
  * Recursively resolves the C# type string for any TypeSpec {@link Type} node,
  * without applying nullability.
  *
+ * When `program` is supplied, `@serverName` overrides on referenced models are
+ * honoured so that renamed models are referenced by their C# identifier rather
+ * than their TypeSpec name.
+ *
  * @param type - The TypeSpec type node to resolve.
+ * @param program - Optional compiled TypeSpec program used to look up `@serverName`.
  * @returns C# type string (non-nullable).
  */
-function typeReference(type: Type): string {
+function typeReference(type: Type, program?: Program): string {
   switch (type.kind) {
     case "Scalar": {
       const mapped = SCALAR_MAP[type.name];
@@ -2550,12 +2559,15 @@ function typeReference(type: Type): string {
     }
     case "Model": {
       if (isArrayModelType(type)) {
-        return `IList<${typeReference(type.indexer.value)}>`;
+        return `IList<${typeReference(type.indexer.value, program)}>`;
       }
       if (isRecordModelType(type)) {
-        return `IDictionary<string, ${typeReference(type.indexer.value)}>`;
+        return `IDictionary<string, ${typeReference(type.indexer.value, program)}>`;
       }
-      return pascalCase(type.name || "object");
+      return (
+        (program ? getServerName(program, type) : undefined) ??
+        pascalCase(type.name || "object")
+      );
     }
     case "Enum":
       return pascalCase(type.name);
@@ -2572,7 +2584,7 @@ function typeReference(type: Type): string {
       );
       const hasNull = nonNull.length !== variants.length;
       if (nonNull.length === 1) {
-        const ref = typeReference(nonNull[0].type);
+        const ref = typeReference(nonNull[0].type, program);
         return hasNull ? `${ref}?` : ref;
       }
       return "object";

@@ -7,21 +7,38 @@
 import type {
   DecoratorContext,
   DecoratorImplementations,
-  Enum,
   EnumMember,
   Model,
   ModelProperty,
   Program,
 } from "@typespec/compiler";
-import { $lib } from "./lib.js";
+import { $lib, reportDiagnostic } from "./lib.js";
 
 const serverNameKey = $lib.createStateSymbol("serverName");
 
+/**
+ * Regular expression for a valid C# identifier.
+ * Accepts an optional leading `@` (used to escape reserved words),
+ * followed by a letter or underscore, then any mix of letters, digits,
+ * and underscores.  Rejects names with path separators, dots, spaces, or
+ * other characters that would produce invalid C# or allow path traversal
+ * in output filenames.
+ */
+const VALID_CSHARP_IDENTIFIER = /^@?[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 function serverNameImpl(
   context: DecoratorContext,
-  target: Model | Enum | EnumMember | ModelProperty,
+  target: Model | EnumMember | ModelProperty,
   name: string,
 ): void {
+  if (!VALID_CSHARP_IDENTIFIER.test(name)) {
+    reportDiagnostic(context.program, {
+      code: "invalid-server-name",
+      target,
+      format: { name },
+    });
+    return;
+  }
   context.program.stateMap(serverNameKey).set(target, name);
 }
 
@@ -38,12 +55,12 @@ export const $decorators: DecoratorImplementations = {
 };
 
 /**
- * Returns the `@serverName` override for a model or enum, or `undefined` if
- * the decorator was not applied.
+ * Returns the `@serverName` override for a model, enum member, or model
+ * property, or `undefined` if the decorator was not applied.
  */
 export function getServerName(
   program: Program,
-  target: Model | Enum | EnumMember | ModelProperty,
+  target: Model | EnumMember | ModelProperty,
 ): string | undefined {
   return program.stateMap(serverNameKey).get(target) as string | undefined;
 }

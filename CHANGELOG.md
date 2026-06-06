@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- `@serverName` is no longer supported on `enum` types. Applying it to a top-level TypeSpec `enum` now produces a compile-time error. Use `@serverName` on `model`, `enum member`, or `model property` targets only. Enum files continue to use the PascalCased TypeSpec name.
+- `@serverName` values are now validated at compile time. A name must be a valid C# identifier (letters, digits, and underscores, starting with a letter or underscore, optionally prefixed with `@`). Names containing path separators, spaces, or other punctuation are rejected with the `invalid-server-name` diagnostic. This prevents both invalid C# output and path-traversal attacks via the output filename.
+- `@serverName` applied to a `model` now propagates to all references to that model: base class declarations and property type references in other generated files use the server name. Previously only the class/interface declaration and filename were renamed; all references still used the raw TypeSpec name, producing uncompilable C# output.
+- Validator dependency injection constructor parameters and `referencedValidators` entries now derive their names from `@serverName` when the referenced model has one. Previously the raw TypeSpec model name was used, causing validators to reference non-existent C# identifiers when the model was renamed.
+
 ## [1.8.0] - 2026-06-06
 
 ### Added

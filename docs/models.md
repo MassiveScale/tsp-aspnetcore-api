@@ -80,21 +80,24 @@ The `EnumMemberConverterFactory` helper is emitted once into `helpers-output-dir
 
 ## @serverName
 
-The `@serverName` decorator overrides the C# identifier for a model, enum, enum member, or model property. Import the package and open the namespace to use it:
+The `@serverName` decorator overrides the C# identifier for a model, enum member, or model property. Import the package and open the namespace to use it:
 
 ```typespec
 import "@massivescale/tsp-aspnetcore-api";
 using MassiveScale.AspNetCoreApi;
 ```
 
+The value must be a valid C# identifier: letters, digits, and underscores only, starting with a letter or underscore (optionally prefixed with `@` to escape a reserved keyword). Names containing path separators, spaces, or other punctuation are rejected with a compile-time diagnostic.
+
+> **Note:** `@serverName` is **not** supported on `enum` types. Use it on `model`, `enum member`, or `model property` targets only. Applying it to an enum produces a TypeSpec compiler error.
+
 **Targets and effects:**
 
-| Target           | What changes                                                 | What stays the same                      |
-| ---------------- | ------------------------------------------------------------ | ---------------------------------------- |
-| `model`          | Class name, companion interface name (`I<Name>`), file names | Property type signatures in other models |
-| `enum`           | Enum type name, file name                                    | `EnumMember` wire values                 |
-| `enum member`    | C# member identifier                                         | `[EnumMember(Value = "...")]` wire value |
-| `model property` | C# property identifier                                       | `[JsonPropertyName("...")]` wire name    |
+| Target           | What changes                                                                            | What stays the same                      |
+| ---------------- | --------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `model`          | Class name, companion interface (`I<Name>`), file names, all references in other models | `[JsonPropertyName("...")]` wire names   |
+| `enum member`    | C# member identifier                                                                    | `[EnumMember(Value = "...")]` wire value |
+| `model property` | C# property identifier                                                                  | `[JsonPropertyName("...")]` wire name    |
 
 ```typespec
 @serverName("PetRequest")
@@ -133,7 +136,7 @@ public enum Status
 }
 ```
 
-If you need the C# property type to also reflect a renamed model identifier, rename the TypeSpec model instead — `@serverName` is specifically for when the TypeSpec name and the desired C# name must differ.
+When a model is renamed with `@serverName`, all references to it — including base class declarations and property types in other models — automatically use the server name in the generated C#.
 
 ## Cross-namespace references
 

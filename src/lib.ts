@@ -367,6 +367,12 @@ export const $lib = createTypeSpecLibrary({
         default: paramMessage`Using validators-version-strategy "latest" may produce validators that reject requests from clients targeting earlier API versions. Consider "earliest" or "version-aware" to avoid breaking changes.`,
       },
     },
+    "invalid-server-name": {
+      severity: "error",
+      messages: {
+        default: paramMessage`@serverName value "${"name"}" is not a valid C# identifier. Use only letters, digits, and underscores, starting with a letter or underscore (optionally prefixed with @).`,
+      },
+    },
   },
   emitter: {
     options: EmitterOptionsSchema,
