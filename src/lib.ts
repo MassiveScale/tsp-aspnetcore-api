@@ -264,6 +264,13 @@ export interface EmitterOptions {
     | "latest"
     | "per-version"
     | "version-aware";
+
+  /**
+   * When `true` (the default), all previously emitted files in the emitter
+   * output directory are deleted before the current emit run begins.
+   * Set to `false` to preserve existing files and only add or overwrite.
+   */
+  "clean-output-dir"?: boolean;
 }
 
 /** JSON Schema used by the TypeSpec compiler to validate emitter options. */
@@ -336,6 +343,7 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
       enum: ["earliest", "latest", "per-version", "version-aware"],
       nullable: true,
     },
+    "clean-output-dir": { type: "boolean", nullable: true },
   },
   required: [],
 };
@@ -357,6 +365,12 @@ export const $lib = createTypeSpecLibrary({
       severity: "warning",
       messages: {
         default: paramMessage`Using validators-version-strategy "latest" may produce validators that reject requests from clients targeting earlier API versions. Consider "earliest" or "version-aware" to avoid breaking changes.`,
+      },
+    },
+    "invalid-server-name": {
+      severity: "error",
+      messages: {
+        default: paramMessage`@serverName value "${"name"}" is not a valid C# identifier. Use only letters, digits, and underscores, starting with a letter or underscore (optionally prefixed with @). Reserved keywords must be prefixed with @ (e.g. "@class").`,
       },
     },
   },
