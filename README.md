@@ -120,7 +120,7 @@ using MassiveScale.AspNetCoreApi;
 
 ### `@serverName`
 
-Overrides the C# identifier for a model or model property. For models it also changes the generated file name.
+Overrides the C# identifier for a model or model property. For models it also changes the generated file name and all generated references to that model (including controller/service signatures).
 
 ```typespec
 @serverName(name: valueof string)
@@ -145,6 +145,8 @@ enum Status {
 ```
 
 Produces `PetRequest.g.cs` / `IPetRequest.g.cs` with a property named `Identifier` (still `[JsonPropertyName("id")]`).
+
+When a model server name starts with `@` (for a C# verbatim identifier), the class file keeps the `@` prefix (for example `@class.g.cs`) while the interface file and type use `I` plus the identifier without `@` (for example `Iclass.g.cs`, `interface Iclass`).
 
 ---
 

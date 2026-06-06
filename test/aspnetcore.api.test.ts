@@ -2776,6 +2776,66 @@ namespace {{namespace}}
         results["@class.g.cs"],
         "expected @class.g.cs to be emitted for a verbatim identifier",
       );
+      ok(
+        results["Iclass.g.cs"],
+        "expected Iclass.g.cs to match interface type name for a verbatim identifier",
+      );
+      ok(
+        !results["I@class.g.cs"],
+        "expected I@class.g.cs not to be emitted for a verbatim identifier",
+      );
+    });
+
+    it("uses @serverName in controller and service method signatures", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        import "@typespec/http";
+        using MassiveScale.AspNetCoreApi;
+        using TypeSpec.Http;
+
+        @service(#{title: "Pets" })
+        namespace Demo;
+
+        @serverName("PetResource")
+        model Pet { id: string; }
+
+        @route("/pets")
+        interface Pets {
+          @post create(@body body: Pet): Pet;
+        }
+      `);
+
+      const ctrl =
+        results["Controllers/PetsControllerBase.g.cs"] ??
+        results[
+          Object.keys(results).find((k) =>
+            k.endsWith("PetsControllerBase.g.cs"),
+          )!
+        ];
+      ok(ctrl, "expected controller file to be emitted");
+      ok(
+        ctrl.includes("[FromBody] PetResource body"),
+        "expected controller body parameter type to use @serverName",
+      );
+      ok(
+        !ctrl.includes("[FromBody] Pet body"),
+        "expected controller not to use raw TypeSpec model name in body parameter",
+      );
+
+      const svc =
+        results["Services/IPetsService.g.cs"] ??
+        results[
+          Object.keys(results).find((k) => k.endsWith("IPetsService.g.cs"))!
+        ];
+      ok(svc, "expected service interface file to be emitted");
+      ok(
+        svc.includes("Task<PetResource?> CreateAsync(PetResource body"),
+        "expected service method signature to use @serverName for parameter and return type",
+      );
+      ok(
+        !svc.includes("Task<Pet?> CreateAsync(Pet body"),
+        "expected service signature not to use raw TypeSpec model name",
+      );
     });
 
     it("uses @serverName on a base model when generating the base class reference", async () => {

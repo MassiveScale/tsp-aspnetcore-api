@@ -516,7 +516,10 @@ export async function $onEmit(
     });
 
     if (options.emitInterfaces) {
-      const interfaceFileName = `I${emittedModelName}${options.fileExtension}`;
+      const interfaceFileModelName = emittedModelName.startsWith("@")
+        ? emittedModelName.slice(1)
+        : emittedModelName;
+      const interfaceFileName = `I${interfaceFileModelName}${options.fileExtension}`;
       await emitFile(program, {
         path: resolvePath(
           options.interfacesOutputDir,

@@ -41,6 +41,7 @@ import {
   ServiceView,
   renderDocComment,
 } from "./renderer.js";
+import { getServerName } from "./decorators.js";
 import { SCALAR_MAP, FORMAT_MAP, pascalCase, camelCase } from "./utils.js";
 
 /**
@@ -489,7 +490,7 @@ function typeRef(
       if (isRecordModelType(type)) {
         return `IDictionary<string, ${typeRef(program, type.indexer.value, options)}>`;
       }
-      return pascalCase(type.name || "object");
+      return getServerName(program, type) ?? pascalCase(type.name || "object");
     }
     case "Enum":
       return pascalCase(type.name);
