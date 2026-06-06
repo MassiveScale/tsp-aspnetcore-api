@@ -2519,4 +2519,443 @@ namespace {{namespace}}
       );
     });
   });
+
+  // ── clean-output-dir ────────────────────────────────────────────────────────
+
+  describe("clean-output-dir option", () => {
+    it("accepts clean-output-dir: true without errors", async () => {
+      const results = await emit(
+        `namespace Demo; model Widget { id: string; }`,
+        { "clean-output-dir": true },
+      );
+      ok(results["Widget.g.cs"], "expected Widget.g.cs to be emitted");
+    });
+
+    it("accepts clean-output-dir: false without errors", async () => {
+      const results = await emit(
+        `namespace Demo; model Widget { id: string; }`,
+        { "clean-output-dir": false },
+      );
+      ok(results["Widget.g.cs"], "expected Widget.g.cs to be emitted");
+    });
+  });
+
+  // ── @serverName decorator ───────────────────────────────────────────────────
+
+  describe("@serverName decorator", () => {
+    it("overrides the emitted class name and file name for a model", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("WidgetResource")
+        model Widget { id: string; }
+      `);
+
+      ok(
+        results["WidgetResource.g.cs"],
+        `expected WidgetResource.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        !results["Widget.g.cs"],
+        "expected Widget.g.cs NOT to exist after @serverName",
+      );
+      ok(
+        results["WidgetResource.g.cs"].includes("class WidgetResource"),
+        "expected class declaration to use server name",
+      );
+    });
+
+    it("overrides the interface name and file name", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("WidgetResource")
+        model Widget { id: string; }
+      `);
+
+      ok(
+        results["IWidgetResource.g.cs"],
+        "expected IWidgetResource.g.cs to be emitted",
+      );
+      ok(
+        results["IWidgetResource.g.cs"].includes("interface IWidgetResource"),
+        "expected interface declaration to use server name",
+      );
+    });
+
+    it("does not change JsonPropertyName values", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("WidgetResource")
+        model Widget { myProp: string; }
+      `);
+
+      const file = results["WidgetResource.g.cs"];
+      ok(
+        file.includes('[JsonPropertyName("myProp")]'),
+        "expected JsonPropertyName to retain the original camelCase property name",
+      );
+    });
+
+    it("is rejected when applied to an enum type", async () => {
+      const [, diagnostics] = await emitWithDiagnostics(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("WidgetStatus")
+        enum Status { Active, Inactive }
+      `);
+
+      ok(
+        diagnostics.length > 0,
+        "expected a diagnostic when @serverName is applied to an enum type",
+      );
+    });
+
+    it("emits enum file using the TypeSpec name (not renamed)", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        enum Status {
+          Active: "active",
+          Inactive: "inactive",
+        }
+      `);
+
+      ok(
+        results["Status.g.cs"],
+        `expected Status.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        results["Status.g.cs"].includes("enum Status"),
+        "expected enum declaration to use TypeSpec name",
+      );
+      ok(
+        results["Status.g.cs"].includes('"active"') &&
+          results["Status.g.cs"].includes('"inactive"'),
+        "expected EnumMember wire values to be retained",
+      );
+    });
+
+    it("overrides the C# property name on a model property", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        model Widget {
+          @serverName("Identifier")
+          id: string;
+        }
+      `);
+
+      const file = results["Widget.g.cs"];
+      ok(
+        file.includes("public string? Identifier { get; set; }"),
+        "expected property to use server name as C# identifier",
+      );
+    });
+
+    it("does not change JsonPropertyName when @serverName is applied to a property", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        model Widget {
+          @serverName("Identifier")
+          id: string;
+        }
+      `);
+
+      const file = results["Widget.g.cs"];
+      ok(
+        file.includes('[JsonPropertyName("id")]'),
+        "expected JsonPropertyName to retain the original camelCase property name",
+      );
+    });
+
+    it("is rejected when applied to an enum member", async () => {
+      const [, diagnostics] = await emitWithDiagnostics(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        enum Status {
+          @serverName("Running")
+          active: "active",
+        }
+      `);
+
+      ok(
+        diagnostics.length > 0,
+        "expected a diagnostic when @serverName is applied to an enum member",
+      );
+    });
+
+    it("falls back to TypeSpec name when @serverName is not applied", async () => {
+      const results = await emit(
+        `namespace Demo; model Widget { id: string; }`,
+      );
+      ok(results["Widget.g.cs"], "expected Widget.g.cs when no @serverName");
+      ok(
+        results["Widget.g.cs"].includes("class Widget"),
+        "expected class to use TypeSpec name",
+      );
+    });
+
+    it("reports a diagnostic for an invalid C# identifier", async () => {
+      const [, diagnostics] = await emitWithDiagnostics(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("invalid name!")
+        model Widget { id: string; }
+      `);
+
+      ok(
+        diagnostics.some((d) => d.code.includes("invalid-server-name")),
+        "expected invalid-server-name diagnostic for a name with spaces and punctuation",
+      );
+    });
+
+    it("reports a diagnostic for a name with path separators", async () => {
+      const [, diagnostics] = await emitWithDiagnostics(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("../../EvilFile")
+        model Widget { id: string; }
+      `);
+
+      ok(
+        diagnostics.some((d) => d.code.includes("invalid-server-name")),
+        "expected invalid-server-name diagnostic for a name with path separators",
+      );
+    });
+
+    it("reports a diagnostic for a name that starts with a digit", async () => {
+      const [, diagnostics] = await emitWithDiagnostics(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("123Widget")
+        model Widget { id: string; }
+      `);
+
+      ok(
+        diagnostics.some((d) => d.code.includes("invalid-server-name")),
+        "expected invalid-server-name diagnostic for a name starting with a digit",
+      );
+    });
+
+    it("reports a diagnostic for a C# reserved keyword without @", async () => {
+      const [, diagnostics] = await emitWithDiagnostics(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("class")
+        model Widget { id: string; }
+      `);
+
+      ok(
+        diagnostics.some((d) => d.code.includes("invalid-server-name")),
+        "expected invalid-server-name diagnostic for a bare C# reserved keyword",
+      );
+    });
+
+    it("accepts a name with a leading @ (C# verbatim identifier)", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("@class")
+        model Widget { id: string; }
+      `);
+
+      ok(
+        results["@class.g.cs"],
+        "expected @class.g.cs to be emitted for a verbatim identifier",
+      );
+      ok(
+        results["Iclass.g.cs"],
+        "expected Iclass.g.cs to match interface type name for a verbatim identifier",
+      );
+      ok(
+        !results["I@class.g.cs"],
+        "expected I@class.g.cs not to be emitted for a verbatim identifier",
+      );
+    });
+
+    it("uses @serverName in controller and service method signatures", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        import "@typespec/http";
+        using MassiveScale.AspNetCoreApi;
+        using TypeSpec.Http;
+
+        @service(#{title: "Pets" })
+        namespace Demo;
+
+        @serverName("PetResource")
+        model Pet { id: string; }
+
+        @route("/pets")
+        interface Pets {
+          @post create(@body body: Pet): Pet;
+        }
+      `);
+
+      const ctrl =
+        results["Controllers/PetsControllerBase.g.cs"] ??
+        results[
+          Object.keys(results).find((k) =>
+            k.endsWith("PetsControllerBase.g.cs"),
+          )!
+        ];
+      ok(ctrl, "expected controller file to be emitted");
+      ok(
+        ctrl.includes("[FromBody] PetResource body"),
+        "expected controller body parameter type to use @serverName",
+      );
+      ok(
+        !ctrl.includes("[FromBody] Pet body"),
+        "expected controller not to use raw TypeSpec model name in body parameter",
+      );
+
+      const svc =
+        results["Services/IPetsService.g.cs"] ??
+        results[
+          Object.keys(results).find((k) => k.endsWith("IPetsService.g.cs"))!
+        ];
+      ok(svc, "expected service interface file to be emitted");
+      ok(
+        svc.includes("Task<PetResource?> CreateAsync(PetResource body"),
+        "expected service method signature to use @serverName for parameter and return type",
+      );
+      ok(
+        !svc.includes("Task<Pet?> CreateAsync(Pet body"),
+        "expected service signature not to use raw TypeSpec model name",
+      );
+    });
+
+    it("uses @serverName on a base model when generating the base class reference", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("EntityBase")
+        model Base { id: string; }
+        model Widget extends Base { name: string; }
+      `);
+
+      const file = results["Widget.g.cs"];
+      ok(
+        file.includes(": EntityBase"),
+        "expected base class reference to use @serverName",
+      );
+      ok(
+        !file.includes(": Base"),
+        "expected original TypeSpec base name not to appear as base class",
+      );
+    });
+
+    it("uses @serverName on a model referenced as a property type", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("TagResource")
+        model Tag { label: string; }
+        model Widget { tag: Tag; }
+      `);
+
+      const file = results["Widget.g.cs"];
+      ok(
+        file.includes("TagResource?"),
+        "expected property type to use @serverName on the referenced model",
+      );
+      ok(
+        !file.includes("Tag?"),
+        "expected original TypeSpec model name not to appear as property type",
+      );
+    });
+
+    it("uses @serverName on a model in an array property type", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        @serverName("TagResource")
+        model Tag { label: string; }
+        model Widget { tags: Tag[]; }
+      `);
+
+      const file = results["Widget.g.cs"];
+      ok(
+        file.includes("IList<TagResource>?"),
+        "expected array element type to use @serverName",
+      );
+    });
+
+    it("uses @serverName for the validator referenced model and param names", async () => {
+      const [results] = await emitWithDiagnostics(
+        `
+        import "@massivescale/tsp-aspnetcore-api";
+        import "@typespec/http";
+        using MassiveScale.AspNetCoreApi;
+        using TypeSpec.Http;
+
+        namespace Demo;
+        @serverName("AuthorResource")
+        model Author { name: string; }
+        model Book { author: Author; }
+
+        @route("/books")
+        interface Books {
+          @post create(@body body: Book): Book;
+        }
+        `,
+        {
+          "emit-validators": true,
+          "emit-controllers": false,
+          "emit-services": false,
+          "emit-interfaces": false,
+        },
+      );
+
+      const validatorFile = results["Validators/BookValidator.g.cs"];
+      ok(validatorFile, "expected BookValidator.g.cs to be emitted");
+      ok(
+        validatorFile.includes("AuthorResource"),
+        "expected validator to reference the renamed model 'AuthorResource'",
+      );
+      ok(
+        !validatorFile.includes("authorValidator"),
+        "expected validator not to use the raw TypeSpec name as param",
+      );
+      ok(
+        validatorFile.includes("authorResourceValidator"),
+        "expected validator param to be derived from the server name",
+      );
+    });
+  });
 });

@@ -56,9 +56,10 @@ import {
 } from "@typespec/versioning";
 import type { Version } from "@typespec/versioning";
 import Handlebars from "handlebars";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getServerName } from "./decorators.js";
 import { EmitterOptions, reportDiagnostic } from "./lib.js";
 import { SCALAR_MAP, FORMAT_MAP, pascalCase, camelCase } from "./utils.js";
 import {
@@ -80,6 +81,18 @@ import {
   ControllerOptions,
   collectControllers,
 } from "./controllers.js";
+
+/**
+ * Deletes all files and subdirectories inside `dir` without removing the
+ * directory itself.  If the directory does not exist on the real filesystem
+ * (e.g. during tests that use a virtual host) this is a safe no-op.
+ */
+function cleanDirectory(dir: string): void {
+  if (!existsSync(dir)) return;
+  for (const entry of readdirSync(dir)) {
+    rmSync(join(dir, entry), { recursive: true, force: true });
+  }
+}
 
 /** Default C# namespace used for top-level TypeSpec models with no namespace. */
 const DEFAULT_NAMESPACE = "Models";
@@ -368,6 +381,8 @@ interface ResolvedOptions {
     | "per-version"
     | "version-aware"
     | undefined;
+  /** Whether to delete all files in the emitter output directory before emitting. */
+  cleanOutputDir: boolean;
 }
 
 /** Inferred enum derived from a string-literal union property. */
@@ -404,6 +419,10 @@ export async function $onEmit(
 
   const program = context.program;
   const options = resolveOptions(context);
+
+  if (options.cleanOutputDir) {
+    cleanDirectory(context.emitterOutputDir);
+  }
 
   const renderer = buildRenderer(program, options);
   if (!renderer) return;
@@ -481,7 +500,9 @@ export async function $onEmit(
       isMergePatchModel,
     );
 
-    const classFileName = `${pascalCase(model.name)}${options.fileExtension}`;
+    const emittedModelName =
+      getServerName(program, model) ?? pascalCase(model.name);
+    const classFileName = `${emittedModelName}${options.fileExtension}`;
     await emitFile(program, {
       path: resolvePath(options.modelsOutputDir, ...classFolder, classFileName),
       content: renderer.renderFile({
@@ -495,7 +516,10 @@ export async function $onEmit(
     });
 
     if (options.emitInterfaces) {
-      const interfaceFileName = `I${pascalCase(model.name)}${options.fileExtension}`;
+      const interfaceFileModelName = emittedModelName.startsWith("@")
+        ? emittedModelName.slice(1)
+        : emittedModelName;
+      const interfaceFileName = `I${interfaceFileModelName}${options.fileExtension}`;
       await emitFile(program, {
         path: resolvePath(
           options.interfacesOutputDir,
@@ -529,7 +553,8 @@ export async function $onEmit(
       options.namespaceFromPath && options.modelsDirSuffix
         ? []
         : folderSegments(options.modelsEffectiveRootNs, typespecEnumNs);
-    const enumFileName = `${pascalCase(en.name)}${options.fileExtension}`;
+    const emittedEnumName = pascalCase(en.name);
+    const enumFileName = `${emittedEnumName}${options.fileExtension}`;
     await emitFile(program, {
       path: resolvePath(options.modelsOutputDir, ...folder, enumFileName),
       content: renderer.renderFile({
@@ -695,11 +720,12 @@ function buildSinglePropertyData(
 
   const modelRef = getValidatorModelReference(prop.type);
   const referencedModelName = modelRef
-    ? pascalCase(modelRef.model.name)
+    ? (getServerName(program, modelRef.model) ??
+      pascalCase(modelRef.model.name))
     : undefined;
-  const referencedParamName = modelRef
-    ? modelRef.model.name.charAt(0).toLowerCase() +
-      modelRef.model.name.slice(1) +
+  const referencedParamName = referencedModelName
+    ? referencedModelName.charAt(0).toLowerCase() +
+      referencedModelName.slice(1) +
       "Validator"
     : undefined;
   const isCollectionReference = modelRef?.isCollection;
@@ -716,7 +742,7 @@ function buildSinglePropertyData(
     referencedModelName !== undefined;
 
   return {
-    name: pascalCase(prop.name),
+    name: getServerName(program, prop) ?? pascalCase(prop.name),
     hasRules,
     notEmpty,
     minLength,
@@ -1830,6 +1856,7 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     validatorsOutputDir: resolvePath(baseDir, validatorsDir),
     validatorsTypes: raw["validators"] ?? "both",
     validatorsVersionStrategy: raw["validators-version-strategy"],
+    cleanOutputDir: raw["clean-output-dir"] ?? true,
   };
 }
 
@@ -2128,7 +2155,7 @@ function buildClassView(
   options: ResolvedOptions,
   isMergePatchModel: boolean,
 ): ClassView {
-  const className = pascalCase(model.name);
+  const className = getServerName(program, model) ?? pascalCase(model.name);
 
   let patchMethod: PatchMethodView | undefined;
   if (isMergePatchModel) {
@@ -2160,7 +2187,7 @@ function buildClassView(
             : fullPatchType;
 
         const entityType = sourcePropTypes.get(prop.name);
-        const propName = pascalCase(prop.name);
+        const propName = getServerName(program, prop) ?? pascalCase(prop.name);
 
         if (entityType !== undefined && patchInnerType === entityType) {
           properties.push({ name: propName });
@@ -2174,7 +2201,8 @@ function buildClassView(
       }
 
       patchMethod = {
-        targetType: pascalCase(sourceModel.name),
+        targetType:
+          getServerName(program, sourceModel) ?? pascalCase(sourceModel.name),
         properties,
         skippedProperties,
       };
@@ -2184,8 +2212,10 @@ function buildClassView(
   return {
     doc: docFor(program, model),
     className,
-    interfaceName: `I${className}`,
-    baseClass: model.baseModel ? typeReference(model.baseModel) : undefined,
+    interfaceName: `I${className.startsWith("@") ? className.slice(1) : className}`,
+    baseClass: model.baseModel
+      ? typeReference(model.baseModel, program)
+      : undefined,
     properties: buildPropertyViews(program, model, options, isMergePatchModel),
     patchMethod,
   };
@@ -2205,11 +2235,16 @@ function buildInterfaceView(
   options: ResolvedOptions,
   isMergePatchModel: boolean,
 ): InterfaceView {
+  const ifaceName = getServerName(program, model) ?? pascalCase(model.name);
+  const baseIfaceName = model.baseModel
+    ? (getServerName(program, model.baseModel) ??
+      pascalCase(model.baseModel.name))
+    : undefined;
   return {
     doc: docFor(program, model),
-    interfaceName: `I${pascalCase(model.name)}`,
-    baseInterface: model.baseModel
-      ? `I${pascalCase(model.baseModel.name)}`
+    interfaceName: `I${ifaceName.startsWith("@") ? ifaceName.slice(1) : ifaceName}`,
+    baseInterface: baseIfaceName
+      ? `I${baseIfaceName.startsWith("@") ? baseIfaceName.slice(1) : baseIfaceName}`
       : undefined,
     properties: buildPropertyViews(program, model, options, isMergePatchModel),
   };
@@ -2301,7 +2336,7 @@ function buildPropertyViews(
     return {
       doc: docFor(program, prop),
       type,
-      name: pascalCase(prop.name),
+      name: getServerName(program, prop) ?? pascalCase(prop.name),
       jsonName: camelCase(prop.name),
       nullable: type.endsWith("?"),
       initializer:
@@ -2361,7 +2396,7 @@ function propertyTypeName(
       prop,
       isMergePatchModel,
     );
-    type = inferredEnumType ?? typeReference(prop.type);
+    type = inferredEnumType ?? typeReference(prop.type, program);
   }
   const nullable = prop.optional || options.nullableProperties;
   const nullableType = nullable && !type.endsWith("?") ? `${type}?` : type;
@@ -2503,10 +2538,15 @@ function isMergePatchUpdateModel(model: Model): boolean {
  * Recursively resolves the C# type string for any TypeSpec {@link Type} node,
  * without applying nullability.
  *
+ * When `program` is supplied, `@serverName` overrides on referenced models are
+ * honoured so that renamed models are referenced by their C# identifier rather
+ * than their TypeSpec name.
+ *
  * @param type - The TypeSpec type node to resolve.
+ * @param program - Optional compiled TypeSpec program used to look up `@serverName`.
  * @returns C# type string (non-nullable).
  */
-function typeReference(type: Type): string {
+function typeReference(type: Type, program?: Program): string {
   switch (type.kind) {
     case "Scalar": {
       const mapped = SCALAR_MAP[type.name];
@@ -2521,12 +2561,15 @@ function typeReference(type: Type): string {
     }
     case "Model": {
       if (isArrayModelType(type)) {
-        return `IList<${typeReference(type.indexer.value)}>`;
+        return `IList<${typeReference(type.indexer.value, program)}>`;
       }
       if (isRecordModelType(type)) {
-        return `IDictionary<string, ${typeReference(type.indexer.value)}>`;
+        return `IDictionary<string, ${typeReference(type.indexer.value, program)}>`;
       }
-      return pascalCase(type.name || "object");
+      return (
+        (program ? getServerName(program, type) : undefined) ??
+        pascalCase(type.name || "object")
+      );
     }
     case "Enum":
       return pascalCase(type.name);
@@ -2543,7 +2586,7 @@ function typeReference(type: Type): string {
       );
       const hasNull = nonNull.length !== variants.length;
       if (nonNull.length === 1) {
-        const ref = typeReference(nonNull[0].type);
+        const ref = typeReference(nonNull[0].type, program);
         return hasNull ? `${ref}?` : ref;
       }
       return "object";

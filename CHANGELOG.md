@@ -4,8 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- `@serverName` is no longer supported on `enum` types or `enum` members. Applying it to a TypeSpec `enum` or enum member now produces a compile-time error. Use `@serverName` on `model` or `model property` targets only. Enum files and enum member identifiers continue to use the PascalCased TypeSpec names.
+- `@serverName` values are now validated at compile time. A name must be a valid C# identifier (letters, digits, and underscores, starting with a letter or underscore, optionally prefixed with `@`). Names containing path separators, spaces, or other punctuation are rejected with the `invalid-server-name` diagnostic. This prevents both invalid C# output and path-traversal attacks via the output filename. Bare C# reserved keywords (e.g. `class`, `string`) are now also rejected; prefix with `@` to form a verbatim identifier (e.g. `@class`).
+- `@serverName` applied to a `model` now propagates to all references to that model: base class declarations and property type references in other generated files use the server name. Previously only the class/interface declaration and filename were renamed; all references still used the raw TypeSpec name, producing uncompilable C# output.
+- Controller and service type resolution now honors model `@serverName` overrides. Request/response body parameter types and return types in generated controller/service signatures now match the renamed model identifier.
+- Interface filename generation is now consistent with interface type naming for verbatim identifiers. For a model renamed to `@name`, interface output is emitted as `Iname.g.cs` to match `interface Iname`.
+- Validator dependency injection constructor parameters and `referencedValidators` entries now derive their names from `@serverName` when the referenced model has one. Previously the raw TypeSpec model name was used, causing validators to reference non-existent C# identifiers when the model was renamed.
+
+## [1.8.0] - 2026-06-06
+
 ### Added
 
+- `@serverName` decorator: overrides the C# identifier for models and model properties. For models it also changes the generated file name **and** updates all generated references to that model (including property types, base classes, and controller/service signatures). `JsonPropertyName` attribute values are unchanged.
 - `Patch(TEntity target)` method on generated MergePatch classes. Applies all present fields from the patch to an existing entity instance in-place — only properties that were explicitly set in the JSON Merge Patch payload (`IsPresent == true`) are copied; absent properties leave the target unchanged. Mirrors the `Delta<T>.Patch()` pattern from `Microsoft.AspNetCore.OData`. Properties whose `MergePatchValue<T>` inner type differs from the corresponding entity property type (e.g. nested-model array properties that use a `ReplaceOnly` variant) are excluded from the generated assignments; a comment identifies each skipped property and its type mismatch so developers know what to handle manually.
 
 ## [1.7.0] - 2026-05-30
