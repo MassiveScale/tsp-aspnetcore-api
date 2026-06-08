@@ -29,8 +29,8 @@ export interface TemplateOverrides {
   controller?: string;
   /** Custom template for service interface declarations. */
   "service-interface"?: string;
-  /** Custom template for the MergePatchValue helper class. */
-  "merge-patch-value"?: string;
+  /** Custom template for the generic MergePatch&lt;T&gt; helper class. */
+  "merge-patch"?: string;
   /** Custom template for the EnumMemberConverter helper class. */
   "enum-member-converter"?: string;
   /** Custom template for the standard POST validator class. */
@@ -264,13 +264,6 @@ export interface EmitterOptions {
     | "latest"
     | "per-version"
     | "version-aware";
-
-  /**
-   * When `true` (the default), all previously emitted files in the emitter
-   * output directory are deleted before the current emit run begins.
-   * Set to `false` to preserve existing files and only add or overwrite.
-   */
-  "clean-output-dir"?: boolean;
 }
 
 /** JSON Schema used by the TypeSpec compiler to validate emitter options. */
@@ -317,7 +310,7 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
         enum: { type: "string", nullable: true },
         controller: { type: "string", nullable: true },
         "service-interface": { type: "string", nullable: true },
-        "merge-patch-value": { type: "string", nullable: true },
+        "merge-patch": { type: "string", nullable: true },
         "enum-member-converter": { type: "string", nullable: true },
         "validator-post": { type: "string", nullable: true },
         "validator-patch": { type: "string", nullable: true },
@@ -343,7 +336,6 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
       enum: ["earliest", "latest", "per-version", "version-aware"],
       nullable: true,
     },
-    "clean-output-dir": { type: "boolean", nullable: true },
   },
   required: [],
 };

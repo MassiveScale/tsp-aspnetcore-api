@@ -1,13 +1,12 @@
 # @massivescale/tsp-aspnetcore-api
 
-A TypeSpec emitter that generates C# model classes, interfaces, enums, ASP.NET Core controllers, and service interfaces from TypeSpec definitions.
+A TypeSpec emitter that generates C# model classes, interfaces, enums, ASP.NET Core controllers, service interfaces, and FluentValidation validators from TypeSpec definitions.
 
-For each TypeSpec `model` the emitter produces:
+For each TypeSpec `model` the emitter produces a `public partial class <Name>`. An optional companion `public partial interface I<Name>` can be enabled with `emit-interfaces: true`.
 
-- A `public partial class <Name>` that implements its companion interface.
-- A `public partial interface I<Name>` with the same property signatures (optional — disable with `emit-interfaces: false`).
+TypeSpec `enum` declarations and named string-literal `union` types become C# enums with `[JsonConverter(typeof(EnumMemberConverterFactory))]` and optional `[EnumMember(Value = "...")]` attributes.
 
-TypeSpec `enum` declarations become C# enums with `[JsonConverter(typeof(EnumMemberConverterFactory))]` and optional `[EnumMember(Value = "...")]` attributes. When HTTP operations are present the emitter also generates controllers and service interfaces. Each output type can be disabled independently via the `emit-*` options.
+When HTTP operations are present the emitter generates ASP.NET Core controllers and service interfaces. PATCH operations receive a `MergePatch<T>` body (RFC 7396 JSON Merge Patch semantics) rather than a distinct update model — the same entity class is used for both POST and PATCH, with FluentValidation validators enforcing which fields are writable for each operation. Each output type can be disabled independently via the `emit-*` options.
 
 ---
 
@@ -34,7 +33,7 @@ options:
 npx tsp compile .
 ```
 
-With `root-namespace: MyCompany.Api` and the TypeSpec below, the emitter writes `Users/User.g.cs` and `Users/IUser.g.cs`:
+With `root-namespace: MyCompany.Api` and the TypeSpec below, the emitter writes `Users/User.g.cs`:
 
 ```typespec
 @doc("A registered user")
@@ -61,7 +60,7 @@ namespace MyCompany.Api.Users
     /// <summary>
     /// A registered user
     /// </summary>
-    public partial class User : IUser
+    public partial class User
     {
         public Guid? Id { get; set; }
         public string? Name { get; set; }
@@ -80,16 +79,15 @@ namespace MyCompany.Api.Users
 | `abstract-suffix`             | `string`                                                           | `"Base"`          | Suffix appended to generated abstract controller class names, e.g. `UsersControllerBase`.                                                                                                                                                  |
 | `additional-usings`           | `string[]`                                                         | `[]`              | Extra `using` directives added to every generated file.                                                                                                                                                                                    |
 | `cancellation-token`          | `boolean`                                                          | `true`            | When `true`, adds `CancellationToken cancellationToken` to every controller action and service method, and emits `using System.Threading;` in controller and service files.                                                                |
-| `clean-output-dir`            | `boolean`                                                          | `true`            | When `true`, deletes all files from the emitter output directory before each emit run. Set to `false` to preserve previously generated files.                                                                                              |
 | `controllers-output-dir`      | `string`                                                           | `"Controllers"`   | Destination for generated controller files.                                                                                                                                                                                                |
 | `controllers-root-namespace`  | `string`                                                           | _(global root)_   | Overrides `root-namespace` for controller files. The full namespace is `<controllers-root-namespace>.<controllers-output-dir>`.                                                                                                            |
 | `emit-controllers`            | `boolean`                                                          | `true`            | When `false`, no controller base class files are emitted.                                                                                                                                                                                  |
-| `emit-helpers`                | `boolean`                                                          | `false`           | When `false`, helper files are skipped unless required by generated output. `MergePatchValue` is emitted automatically when any `MergePatchUpdate<T>` model is generated; enum converter helpers still follow this option.                 |
-| `emit-interfaces`             | `boolean`                                                          | `true`            | When `false`, no `I<Model>` interface files are emitted.                                                                                                                                                                                   |
+| `emit-helpers`                | `boolean`                                                          | `false`           | When `false`, `EnumMemberConverter.g.cs` is not emitted. `MergePatch.g.cs` is always emitted unconditionally (it is required by PATCH operations).                                                                                         |
+| `emit-interfaces`             | `boolean`                                                          | `false`           | When `true`, a companion `I<Model>` interface file is emitted for every model class.                                                                                                                                                       |
 | `emit-services`               | `boolean`                                                          | `true`            | When `false`, no service interface files are emitted.                                                                                                                                                                                      |
 | `emit-validators`             | `boolean`                                                          | `false`           | When `true`, FluentValidation validator classes are generated for models that appear as POST or PATCH request bodies. See [FluentValidation validators](docs/validators.md).                                                               |
 | `file-extension`              | `string`                                                           | `".g.cs"`         | File extension for all generated files.                                                                                                                                                                                                    |
-| `helpers-output-dir`          | `string`                                                           | `"Helpers"`       | Destination for generated helper files (`EnumMemberConverterFactory`, `MergePatchValue`).                                                                                                                                                  |
+| `helpers-output-dir`          | `string`                                                           | `"Helpers"`       | Destination for generated helper files (`MergePatch<T>`, `EnumMemberConverter`).                                                                                                                                                           |
 | `interfaces-output-dir`       | `string`                                                           | `"Models"`        | Destination for generated interface files.                                                                                                                                                                                                 |
 | `interfaces-root-namespace`   | `string`                                                           | _(global root)_   | Overrides `root-namespace` for interface files only.                                                                                                                                                                                       |
 | `models-output-dir`           | `string`                                                           | `"Models"`        | Destination for generated class and enum files. Relative paths resolve against `emitter-output-dir`.                                                                                                                                       |
@@ -156,7 +154,7 @@ When a model server name starts with `@` (for a C# verbatim identifier), the cla
 - [Model Generation](docs/models.md) — Default property values, enums, cross-namespace references
 - [Namespace Resolution](docs/namespace-resolution.md) — How C# namespaces are derived from output paths and TypeSpec namespaces
 - [Controllers and Services](docs/controllers-and-services.md) — ASP.NET Core controller and service interface generation
-- [RFC 7396 Merge Patch](docs/merge-patch.md) — `MergePatchUpdate<T>` support and `MergePatchValue<T>` wrapper
+- [RFC 7396 Merge Patch](docs/merge-patch.md) — `MergePatch<T>` generic container, PATCH body generation, and validator integration
 - [FluentValidation Validators](docs/validators.md) — Validator generation, constraint mapping, version strategies
 - [Custom Templates](docs/custom-templates.md) — Handlebars template overrides and view model reference
 - [Development](docs/contributing.md) — Build, test, and project structure

@@ -29,6 +29,10 @@ import {
   getRoutePath,
 } from "@typespec/http";
 import {
+  getMergePatchSource,
+  isMergePatch,
+} from "@typespec/http/experimental/merge-patch";
+import {
   Availability,
   getAllVersions,
   getAvailabilityMap,
@@ -489,6 +493,14 @@ function typeRef(
       }
       if (isRecordModelType(type)) {
         return `IDictionary<string, ${typeRef(program, type.indexer.value, options)}>`;
+      }
+      if (isMergePatch(program, type)) {
+        const source = getMergePatchSource(program, type);
+        if (source) {
+          const sourceName =
+            getServerName(program, source) ?? pascalCase(source.name);
+          return `MergePatch<${sourceName}>`;
+        }
       }
       return getServerName(program, type) ?? pascalCase(type.name || "object");
     }
