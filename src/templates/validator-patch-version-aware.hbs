@@ -24,14 +24,14 @@ namespace {{{namespace}}};
 /// Extend this partial class to add custom validation rules.
 /// </summary>
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{patchBodyTypeName}}}>
+public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualifiedPatchBodyTypeName}}}>
 {
     private static readonly string[] _versions = new[] { {{#each allVersions}}"{{this}}"{{#unless @last}}, {{/unless}}{{/each}} };
 
     /// <summary>
     /// Initializes a new instance of <see cref="{{{modelName}}}PatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
-    public {{{modelName}}}PatchValidator(IHttpContextAccessor httpContextAccessor{{#each referencedValidators}}, AbstractValidator<{{{modelName}}}> {{{paramName}}}{{/each}})
+    public {{{modelName}}}PatchValidator(IHttpContextAccessor httpContextAccessor{{#each referencedValidators}}, AbstractValidator<{{{qualifiedModelName}}}> {{{paramName}}}{{/each}})
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "{{{defaultVersion}}}");
 
@@ -127,7 +127,7 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{patchB
 {{/each}}
 {{#each versionGroups}}
         // Rules added in {{{sinceVersion}}}
-        When(() => IsAtLeast("{{{sinceVersion}}}", _apiVersion, _versions), () =>
+        When(_ => IsAtLeast("{{{sinceVersion}}}", _apiVersion, _versions), () =>
         {
 {{#each properties}}
 {{#if isReadOnly}}

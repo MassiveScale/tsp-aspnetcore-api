@@ -1,44 +1,59 @@
 # Namespace Resolution
 
-The emitter uses different strategies for models/interfaces/enums versus controllers/services/helpers.
+The emitter uses flat per-section namespaces. All models share one namespace, all controllers share one namespace, and so on. Per-section namespace options set the namespace verbatim — no directory segments are appended.
 
-## Models, interfaces, and enums
+## Flat namespace model
 
-The C# namespace is always derived from the TypeSpec namespace (after applying `namespace-map`).
+Each output section has a dedicated namespace option:
 
-When `namespace-from-path` is `true` (the default) **and** an output-dir is configured, the output-dir path segments are PascalCased and **appended** to the TypeSpec namespace. Files are placed flat in the output directory.
+| Section      | Option                  | Default                        |
+| ------------ | ----------------------- | ------------------------------ |
+| Models/Enums | `models-namespace`      | `<root-namespace>.Models`      |
+| Interfaces   | _(always models ns)_    | same as models                 |
+| Controllers  | `controllers-namespace` | `<root-namespace>.Controllers` |
+| Services     | `services-namespace`    | `<root-namespace>.Services`    |
+| Validators   | `validators-namespace`  | `<root-namespace>.Validators`  |
+| Helpers      | `helpers-namespace`     | `<root-namespace>.Helpers`     |
 
-| Configuration                                                                    | TypeSpec namespace | C# namespace       | File path                |
-| -------------------------------------------------------------------------------- | ------------------ | ------------------ | ------------------------ |
-| `root-namespace: App`                                                            | `App.Users`        | `App.Users`        | `Users/User.g.cs`        |
-| `root-namespace: App`, `models-output-dir: models`                               | `App.Users`        | `App.Users.Models` | `models/User.g.cs`       |
-| `root-namespace: App`, `models-output-dir: models`, `namespace-from-path: false` | `App.Users`        | `App.Users`        | `models/Users/User.g.cs` |
-
-When a model's namespace does not start with `root-namespace`, the file is placed flat at the output root while keeping its TypeSpec namespace unchanged.
-
-## Controllers, services, validators, and helpers
-
-The C# namespace is always path-derived: `rootNs` + PascalCased output-dir segments, where `rootNs` is the section-specific root (`controllers-root-namespace`, `services-root-namespace`, or `validators-root-namespace`) when set, otherwise the explicit `root-namespace`, otherwise the namespace inferred from the TypeSpec namespace tree. Helpers have no dedicated root override and always use the global root.
-
-| `root-namespace`                  | `controllers-root-namespace` | `controllers-output-dir` | C# namespace                     |
-| --------------------------------- | ---------------------------- | ------------------------ | -------------------------------- |
-| `MyApp`                           | _(not set)_                  | `Controllers` (default)  | `MyApp.Controllers`              |
-| `MyApp`                           | `MyCompany.Platform`         | `Controllers` (default)  | `MyCompany.Platform.Controllers` |
-| `MyApp`                           | _(not set)_                  | `src/api`                | `MyApp.Src.Api`                  |
-| _(omitted, TypeSpec ns = `Demo`)_ | _(not set)_                  | `Controllers` (default)  | `Demo.Controllers`               |
-
-When `namespace-from-path` is `false`, controllers, services, and validators use the TypeSpec namespace of their operation container instead.
-
-## Per-section root namespace overrides
-
-The `*-root-namespace` options (`controllers-root-namespace`, `services-root-namespace`, `validators-root-namespace`, `models-root-namespace`, `interfaces-root-namespace`) let you place each output type under a different root without changing `root-namespace` globally. Each option falls back to `root-namespace` when unset.
-
-This is useful when the generated code lives in a separate assembly from the consuming project:
+When the option is set it is used **verbatim** — no `.Models` or other suffix is appended. When unset, the namespace defaults to the effective root namespace with the section name appended.
 
 ```yaml
 options:
   "@massivescale/tsp-aspnetcore-api":
     root-namespace: MyApp
-    controllers-root-namespace: MyApp.Web
-    validators-root-namespace: MyApp.Infrastructure
+    models-namespace: MyApp.Domain # verbatim — all models use "namespace MyApp.Domain"
+    controllers-namespace: MyApp.Web # all controllers use "namespace MyApp.Web"
 ```
+
+## File placement
+
+`namespace-from-path` controls **file placement only** — it never affects the C# namespace written into the file.
+
+| `namespace-from-path` | Placement                                                                                                                               |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `false` (default)     | Files go in subdirectories derived from the TypeSpec namespace (with `namespace-map` applied), with the root namespace prefix stripped. |
+| `true`                | Files go flat directly inside their output directory (no subdirectories).                                                               |
+
+### Examples with `root-namespace: App`
+
+| TypeSpec namespace | `namespace-from-path` | File path                | C# namespace |
+| ------------------ | --------------------- | ------------------------ | ------------ |
+| `App.Users`        | `false` (default)     | `Models/Users/User.g.cs` | `App.Models` |
+| `App.Users`        | `true`                | `Models/User.g.cs`       | `App.Models` |
+| `Other.Stuff`      | `false`               | `Models/Foreign.g.cs`    | `App.Models` |
+
+When a TypeSpec namespace does not start with the root namespace prefix, the file is placed at the root of its output directory.
+
+## `namespace-map` and file placement
+
+The `namespace-map` option rewrites TypeSpec namespace names before they are used for **folder path computation**. It does not affect the verbatim C# namespace written to the file.
+
+```yaml
+options:
+  "@massivescale/tsp-aspnetcore-api":
+    root-namespace: Acme
+    namespace-map:
+      "Legacy.Common": "Acme.Common" # folder: Models/Common/  (namespace still Acme.Models)
+```
+
+With `namespace-from-path: false` and a matching root namespace, models in `Legacy.Common` are placed under `Models/Common/` because their TypeSpec namespace is mapped to `Acme.Common` before the `Acme` prefix is stripped.

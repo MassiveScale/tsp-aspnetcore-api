@@ -21,12 +21,12 @@ namespace {{{namespace}}};
 /// Extend this partial class to add custom validation rules.
 /// </summary>
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{patchBodyTypeName}}}>
+public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualifiedPatchBodyTypeName}}}>
 {
     /// <summary>
     /// Initializes a new instance of <see cref="{{{modelName}}}PatchValidator"/> with the auto-generated rules.
     /// </summary>
-    public {{{modelName}}}PatchValidator({{#each referencedValidators}}{{#unless @first}}, {{/unless}}AbstractValidator<{{{modelName}}}> {{{paramName}}}{{/each}})
+    public {{{modelName}}}PatchValidator({{#each referencedValidators}}{{#unless @first}}, {{/unless}}AbstractValidator<{{{qualifiedModelName}}}> {{{paramName}}}{{/each}})
     {
 {{#each properties}}
 {{#if isReadOnly}}

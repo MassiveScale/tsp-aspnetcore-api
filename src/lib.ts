@@ -58,39 +58,34 @@ export interface EmitterOptions {
   "root-namespace"?: string;
 
   /**
-   * Root C# namespace for generated model and enum files.
-   * Overrides `root-namespace` for this section only.
-   * Used as the fallback namespace for unnamespaced types and as the prefix
-   * stripped from folder paths when `namespace-from-path` is `false`.
+   * Verbatim C# namespace for all generated model and enum files.
+   * When not set, defaults to `<root-namespace>.Models`.
    */
-  "models-root-namespace"?: string;
+  "models-namespace"?: string;
 
   /**
-   * Root C# namespace for generated interface files.
-   * Overrides `root-namespace` for this section only.
+   * Verbatim C# namespace for all generated controller base class files.
+   * When not set, defaults to `<root-namespace>.Controllers`.
    */
-  "interfaces-root-namespace"?: string;
+  "controllers-namespace"?: string;
 
   /**
-   * Root C# namespace for generated controller base class files.
-   * Overrides `root-namespace` for this section only.
-   * The full controller namespace is: `<controllers-root-namespace>.<controllers-output-dir>`.
+   * Verbatim C# namespace for all generated service interface files.
+   * When not set, defaults to `<root-namespace>.Services`.
    */
-  "controllers-root-namespace"?: string;
+  "services-namespace"?: string;
 
   /**
-   * Root C# namespace for generated service interface files.
-   * Overrides `root-namespace` for this section only.
-   * The full service namespace is: `<services-root-namespace>.<services-output-dir>`.
+   * Verbatim C# namespace for all generated validator files.
+   * When not set, defaults to `<root-namespace>.Validators`.
    */
-  "services-root-namespace"?: string;
+  "validators-namespace"?: string;
 
   /**
-   * Root C# namespace for generated validator files.
-   * Overrides `root-namespace` for this section only.
-   * The full validator namespace is: `<validators-root-namespace>.<validators-output-dir>`.
+   * Verbatim C# namespace for all generated helper files.
+   * When not set, defaults to `<root-namespace>.Helpers`.
    */
-  "validators-root-namespace"?: string;
+  "helpers-namespace"?: string;
 
   /**
    * Rewrites TypeSpec namespace names to different C# namespaces.
@@ -319,11 +314,11 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
         "validator-initializer": { type: "string", nullable: true },
       },
     },
-    "models-root-namespace": { type: "string", nullable: true },
-    "interfaces-root-namespace": { type: "string", nullable: true },
-    "controllers-root-namespace": { type: "string", nullable: true },
-    "services-root-namespace": { type: "string", nullable: true },
-    "validators-root-namespace": { type: "string", nullable: true },
+    "models-namespace": { type: "string", nullable: true },
+    "controllers-namespace": { type: "string", nullable: true },
+    "services-namespace": { type: "string", nullable: true },
+    "validators-namespace": { type: "string", nullable: true },
+    "helpers-namespace": { type: "string", nullable: true },
     "emit-validators": { type: "boolean", nullable: true },
     "validators-output-dir": { type: "string", nullable: true },
     validators: {

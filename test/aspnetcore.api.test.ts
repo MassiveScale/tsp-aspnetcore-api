@@ -53,13 +53,13 @@ describe("csharp emitter", () => {
   });
 
   describe("root-namespace option", () => {
-    it("strips root namespace from folder paths", async () => {
+    it("namespace-from-path places model files flat in the output dir", async () => {
       const results = await emit(
         `
           namespace App.Users;
           model User { id: string; }
         `,
-        { "root-namespace": "App" },
+        { "root-namespace": "App", "namespace-from-path": true },
       );
 
       const file = results["Models/User.g.cs"];
@@ -67,7 +67,7 @@ describe("csharp emitter", () => {
         file,
         `expected Models/User.cs, got ${Object.keys(results).join(", ")}`,
       );
-      ok(file.includes("namespace App.Users.Models"));
+      ok(file.includes("namespace App.Models"));
     });
 
     it("places models at root when their namespace equals the root namespace", async () => {
@@ -94,7 +94,7 @@ describe("csharp emitter", () => {
       ok(file.includes("namespace App"));
     });
 
-    it("places models outside the root namespace at the output root, keeping their namespace", async () => {
+    it("models outside the root namespace are placed at the output root", async () => {
       const results = await emit(
         `
           namespace Other.Stuff;
@@ -105,7 +105,7 @@ describe("csharp emitter", () => {
 
       const file = results["Foreign.g.cs"];
       ok(file, "expected Foreign.cs at root");
-      ok(file.includes("namespace Other.Stuff"));
+      ok(file.includes("namespace App.Models"));
     });
 
     it("supports nested root namespace prefixes", async () => {
@@ -114,7 +114,7 @@ describe("csharp emitter", () => {
           namespace App.Api.V1.Users;
           model User { id: string; }
         `,
-        { "root-namespace": "App.Api" },
+        { "root-namespace": "App.Api", "namespace-from-path": true },
       );
 
       const file = results["Models/User.g.cs"];
@@ -122,7 +122,7 @@ describe("csharp emitter", () => {
         file,
         `expected Models/User.cs, got ${Object.keys(results).join(", ")}`,
       );
-      ok(file.includes("namespace App.Api.V1.Users.Models"));
+      ok(file.includes("namespace App.Api.Models"));
     });
   });
 
@@ -215,7 +215,7 @@ describe("csharp emitter", () => {
       );
     });
 
-    it("emits MergePatchUpdate properties as MergePatchValue wrappers", async () => {
+    it("does not emit a separate class for MergePatchUpdate models, emits MergePatch helper", async () => {
       const results = await emit(`
         import "@typespec/http";
         using TypeSpec.Http;
@@ -225,66 +225,31 @@ describe("csharp emitter", () => {
         model Widget {
           id: string;
           weight: int32;
-          color: string | null;
         }
 
         model WidgetMergePatchUpdate is MergePatchUpdate<Widget>;
       `);
 
-      const file =
-        results["WidgetMergePatchUpdate.g.cs"] ??
-        results["Models/WidgetMergePatchUpdate.g.cs"];
       ok(
-        file,
-        `expected WidgetMergePatchUpdate.g.cs, got ${Object.keys(results).join(", ")}`,
-      );
-      ok(
-        file.includes("using Demo.Helpers;"),
-        `expected helper namespace using in:\n${file}`,
-      );
-      ok(
-        file.includes(
-          "public MergePatchValue<string?> Id { get; set; } = MergePatchValue<string?>.Absent;",
-        ),
-        `expected wrapped id property in:\n${file}`,
-      );
-      ok(
-        file.includes(
-          "public MergePatchValue<int?> Weight { get; set; } = MergePatchValue<int?>.Absent;",
-        ),
-        `expected wrapped weight property in:\n${file}`,
-      );
-      ok(
-        file.includes(
-          "public MergePatchValue<string?> Color { get; set; } = MergePatchValue<string?>.Absent;",
-        ),
-        `expected wrapped color property in:\n${file}`,
+        !results["WidgetMergePatchUpdate.g.cs"] &&
+          !results["Models/WidgetMergePatchUpdate.g.cs"],
+        "MergePatch model should not produce a separate class file",
       );
 
-      const iface =
-        results["IWidgetMergePatchUpdate.g.cs"] ??
-        results["Interfaces/IWidgetMergePatchUpdate.g.cs"];
       ok(
-        iface,
-        `expected IWidgetMergePatchUpdate.g.cs, got ${Object.keys(results).join(", ")}`,
-      );
-      ok(
-        iface.includes("using Demo.Helpers;"),
-        `expected helper namespace using in interface:\n${iface}`,
-      );
-      ok(
-        iface.includes("MergePatchValue<string?> Id { get; set; }"),
-        `expected wrapped id in interface:\n${iface}`,
+        results["Widget.g.cs"] ?? results["Models/Widget.g.cs"],
+        "expected Widget.g.cs",
       );
 
-      const helper = results["Helpers/MergePatchValue.g.cs"];
-      ok(
-        helper,
-        "expected MergePatchValue helper when MergePatchUpdate model is emitted",
-      );
+      const helper = results["Helpers/MergePatch.g.cs"];
+      ok(helper, "expected Helpers/MergePatch.g.cs");
+      ok(helper.includes("IsDefined"), `expected IsDefined in:\n${helper}`);
+      ok(helper.includes("IsNull"), `expected IsNull in:\n${helper}`);
+      ok(helper.includes("GetString"), `expected GetString in:\n${helper}`);
+      ok(helper.includes("TryGetValue"), `expected TryGetValue in:\n${helper}`);
     });
 
-    it("resolves inferred enum types in versioned models and merge patch models", async () => {
+    it("resolves inferred enum types in versioned models", async () => {
       const results = await emit(`
         import "@typespec/http";
         import "@typespec/versioning";
@@ -303,8 +268,6 @@ describe("csharp emitter", () => {
         model Widget {
           color: "red" | "blue";
         }
-
-        model WidgetMergePatchUpdate is MergePatchUpdate<Widget>;
       `);
 
       const widget = results["Models/Widget.g.cs"];
@@ -319,24 +282,6 @@ describe("csharp emitter", () => {
       ok(
         !widget.includes("public object? Color { get; set; }"),
         `did not expect object for Color in:\n${widget}`,
-      );
-
-      const mergePatch = results["Models/WidgetMergePatchUpdate.g.cs"];
-      ok(
-        mergePatch,
-        `expected Models/WidgetMergePatchUpdate.g.cs, got ${Object.keys(results).join(", ")}`,
-      );
-      ok(
-        mergePatch.includes(
-          "public MergePatchValue<WidgetColor?> Color { get; set; } = MergePatchValue<WidgetColor?>.Absent;",
-        ),
-        `expected MergePatchValue<WidgetColor?> in:\n${mergePatch}`,
-      );
-      ok(
-        !mergePatch.includes(
-          "public MergePatchValue<object?> Color { get; set; } = MergePatchValue<object?>.Absent;",
-        ),
-        `did not expect MergePatchValue<object?> in:\n${mergePatch}`,
       );
 
       const inferredEnum = results["Models/WidgetColor.g.cs"];
@@ -358,91 +303,36 @@ describe("csharp emitter", () => {
       );
     });
 
-    it("emits Patch method for all type-compatible properties", async () => {
+    it("uses MergePatch<T> as the PATCH body type in controllers", async () => {
       const results = await emit(`
         import "@typespec/http";
         using TypeSpec.Http;
 
+        @service(#{ title: "Widgets" })
         namespace Demo;
 
         model Widget {
-          name: string | null;
-          count: int32;
+          id: string;
+          name: string;
         }
 
-        model WidgetMergePatchUpdate is MergePatchUpdate<Widget>;
+        model WidgetPatch is MergePatchUpdate<Widget>;
+
+        @route("/widgets/{id}")
+        interface Widgets {
+          @patch update(@path id: string, @body body: WidgetPatch): Widget;
+        }
       `);
 
-      const file =
-        results["WidgetMergePatchUpdate.g.cs"] ??
-        results["Models/WidgetMergePatchUpdate.g.cs"];
+      const ctrl = results["Controllers/WidgetsControllerBase.g.cs"];
+      ok(ctrl, "expected controller");
       ok(
-        file,
-        `expected WidgetMergePatchUpdate.g.cs, got: ${Object.keys(results).join(", ")}`,
+        ctrl.includes("MergePatch<Widget>"),
+        `expected MergePatch<Widget> in PATCH body in:\n${ctrl}`,
       );
       ok(
-        file.includes("public void Patch(Widget target)"),
-        `expected Patch method in:\n${file}`,
-      );
-      ok(
-        file.includes("if (Name.IsPresent) target.Name = Name.Value;"),
-        `expected Name patch line in:\n${file}`,
-      );
-      ok(
-        file.includes("if (Count.IsPresent) target.Count = Count.Value;"),
-        `expected Count patch line in:\n${file}`,
-      );
-      ok(
-        !file.includes("// The following properties were not applied"),
-        `expected no skipped-properties comment in:\n${file}`,
-      );
-    });
-
-    it("emits Patch method and skips nested-model array properties with type mismatches", async () => {
-      const results = await emit(`
-        import "@typespec/http";
-        using TypeSpec.Http;
-
-        namespace Demo;
-
-        model Tag {
-          value: string;
-        }
-
-        model Widget {
-          name: string | null;
-          tags: Tag[];
-        }
-
-        model WidgetMergePatchUpdate is MergePatchUpdate<Widget>;
-      `);
-
-      const file =
-        results["WidgetMergePatchUpdate.g.cs"] ??
-        results["Models/WidgetMergePatchUpdate.g.cs"];
-      ok(
-        file,
-        `expected WidgetMergePatchUpdate.g.cs, got: ${Object.keys(results).join(", ")}`,
-      );
-      ok(
-        file.includes("public void Patch(Widget target)"),
-        `expected Patch method in:\n${file}`,
-      );
-      ok(
-        file.includes("if (Name.IsPresent) target.Name = Name.Value;"),
-        `expected Name patch line in:\n${file}`,
-      );
-      ok(
-        !file.includes("if (Tags.IsPresent)"),
-        `expected Tags to be absent from patch assignments in:\n${file}`,
-      );
-      ok(
-        file.includes("// The following properties were not applied"),
-        `expected skipped-properties comment in:\n${file}`,
-      );
-      ok(
-        file.includes("//   Tags"),
-        `expected Tags in skipped comment in:\n${file}`,
+        !ctrl.includes("WidgetPatch"),
+        "expected MergePatchUpdate model to be replaced with MergePatch<Widget>",
       );
     });
 
@@ -535,10 +425,13 @@ describe("csharp emitter", () => {
     });
 
     it("ignores standard library types", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         namespace Demo;
         model X { v: string; }
-      `);
+      `,
+        { "emit-interfaces": true },
+      );
       // Helpers (Helpers/*.g.cs) are always emitted — filter them out and verify
       // only the model class and interface are produced.
       const modelFiles = Object.keys(results)
@@ -640,22 +533,27 @@ describe("csharp emitter", () => {
       ok(file.includes("public A? Ref { get; set; }"));
     });
 
-    it("adds a using for a referenced type in another namespace", async () => {
-      const results = await emit(`
+    it("does not add cross-namespace usings when all models share the flat models namespace", async () => {
+      const results = await emit(
+        `
         namespace App.Common { model Address { city: string; } }
         namespace App.Users { model User { home: App.Common.Address; } }
-      `);
+      `,
+        { "namespace-from-path": true },
+      );
       const file = results["User.g.cs"];
-      ok(file.includes("namespace App.Users.Models"));
+      ok(file.includes("namespace App.Models"));
+      // All models share App.Models — no cross-namespace using needed
       ok(
-        file.includes("using App.Common.Models;"),
-        `expected using App.Common.Models; in:\n${file}`,
+        !file.includes("using App.Common"),
+        `unexpected cross-ns using in:\n${file}`,
       );
       ok(file.includes("public Address? Home { get; set; }"));
     });
 
-    it("adds usings for referenced array element and record value types", async () => {
-      const results = await emit(`
+    it("does not add usings for array and record element types in the models namespace", async () => {
+      const results = await emit(
+        `
         namespace App.Common { model Tag { name: string; } }
         namespace App.Users {
           model User {
@@ -663,9 +561,14 @@ describe("csharp emitter", () => {
             scoresByTag: Record<App.Common.Tag>;
           }
         }
-      `);
+      `,
+        { "namespace-from-path": true },
+      );
       const file = results["User.g.cs"];
-      ok(file.includes("using App.Common.Models;"));
+      ok(
+        !file.includes("using App.Common"),
+        `unexpected cross-ns using in:\n${file}`,
+      );
       ok(file.includes("public IList<Tag>? Tags { get; set; }"));
       ok(
         file.includes(
@@ -674,25 +577,31 @@ describe("csharp emitter", () => {
       );
     });
 
-    it("adds a using for a base model in another namespace", async () => {
-      const results = await emit(`
+    it("does not add usings for base models in the models namespace", async () => {
+      const results = await emit(
+        `
         namespace App.Base { model Entity { id: string; } }
         namespace App.Users { model User extends App.Base.Entity { name: string; } }
-      `);
+      `,
+        { "namespace-from-path": true },
+      );
       const file = results["User.g.cs"];
-      ok(file.includes("using App.Base.Models;"));
+      ok(
+        !file.includes("using App.Base"),
+        `unexpected cross-ns using in:\n${file}`,
+      );
       ok(file.includes("public partial class User : Entity"));
     });
   });
 
   describe("namespace-map option", () => {
-    it("rewrites the C# namespace for a model in a mapped namespace", async () => {
+    it("models-namespace option sets the verbatim C# namespace for all model files", async () => {
       const results = await emit(
         `
           namespace Foo.Bar;
           model Widget { id: string; }
         `,
-        { "namespace-map": { "Foo.Bar": "Acme.Things" } },
+        { "models-namespace": "Acme.Things" },
       );
       const file = results["Widget.g.cs"];
       ok(file, `expected Widget.cs, got ${Object.keys(results).join(", ")}`);
@@ -702,39 +611,48 @@ describe("csharp emitter", () => {
       );
     });
 
-    it("applies the mapping as a prefix replacement to nested namespaces", async () => {
-      const results = await emit(
-        `
-          namespace Foo.Bar.Sub;
-          model Widget { id: string; }
-        `,
-        { "namespace-map": { "Foo.Bar": "Acme.Things" } },
-      );
-      const file = results["Widget.g.cs"];
-      ok(
-        file.includes("namespace Acme.Things.Sub"),
-        `wrong namespace in:\n${file}`,
-      );
-    });
-
-    it("uses the longest matching key when multiple mappings could apply", async () => {
+    it("namespace-map applies prefix replacement for folder placement when namespace-from-path is disabled", async () => {
       const results = await emit(
         `
           namespace Foo.Bar.Sub;
           model Widget { id: string; }
         `,
         {
+          "root-namespace": "Acme",
+          "namespace-map": { "Foo.Bar": "Acme.Things" },
+        },
+      );
+      // "Foo.Bar.Sub" mapped to "Acme.Things.Sub"; folderSegments("Acme","Acme.Things.Sub") → ["Things","Sub"]
+      const file = results["Models/Things/Sub/Widget.g.cs"];
+      ok(
+        file,
+        `expected mapped folder path, got ${Object.keys(results).join(", ")}`,
+      );
+    });
+
+    it("uses the longest matching namespace-map key for folder placement", async () => {
+      const results = await emit(
+        `
+          namespace Foo.Bar.Sub;
+          model Widget { id: string; }
+        `,
+        {
+          "root-namespace": "Acme",
           "namespace-map": {
-            Foo: "Acme",
+            Foo: "Acme.X",
             "Foo.Bar": "Acme.Things",
           },
         },
       );
-      const file = results["Widget.g.cs"];
-      ok(file.includes("namespace Acme.Things.Sub"));
+      // longest match "Foo.Bar" wins over "Foo" → "Acme.Things.Sub" → folder ["Things","Sub"]
+      const file = results["Models/Things/Sub/Widget.g.cs"];
+      ok(
+        file,
+        `expected longest-match folder path, got ${Object.keys(results).join(", ")}`,
+      );
     });
 
-    it("emits using statements that reflect the mapped namespace of referenced types", async () => {
+    it("model files do not need cross-namespace usings in the flat models namespace", async () => {
       const results = await emit(
         `
           namespace Legacy.Common { model Address { city: string; } }
@@ -743,16 +661,19 @@ describe("csharp emitter", () => {
         { "namespace-map": { "Legacy.Common": "Acme.Common" } },
       );
       const file = results["User.g.cs"];
-      ok(file.includes("namespace App.Users.Models"));
+      // With flat namespace all models share modelsNamespace — no usings needed
       ok(
-        file.includes("using Acme.Common.Models;"),
-        `expected mapped using Acme.Common.Models; in:\n${file}`,
+        !file.includes("using Acme.Common"),
+        `unexpected mapped using in:\n${file}`,
       );
-      ok(!file.includes("using Legacy.Common.Models;"));
+      ok(
+        !file.includes("using Legacy.Common"),
+        `unexpected original using in:\n${file}`,
+      );
       ok(file.includes("public Address? Home { get; set; }"));
     });
 
-    it("places mapped models in folders that match the mapped C# namespace under the root", async () => {
+    it("places models in folders derived from the mapped namespace when namespace-from-path is disabled", async () => {
       const results = await emit(
         `
           namespace Legacy.Common;
@@ -763,12 +684,17 @@ describe("csharp emitter", () => {
           "namespace-map": { "Legacy.Common": "Acme.Common" },
         },
       );
-      const file = results["Models/Address.g.cs"];
+      // "Legacy.Common" → "Acme.Common"; folderSegments("Acme","Acme.Common") = ["Common"]
+      const file = results["Models/Common/Address.g.cs"];
       ok(
         file,
-        `expected Models/Address.cs, got ${Object.keys(results).join(", ")}`,
+        `expected Models/Common/Address.cs, got ${Object.keys(results).join(", ")}`,
       );
-      ok(file.includes("namespace Acme.Common.Models"));
+      // model namespace is still the flat modelsNamespace, not affected by namespace-map
+      ok(
+        file.includes("namespace Acme.Models"),
+        `wrong namespace in:\n${file}`,
+      );
     });
 
     it("does not add a using when the mapped namespace equals the consumer's namespace", async () => {
@@ -790,10 +716,13 @@ describe("csharp emitter", () => {
 
   describe("interface generation", () => {
     it("emits a corresponding I<Model> interface alongside each class", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         namespace Demo;
         model User { id: string; name: string; }
-      `);
+      `,
+        { "emit-interfaces": true },
+      );
 
       const cls = results["User.g.cs"];
       const iface = results["IUser.g.cs"];
@@ -813,11 +742,14 @@ describe("csharp emitter", () => {
     });
 
     it("includes the interface alongside the base class on extends", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         namespace Demo;
         model Animal { name: string; }
         model Dog extends Animal { breed: string; }
-      `);
+      `,
+        { "emit-interfaces": true },
+      );
 
       const dogClass = results["Dog.g.cs"];
       const dogIface = results["IDog.g.cs"];
@@ -838,10 +770,13 @@ describe("csharp emitter", () => {
     });
 
     it("preserves nullable formatting on interface members", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         namespace Demo;
         model M { @format("uuid") id?: string; nick?: string; }
-      `);
+      `,
+        { "emit-interfaces": true },
+      );
       const iface = results["IM.g.cs"];
       ok(iface.includes("Guid? Id { get; set; }"));
       ok(iface.includes("string? Nick { get; set; }"));
@@ -855,7 +790,7 @@ describe("csharp emitter", () => {
           namespace Demo;
           model User { id: string; }
         `,
-        { "models-output-dir": "models" },
+        { "emit-interfaces": true, "models-output-dir": "models" },
       );
 
       ok(
@@ -878,7 +813,7 @@ describe("csharp emitter", () => {
           namespace Demo;
           model User { id: string; }
         `,
-        { "interfaces-output-dir": "interfaces" },
+        { "emit-interfaces": true, "interfaces-output-dir": "interfaces" },
       );
 
       ok(
@@ -899,6 +834,7 @@ describe("csharp emitter", () => {
           model User { id: string; }
         `,
         {
+          "emit-interfaces": true,
           "models-output-dir": "src/models",
           "interfaces-output-dir": "src/interfaces",
         },
@@ -908,21 +844,22 @@ describe("csharp emitter", () => {
       ok(results["src/interfaces/IUser.g.cs"]);
     });
 
-    it("appends output-dir segments to TypeSpec namespace when namespace-from-path is enabled (default)", async () => {
+    it("namespace-from-path places files flat in their output dirs with the flat models namespace", async () => {
       const results = await emit(
         `
           namespace App.Users;
           model User { id: string; }
         `,
         {
+          "emit-interfaces": true,
           "root-namespace": "App",
           "models-output-dir": "models",
           "interfaces-output-dir": "interfaces",
+          "namespace-from-path": true,
         },
       );
 
-      // Files are flat under each output dir; the dir segment is appended to
-      // the TypeSpec namespace.
+      // Files are flat under each output dir; all share the flat models namespace.
       ok(
         results["models/User.g.cs"],
         `expected flat models/User.g.cs, got ${Object.keys(results).join(", ")}`,
@@ -931,12 +868,8 @@ describe("csharp emitter", () => {
         results["interfaces/IUser.g.cs"],
         "expected flat interfaces/IUser.g.cs",
       );
-      ok(results["models/User.g.cs"].includes("namespace App.Users.Models"));
-      ok(
-        results["interfaces/IUser.g.cs"].includes(
-          "namespace App.Users.Interfaces",
-        ),
-      );
+      ok(results["models/User.g.cs"].includes("namespace App.Models"));
+      ok(results["interfaces/IUser.g.cs"].includes("namespace App.Models"));
     });
 
     it("uses subfolder layout (not dir-suffix) when namespace-from-path is disabled", async () => {
@@ -946,6 +879,7 @@ describe("csharp emitter", () => {
           model User { id: string; }
         `,
         {
+          "emit-interfaces": true,
           "root-namespace": "App",
           "models-output-dir": "models",
           "interfaces-output-dir": "interfaces",
@@ -982,7 +916,10 @@ describe("csharp emitter", () => {
           model User { id: string; }
           enum Color { Red, Green }
         `,
-        { "additional-usings": ["System.Text.Json", "Newtonsoft.Json"] },
+        {
+          "emit-interfaces": true,
+          "additional-usings": ["System.Text.Json", "Newtonsoft.Json"],
+        },
       );
 
       for (const key of ["User.g.cs", "IUser.g.cs", "Color.g.cs"]) {
@@ -1026,28 +963,34 @@ describe("csharp emitter", () => {
           namespace App.Common { model Address { city: string; } }
           namespace App.Users { model User { home: App.Common.Address; } }
         `,
-        { "additional-usings": ["App.Common"] },
+        {
+          "namespace-from-path": true,
+          "additional-usings": ["App.Common.Models"],
+        },
       );
-      const file = results["User.g.cs"];
-      const occurrences = file.split("using App.Common;").length - 1;
+      const file = results["Models/User.g.cs"];
+      const occurrences = file.split("using App.Common.Models;").length - 1;
       strictEqual(
         occurrences,
         1,
-        `expected exactly one 'using App.Common;' in:\n${file}`,
+        `expected exactly one 'using App.Common.Models;' in:\n${file}`,
       );
     });
   });
 
   describe("nullable-properties option", () => {
     it("renders all properties as nullable by default", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         namespace Demo;
         model M {
           name: string;
           age: int32;
           tags: string[];
         }
-      `);
+      `,
+        { "emit-interfaces": true },
+      );
       const cls = results["M.g.cs"];
       ok(cls.includes("public string? Name { get; set; }"));
       ok(cls.includes("public int? Age { get; set; }"));
@@ -1070,7 +1013,7 @@ describe("csharp emitter", () => {
             score?: int32;
           }
         `,
-        { "nullable-properties": false },
+        { "emit-interfaces": true, "nullable-properties": false },
       );
       const cls = results["M.g.cs"];
       ok(cls.includes("public string Id { get; set; }"));
@@ -1163,10 +1106,13 @@ describe("csharp emitter", () => {
     });
 
     it("adds [JsonPropertyName] and [JsonIgnore] to interface properties", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         namespace Demo;
         model M { name: string; }
-      `);
+      `,
+        { "emit-interfaces": true },
+      );
       const iface = results["IM.g.cs"];
       ok(
         iface.includes('[JsonPropertyName("name")]'),
@@ -1193,11 +1139,14 @@ describe("csharp emitter", () => {
     });
 
     it("includes using System.Text.Json.Serialization in model files", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         namespace Demo;
         model M { id: string; }
         enum Status { Active, Inactive }
-      `);
+      `,
+        { "emit-interfaces": true },
+      );
       ok(results["M.g.cs"].includes("using System.Text.Json.Serialization;"));
       ok(results["IM.g.cs"].includes("using System.Text.Json.Serialization;"));
       ok(
@@ -1225,7 +1174,7 @@ public partial class {{className}} : {{bases}}
           namespace Demo;
           model User { id: string; name: string; }
         `,
-        { templates: { class: tpl } },
+        { "emit-interfaces": true, templates: { class: tpl } },
       );
 
       const cls = results["User.g.cs"];
@@ -1251,7 +1200,7 @@ public partial class {{className}} : {{bases}}
           namespace Demo;
           model User { id: string; }
         `,
-        { templates: { interface: tpl } },
+        { "emit-interfaces": true, templates: { interface: tpl } },
       );
 
       const iface = results["IUser.g.cs"];
@@ -1333,7 +1282,7 @@ namespace {{namespace}}
           namespace Demo;
           model User { id: string; }
         `,
-        { templates: { class: tpl } },
+        { "emit-interfaces": true, templates: { class: tpl } },
       );
 
       ok(results["User.g.cs"].includes("public sealed class User"));
@@ -2231,7 +2180,8 @@ namespace {{namespace}}
     });
 
     it("infers controller namespace from the TypeSpec namespace when root-namespace is not set", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         import "@typespec/http";
         using TypeSpec.Http;
 
@@ -2244,7 +2194,9 @@ namespace {{namespace}}
         interface Items {
           @get list(): Item[];
         }
-      `);
+      `,
+        { "namespace-from-path": true },
+      );
 
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
       ok(
@@ -2265,7 +2217,8 @@ namespace {{namespace}}
     });
 
     it("infers a multi-segment controller namespace when the TypeSpec namespace is multi-segment", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         import "@typespec/http";
         using TypeSpec.Http;
 
@@ -2278,7 +2231,9 @@ namespace {{namespace}}
         interface Orders {
           @get list(): Order[];
         }
-      `);
+      `,
+        { "namespace-from-path": true },
+      );
 
       const ctrl = results["Controllers/OrdersControllerBase.g.cs"];
       ok(
@@ -2331,58 +2286,62 @@ namespace {{namespace}}
     });
   });
 
-  describe("per-section root namespace options", () => {
-    it("models-root-namespace overrides root-namespace for model files", async () => {
+  describe("per-section namespace options", () => {
+    it("models-namespace sets verbatim C# namespace for all model files", async () => {
       const results = await emit(`model Free { id: string; }`, {
         "root-namespace": "App",
-        "models-root-namespace": "Acme.Core",
+        "models-namespace": "Acme.Core",
       });
 
-      // Default models-output-dir is "Models", so the suffix is appended.
       const file = results["Free.g.cs"];
       ok(file, "expected Free.g.cs");
       ok(
-        file.includes("namespace Acme.Core.Models"),
-        `expected 'namespace Acme.Core.Models' in:\n${file}`,
+        file.includes("namespace Acme.Core"),
+        `expected 'namespace Acme.Core' in:\n${file}`,
       );
     });
 
-    it("interfaces-root-namespace overrides root-namespace for interface files", async () => {
+    it("interface files always share the models namespace", async () => {
       const results = await emit(`model Free { id: string; }`, {
+        "emit-interfaces": true,
         "root-namespace": "App",
-        "interfaces-root-namespace": "Acme.Contracts",
+        "models-namespace": "Acme.Models",
       });
 
-      // Default interfaces-output-dir is "Models", so the suffix is appended.
       const iface = results["IFree.g.cs"];
       ok(iface, "expected IFree.g.cs");
       ok(
-        iface.includes("namespace Acme.Contracts.Models"),
-        `expected 'namespace Acme.Contracts.Models' in:\n${iface}`,
+        iface.includes("namespace Acme.Models"),
+        `expected 'namespace Acme.Models' in:\n${iface}`,
+      );
+      const cls = results["Free.g.cs"];
+      ok(
+        cls.includes("namespace Acme.Models"),
+        `expected same namespace in class:\n${cls}`,
       );
     });
 
-    it("models-root-namespace and interfaces-root-namespace can differ from each other", async () => {
+    it("models and interfaces share the same namespace controlled by models-namespace", async () => {
       const results = await emit(`model Free { id: string; }`, {
+        "emit-interfaces": true,
         "root-namespace": "App",
-        "models-root-namespace": "Acme.Models",
-        "interfaces-root-namespace": "Acme.Contracts",
+        "models-namespace": "Acme.Shared",
       });
 
       const file = results["Free.g.cs"];
       ok(
-        file.includes("namespace Acme.Models.Models"),
-        `expected 'namespace Acme.Models.Models' in:\n${file}`,
+        file.includes("namespace Acme.Shared"),
+        `expected 'namespace Acme.Shared' in class:\n${file}`,
       );
 
       const iface = results["IFree.g.cs"];
       ok(
-        iface.includes("namespace Acme.Contracts.Models"),
-        `expected 'namespace Acme.Contracts.Models' in:\n${iface}`,
+        iface.includes("namespace Acme.Shared"),
+        `expected 'namespace Acme.Shared' in interface:\n${iface}`,
       );
     });
 
-    it("controllers-root-namespace overrides root-namespace for controller files", async () => {
+    it("controllers-namespace sets verbatim C# namespace for all controller files", async () => {
       const results = await emit(
         `
         import "@typespec/http";
@@ -2400,7 +2359,7 @@ namespace {{namespace}}
       `,
         {
           "root-namespace": "Demo",
-          "controllers-root-namespace": "MyCompany.Web",
+          "controllers-namespace": "MyCompany.Web",
         },
       );
 
@@ -2410,12 +2369,12 @@ namespace {{namespace}}
         `expected Controllers/ItemsControllerBase.g.cs, got ${Object.keys(results).join(", ")}`,
       );
       ok(
-        ctrl.includes("namespace MyCompany.Web.Controllers"),
-        `expected 'namespace MyCompany.Web.Controllers' in:\n${ctrl}`,
+        ctrl.includes("namespace MyCompany.Web"),
+        `expected 'namespace MyCompany.Web' in:\n${ctrl}`,
       );
     });
 
-    it("services-root-namespace overrides root-namespace for service files", async () => {
+    it("services-namespace sets verbatim C# namespace for all service files", async () => {
       const results = await emit(
         `
         import "@typespec/http";
@@ -2433,7 +2392,7 @@ namespace {{namespace}}
       `,
         {
           "root-namespace": "Demo",
-          "services-root-namespace": "MyCompany.Application",
+          "services-namespace": "MyCompany.Application",
         },
       );
 
@@ -2443,12 +2402,12 @@ namespace {{namespace}}
         `expected Services/IItemsService.g.cs, got ${Object.keys(results).join(", ")}`,
       );
       ok(
-        svc.includes("namespace MyCompany.Application.Services"),
-        `expected 'namespace MyCompany.Application.Services' in:\n${svc}`,
+        svc.includes("namespace MyCompany.Application"),
+        `expected 'namespace MyCompany.Application' in:\n${svc}`,
       );
     });
 
-    it("validators-root-namespace overrides root-namespace for validator files", async () => {
+    it("validators-namespace sets verbatim C# namespace for all validator files", async () => {
       const results = await emit(
         `
         import "@typespec/http";
@@ -2466,7 +2425,7 @@ namespace {{namespace}}
       `,
         {
           "root-namespace": "Demo",
-          "validators-root-namespace": "MyCompany.Validators",
+          "validators-namespace": "MyCompany.Validators",
           "emit-validators": true,
         },
       );
@@ -2477,12 +2436,12 @@ namespace {{namespace}}
         `expected Validators/WidgetValidator.g.cs, got ${Object.keys(results).join(", ")}`,
       );
       ok(
-        validator.includes("namespace MyCompany.Validators.Validators"),
-        `expected 'namespace MyCompany.Validators.Validators' in:\n${validator}`,
+        validator.includes("namespace MyCompany.Validators"),
+        `expected 'namespace MyCompany.Validators' in:\n${validator}`,
       );
     });
 
-    it("per-section overrides are independent — unset sections fall back to root-namespace", async () => {
+    it("per-section overrides are independent — unset sections default to root-namespace.Section", async () => {
       const results = await emit(
         `
         import "@typespec/http";
@@ -2500,43 +2459,23 @@ namespace {{namespace}}
       `,
         {
           "root-namespace": "App",
-          "controllers-root-namespace": "MyCompany.Web",
+          "controllers-namespace": "MyCompany.Web",
         },
       );
 
-      // controller uses the override
+      // controller uses the verbatim override
       const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
       ok(
-        ctrl.includes("namespace MyCompany.Web.Controllers"),
+        ctrl.includes("namespace MyCompany.Web"),
         `expected override ns in ctrl:\n${ctrl}`,
       );
 
-      // service uses the global root unchanged
+      // service defaults to root-namespace.Services
       const svc = results["Services/IItemsService.g.cs"];
       ok(
         svc.includes("namespace App.Services"),
-        `expected global ns in svc:\n${svc}`,
+        `expected default ns in svc:\n${svc}`,
       );
-    });
-  });
-
-  // ── clean-output-dir ────────────────────────────────────────────────────────
-
-  describe("clean-output-dir option", () => {
-    it("accepts clean-output-dir: true without errors", async () => {
-      const results = await emit(
-        `namespace Demo; model Widget { id: string; }`,
-        { "clean-output-dir": true },
-      );
-      ok(results["Widget.g.cs"], "expected Widget.g.cs to be emitted");
-    });
-
-    it("accepts clean-output-dir: false without errors", async () => {
-      const results = await emit(
-        `namespace Demo; model Widget { id: string; }`,
-        { "clean-output-dir": false },
-      );
-      ok(results["Widget.g.cs"], "expected Widget.g.cs to be emitted");
     });
   });
 
@@ -2568,14 +2507,17 @@ namespace {{namespace}}
     });
 
     it("overrides the interface name and file name", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         import "@massivescale/tsp-aspnetcore-api";
         using MassiveScale.AspNetCoreApi;
 
         namespace Demo;
         @serverName("WidgetResource")
         model Widget { id: string; }
-      `);
+      `,
+        { "emit-interfaces": true },
+      );
 
       ok(
         results["IWidgetResource.g.cs"],
@@ -2779,14 +2721,17 @@ namespace {{namespace}}
     });
 
     it("accepts a name with a leading @ (C# verbatim identifier)", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         import "@massivescale/tsp-aspnetcore-api";
         using MassiveScale.AspNetCoreApi;
 
         namespace Demo;
         @serverName("@class")
         model Widget { id: string; }
-      `);
+      `,
+        { "emit-interfaces": true },
+      );
 
       ok(
         results["@class.g.cs"],
@@ -2955,6 +2900,49 @@ namespace {{namespace}}
       ok(
         validatorFile.includes("authorResourceValidator"),
         "expected validator param to be derived from the server name",
+      );
+    });
+  });
+
+  describe("ValidatorsInitializer", () => {
+    it("uses a fully-qualified MergePatch<T> type in registrations", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        model Widget { name: string; }
+        model WidgetPatch is MergePatchUpdate<Widget>;
+
+        @route("/widgets/{id}")
+        interface Widgets {
+          @patch update(@path id: string, @body body: WidgetPatch): Widget;
+        }
+      `,
+        {
+          "root-namespace": "Demo",
+          "emit-validators": true,
+          "emit-controllers": false,
+          "emit-services": false,
+        },
+      );
+
+      const file = results["Validators/ValidatorsInitializer.g.cs"];
+      ok(
+        file,
+        `expected Validators/ValidatorsInitializer.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        file.includes("Demo.Helpers.MergePatch<Demo.Models.Widget>"),
+        `expected fully-qualified MergePatch<T> in:\n${file}`,
+      );
+      ok(
+        !file.includes("MergePatch<Demo.Models.Widget>") ||
+          file.includes("Demo.Helpers.MergePatch<Demo.Models.Widget>"),
+        "unqualified MergePatch<T> must not appear without namespace prefix",
       );
     });
   });

@@ -12,6 +12,22 @@ All notable changes to this project will be documented in this file.
 - Controller and service type resolution now honors model `@serverName` overrides. Request/response body parameter types and return types in generated controller/service signatures now match the renamed model identifier.
 - Interface filename generation is now consistent with interface type naming for verbatim identifiers. For a model renamed to `@name`, interface output is emitted as `Iname.g.cs` to match `interface Iname`.
 - Validator dependency injection constructor parameters and `referencedValidators` entries now derive their names from `@serverName` when the referenced model has one. Previously the raw TypeSpec model name was used, causing validators to reference non-existent C# identifiers when the model was renamed.
+- `MergePatchUpdate<T>` models are no longer emitted as individual C# classes. The emitter replaces any PATCH body whose TypeSpec type is (or extends) `MergePatchUpdate<T>` with the generic `MergePatch<T>` helper in controller and validator signatures. This eliminates per-model boilerplate and reduces generated output size. The `MergePatch<T>` helper is emitted once per project into the helpers directory and exposes `IsDefined`, `IsNull`, `GetString`, `TryGetValue`, and `DefinedProperties` for RFC 7396-conformant patch handling.
+- Validators now always use fully-qualified C# type names in `AbstractValidator<T>`, constructor parameter types, and `ValidatorsInitializer` registrations. Previously the short model name was used, which produced uncompilable output when the validator namespace differed from the model namespace.
+- `namespace-from-path: false` is now correctly respected in validator files. Previously, validators always included the output directory suffix in their namespace even when `namespace-from-path` was disabled.
+- `emit-interfaces` now defaults to `false`. Interfaces are no longer generated unless `emit-interfaces: true` is set in `tspconfig.yaml`.
+- `namespace-from-path` now defaults to `false`. Output-directory segments are no longer automatically appended to C# namespaces. Set `namespace-from-path: true` to restore the previous behaviour.
+
+### Changed (continued)
+
+- Per-section namespace options renamed and redesigned. The old `*-root-namespace` options (`controllers-root-namespace`, `services-root-namespace`, `validators-root-namespace`, `models-root-namespace`, `interfaces-root-namespace`) are removed. Replacements are `controllers-namespace`, `services-namespace`, `validators-namespace`, `models-namespace`, and `helpers-namespace` (new). Each option now sets the C# namespace **verbatim** for its section — no output-directory suffix is appended. When unset, each section defaults to `<root-namespace>.<Section>` (e.g. `App.Models`, `App.Controllers`). Interfaces always share the models namespace and no longer have a dedicated option.
+- `namespace-from-path` now controls **file placement only**. It no longer affects C# namespace strings in any generated file. When `true`, all files are placed flat inside their output directory. When `false` (the default), files are placed in subdirectories derived from the TypeSpec namespace with the root namespace prefix stripped.
+- `namespace-map` now affects **file placement** (folder path computation) only. It no longer changes the C# namespace written into generated files. The mapped TypeSpec namespace is used to compute the output subdirectory when `namespace-from-path` is `false`.
+- `When(() => IsAtLeast(...))` in version-aware validator templates corrected to `When(_ => IsAtLeast(...))` so the lambda signature matches FluentValidation's `Func<T, bool>` overload.
+
+### Fixed
+
+- `RuleFor(x => x.{Prop}).Null()` is no longer emitted for non-nullable value-type properties (e.g. `bool`, `int`, `Guid`, `DateTimeOffset`) on POST validators. FluentValidation's `.Null()` rule always fails for non-nullable value types; the emitter now skips the rule for such properties. The constraint is still emitted for reference-type and nullable properties.
 
 ## [1.8.0] - 2026-06-06
 
