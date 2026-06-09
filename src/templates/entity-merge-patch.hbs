@@ -1,33 +1,29 @@
 {{!--
-  merge-patch.hbs — static helper emitted once per project into the
-  helpers output directory (default: `Helpers/`).
+  entity-merge-patch.hbs — emitted once per entity when merge-patch-style is "typed".
 
-  Implements a generic RFC 7396 JSON Merge Patch container in C#.
-  MergePatch<T> uses [JsonExtensionData] to capture all incoming JSON
-  properties as raw JsonElements, allowing callers to distinguish between
-  a property that was absent from the patch and one explicitly set to null.
+  Generates a concrete, non-generic RFC 7396 JSON Merge Patch container class
+  named {ModelName}MergePatch (e.g. WidgetMergePatch for Widget).
 
   Override via tspconfig.yaml:
     options:
       "@massivescale/tsp-aspnetcore-api":
         templates:
-          merge-patch: "./templates/merge-patch.hbs"
+          entity-merge-patch: "./templates/entity-merge-patch.hbs"
 
   ── Template variables ──────────────────────────────────────────────────────
-
-  (none — this template renders a fully static class body)
+  modelName            — C# class name of the target entity (e.g. "Widget")
+  qualifiedModelName   — Fully-qualified C# type (e.g. "Demo.Models.Widget")
 --}}
 /// <summary>
-/// Generic RFC 7396 JSON Merge Patch container.
+/// RFC 7396 JSON Merge Patch container for <see cref="{{{qualifiedModelName}}}"/>.
 /// Captures all properties sent by the client; use <see cref="IsDefined"/> to
 /// distinguish "field absent from the request" from "field explicitly set to null".
 /// </summary>
-/// <typeparam name="T">The entity type this patch targets.</typeparam>
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public class MergePatch<T>
+public class {{{modelName}}}MergePatch
 {
     private static readonly PropertyInfo[] _typeProperties =
-        typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        typeof({{{qualifiedModelName}}}).GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
     /// <summary>
     /// Raw JSON properties received in the patch payload, keyed by property name.
@@ -93,7 +89,7 @@ public class MergePatch<T>
 
     /// <summary>
     /// Attempts to get the declared <see cref="Type"/> of the property named
-    /// <paramref name="name"/> on <typeparamref name="T"/>.
+    /// <paramref name="name"/> on <see cref="{{{qualifiedModelName}}}"/>.
     /// Returns <see langword="false"/> when no matching public instance property exists.
     /// </summary>
     public bool TryGetPropertyType(string name, out Type? type)
@@ -105,9 +101,9 @@ public class MergePatch<T>
 
     /// <summary>
     /// Attempts to get the patch value for the property named <paramref name="name"/>,
-    /// deserialized to the declared property type on <typeparamref name="T"/>.
+    /// deserialized to the declared property type on <see cref="{{{qualifiedModelName}}}"/>.
     /// Returns <see langword="false"/> when the property is absent from the patch,
-    /// <typeparamref name="T"/> declares no such property, or deserialization fails.
+    /// <see cref="{{{qualifiedModelName}}}"/> declares no such property, or deserialization fails.
     /// </summary>
     public bool TryGetPropertyValue(string name, out object? value, JsonSerializerOptions? options = null)
     {
@@ -148,38 +144,39 @@ public class MergePatch<T>
     }
 
     /// <summary>
-    /// Constructs a <see cref="MergePatch{T}"/> from a JSON string, treating every
+    /// Constructs a <see cref="{{{modelName}}}MergePatch"/> from a JSON string, treating every
     /// property present in the JSON as explicitly defined in the patch.
     /// </summary>
     /// <remarks>
-    /// Properties are keyed by their JSON wire names. If <typeparamref name="T"/> uses
+    /// Properties are keyed by their JSON wire names. If <see cref="{{{qualifiedModelName}}}"/> uses
     /// <c>[JsonPropertyName]</c> attributes or a custom <see cref="JsonSerializerOptions"/>
     /// naming policy, the keys in <see cref="Properties"/> will reflect those wire names
-    /// and may not match C# property names used by <see cref="Patch(T, JsonSerializerOptions?)"/>.
+    /// and may not match C# property names used by <see cref="Patch({{{qualifiedModelName}}}, JsonSerializerOptions?)"/>.
     /// </remarks>
-    public static MergePatch<T> FromJson(string json, JsonSerializerOptions? options = null) =>
-        JsonSerializer.Deserialize<MergePatch<T>>(json, options) ?? new MergePatch<T>();
+    public static {{{modelName}}}MergePatch FromJson(string json, JsonSerializerOptions? options = null) =>
+        JsonSerializer.Deserialize<{{{modelName}}}MergePatch>(json, options) ?? new {{{modelName}}}MergePatch();
 
     /// <summary>
-    /// Constructs a <see cref="MergePatch{T}"/> from an existing <typeparamref name="T"/>
-    /// instance by serializing it to JSON. Every property that is included in the serialized
-    /// output is treated as explicitly defined in the patch.
+    /// Constructs a <see cref="{{{modelName}}}MergePatch"/> from an existing
+    /// <see cref="{{{qualifiedModelName}}}"/> instance by serializing it to JSON.
+    /// Every property that is included in the serialized output is treated as explicitly
+    /// defined in the patch.
     /// </summary>
     /// <remarks>
     /// Serialization honours <paramref name="options"/> (including
     /// <c>DefaultIgnoreCondition</c>). Pass <see langword="null"/> options to include all
     /// properties, even those with <see langword="null"/> values.
     /// </remarks>
-    public static MergePatch<T> From(T entity, JsonSerializerOptions? options = null) =>
+    public static {{{modelName}}}MergePatch From({{{qualifiedModelName}}} entity, JsonSerializerOptions? options = null) =>
         FromJson(JsonSerializer.Serialize(entity, options), options);
 
     /// <summary>
     /// Applies all properties defined in this patch to <paramref name="original"/> using
     /// reflection. Each defined property is deserialized to the target property's declared
-    /// type and written back. Properties absent from <typeparamref name="T"/>, that cannot
-    /// be deserialized, or that are read-only are silently skipped.
+    /// type and written back. Properties absent from <see cref="{{{qualifiedModelName}}}"/>, that
+    /// cannot be deserialized, or that are read-only are silently skipped.
     /// </summary>
-    public void Patch(T original, JsonSerializerOptions? options = null)
+    public void Patch({{{qualifiedModelName}}} original, JsonSerializerOptions? options = null)
     {
         if (original is null) return;
         foreach (var (name, element) in Properties)
@@ -198,13 +195,13 @@ public class MergePatch<T>
     }
 
     /// <summary>
-    /// Asynchronous variant of <see cref="Patch(T, JsonSerializerOptions?)"/>.
+    /// Asynchronous variant of <see cref="Patch({{{qualifiedModelName}}}, JsonSerializerOptions?)"/>.
     /// Applies all properties defined in this patch to <paramref name="original"/> using
     /// reflection, then returns a completed <see cref="ValueTask"/>.
     /// Throws <see cref="OperationCanceledException"/> if <paramref name="cancellationToken"/>
     /// is already cancelled before work begins.
     /// </summary>
-    public ValueTask PatchAsync(T original, JsonSerializerOptions? options = null, CancellationToken cancellationToken = default)
+    public ValueTask PatchAsync({{{qualifiedModelName}}} original, JsonSerializerOptions? options = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Patch(original, options);

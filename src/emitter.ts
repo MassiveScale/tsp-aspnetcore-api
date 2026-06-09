@@ -101,8 +101,11 @@ const CONTROLLER_USINGS = [
 const MERGE_PATCH_USINGS = [
   "System",
   "System.Collections.Generic",
+  "System.Reflection",
   "System.Text.Json",
   "System.Text.Json.Serialization",
+  "System.Threading",
+  "System.Threading.Tasks",
 ];
 
 /** `using` directives included in the EnumMemberConverter helper file. */
@@ -379,6 +382,8 @@ interface ResolvedOptions {
     | "per-version"
     | "version-aware"
     | undefined;
+  /** Whether to emit a shared generic helper or per-entity typed classes for MergePatch support. */
+  mergePatchStyle: "generic" | "typed";
 }
 
 /** Inferred enum derived from a string-literal union property. */
@@ -537,6 +542,7 @@ export async function $onEmit(
     nullableProperties: options.nullableProperties,
     abstractSuffix: options.abstractSuffix,
     cancellationToken: options.cancellationToken,
+    mergePatchStyle: options.mergePatchStyle,
   };
 
   const groups = collectControllers(
@@ -550,7 +556,21 @@ export async function $onEmit(
     await emitControllerGroup(program, group, renderer, options);
   }
 
-  await emitMergePatch(program, renderer, options);
+  // Collect patch models for MergePatch emission (generic helper or per-entity classes).
+  const patchRouteModels = collectValidatorModelsFromRoutes(program, models);
+
+  if (options.mergePatchStyle === "typed") {
+    if (patchRouteModels?.patchModels.size) {
+      await emitEntityMergePatches(
+        program,
+        patchRouteModels.patchModels,
+        renderer,
+        options,
+      );
+    }
+  } else {
+    await emitMergePatch(program, renderer, options);
+  }
 
   // Emit EnumMemberConverter helper only when emit-helpers is true (optional).
   if (options.emitHelpers) {
@@ -1031,6 +1051,55 @@ function collectValidatorModelsFromRoutes(
 
 // ── Internal validator emission helpers ──────────────────────────────────────
 
+/**
+ * Resolves display and qualified type names for a PATCH body given the raw
+ * entry from `patchModels` (e.g. `"MergePatch<Widget>"` or a plain model name).
+ *
+ * For `merge-patch-style: "generic"` the generic helper class is used.
+ * For `merge-patch-style: "typed"` a per-entity `{Model}MergePatch` class is used.
+ */
+function resolvePatchBodyInfo(
+  rawBodyTypeName: string,
+  modelName: string,
+  qualifiedModelName: string,
+  options: ResolvedOptions,
+): {
+  patchBodyTypeName: string;
+  /** Fully-qualified form for use in `AbstractValidator<T>` (may embed generic args). */
+  qualifiedPatchBodyTypeName: string;
+  /** Namespace added as a `using` directive in patch validator files; `undefined` when not needed. */
+  helpersNamespace: string | undefined;
+  /** Fully-qualified type for DI registration in `ValidatorsInitializer`. */
+  fullyQualifiedTypeName: string;
+} {
+  const isMergePatchBody = rawBodyTypeName.startsWith("MergePatch<");
+  if (!isMergePatchBody) {
+    return {
+      patchBodyTypeName: rawBodyTypeName,
+      qualifiedPatchBodyTypeName: qualifiedModelName,
+      helpersNamespace: undefined,
+      fullyQualifiedTypeName: qualifiedModelName,
+    };
+  }
+  if (options.mergePatchStyle === "typed") {
+    const typedName = `${modelName}MergePatch`;
+    const fullyQualified = `${options.modelsNamespace}.${modelName}MergePatch`;
+    return {
+      patchBodyTypeName: typedName,
+      qualifiedPatchBodyTypeName: fullyQualified,
+      helpersNamespace: undefined,
+      fullyQualifiedTypeName: fullyQualified,
+    };
+  }
+  // Generic style
+  return {
+    patchBodyTypeName: rawBodyTypeName,
+    qualifiedPatchBodyTypeName: `MergePatch<${qualifiedModelName}>`,
+    helpersNamespace: options.helpersNamespace || undefined,
+    fullyQualifiedTypeName: `${options.helpersNamespace}.MergePatch<${qualifiedModelName}>`,
+  };
+}
+
 interface EmitValidatorSingleOptions {
   versionFilter?: (prop: ModelProperty) => boolean;
   versionDirName?: string;
@@ -1112,12 +1181,19 @@ async function emitValidatorModels(
     }
 
     if (doPatch) {
-      const patchBodyTypeName =
-        routeModels?.patchModels.get(model) ?? modelName;
-      const isMergePatchBody = patchBodyTypeName.startsWith("MergePatch<");
-      const qualifiedPatchBodyTypeName = isMergePatchBody
-        ? `MergePatch<${qualifiedModelName}>`
-        : qualifiedModelName;
+      const rawBodyTypeName = routeModels?.patchModels.get(model) ?? modelName;
+      const {
+        patchBodyTypeName,
+        qualifiedPatchBodyTypeName,
+        helpersNamespace,
+        fullyQualifiedTypeName: _fqt,
+      } = resolvePatchBodyInfo(
+        rawBodyTypeName,
+        modelName,
+        qualifiedModelName,
+        options,
+      );
+      const isMergePatchBody = rawBodyTypeName.startsWith("MergePatch<");
       const patchProps = buildValidatorProperties(
         program,
         model,
@@ -1135,7 +1211,7 @@ async function emitValidatorModels(
         qualifiedModelName,
         patchBodyTypeName,
         qualifiedPatchBodyTypeName,
-        helpersNamespace: options.helpersNamespace || undefined,
+        helpersNamespace,
         isMergePatchBody: isMergePatchBody || undefined,
         properties: patchProps,
         referencedValidators: patchRefs.length > 0 ? patchRefs : undefined,
@@ -1225,12 +1301,19 @@ async function emitVersionAwareValidatorModels(
     }
 
     if (doPatch) {
-      const patchBodyTypeName =
-        routeModels?.patchModels.get(model) ?? modelName;
-      const isMergePatchBody = patchBodyTypeName.startsWith("MergePatch<");
-      const qualifiedPatchBodyTypeName = isMergePatchBody
-        ? `MergePatch<${qualifiedModelName}>`
-        : qualifiedModelName;
+      const rawBodyTypeName = routeModels?.patchModels.get(model) ?? modelName;
+      const {
+        patchBodyTypeName,
+        qualifiedPatchBodyTypeName,
+        helpersNamespace,
+        fullyQualifiedTypeName: _fqt,
+      } = resolvePatchBodyInfo(
+        rawBodyTypeName,
+        modelName,
+        qualifiedModelName,
+        options,
+      );
+      const isMergePatchBody = rawBodyTypeName.startsWith("MergePatch<");
       const { baseProperties, versionGroups } =
         buildVersionAwareValidatorProperties(
           program,
@@ -1254,7 +1337,7 @@ async function emitVersionAwareValidatorModels(
         qualifiedModelName,
         patchBodyTypeName,
         qualifiedPatchBodyTypeName,
-        helpersNamespace: options.helpersNamespace || undefined,
+        helpersNamespace,
         isMergePatchBody: isMergePatchBody || undefined,
         allVersions: versionValues,
         defaultVersion,
@@ -1314,15 +1397,17 @@ async function emitValidatorsInitializer(
       emitPatch &&
       (routeModels === undefined || routeModels.patchModels.has(model))
     ) {
-      const patchBodyTypeName =
-        routeModels?.patchModels.get(model) ?? modelName;
-      const isMergePatchBody = patchBodyTypeName.startsWith("MergePatch<");
-      const qualifiedModelTypeName = isMergePatchBody
-        ? `${options.helpersNamespace}.MergePatch<${qualifiedModelName}>`
-        : qualifiedModelName;
+      const rawBodyTypeName = routeModels?.patchModels.get(model) ?? modelName;
+      const { patchBodyTypeName, fullyQualifiedTypeName } =
+        resolvePatchBodyInfo(
+          rawBodyTypeName,
+          modelName,
+          qualifiedModelName,
+          options,
+        );
       registrations.push({
         modelTypeName: patchBodyTypeName,
-        qualifiedModelTypeName,
+        qualifiedModelTypeName: fullyQualifiedTypeName,
         validatorName: `${modelName}PatchValidator`,
       });
     }
@@ -1592,9 +1677,8 @@ async function emitControllerGroup(
 }
 
 /**
- * Writes the static `MergePatchValue<T>` helper class to the helpers output
- * directory. This is emitted automatically when any `MergePatchUpdate<T>` models
- * are generated, as they require this helper to function.
+ * Writes the shared generic `MergePatch<T>` helper class to the helpers output
+ * directory. Only called when `merge-patch-style` is `"generic"` (the default).
  *
  * @param program - The compiled TypeSpec program (needed by `emitFile`).
  * @param renderer - Pre-compiled renderer instance.
@@ -1615,6 +1699,41 @@ async function emitMergePatch(
       body: renderer.renderMergePatch(),
     }),
   });
+}
+
+/**
+ * Writes one `{ModelName}MergePatch` file per entity in `patchModels` to the
+ * models output directory. Only called when `merge-patch-style` is `"typed"`.
+ *
+ * @param program - The compiled TypeSpec program (needed by `emitFile`).
+ * @param patchModels - Map of source models to their raw body type names.
+ * @param renderer - Pre-compiled renderer instance.
+ * @param options - Resolved emitter options.
+ */
+async function emitEntityMergePatches(
+  program: Program,
+  patchModels: Map<Model, string>,
+  renderer: Renderer,
+  options: ResolvedOptions,
+): Promise<void> {
+  for (const [model, rawTypeName] of patchModels) {
+    if (!rawTypeName.startsWith("MergePatch<")) continue;
+    const modelName = getServerName(program, model) ?? pascalCase(model.name);
+    const qualifiedModelName = computeModelFqName(program, model, options);
+    const fileName = `${modelName}MergePatch${options.fileExtension}`;
+    await emitFile(program, {
+      path: resolvePath(options.modelsOutputDir, fileName),
+      content: renderer.renderFile({
+        fileName,
+        namespace: options.modelsNamespace,
+        usings: sortUsings(new Set(MERGE_PATCH_USINGS)),
+        body: renderer.renderEntityMergePatch({
+          modelName,
+          qualifiedModelName,
+        }),
+      }),
+    });
+  }
 }
 
 /**
@@ -1667,6 +1786,7 @@ function buildControllerUsings(
   for (const ref of references) {
     if (ref.kind === "Model" && isMergePatch(program, ref as Model)) {
       if (
+        options.mergePatchStyle !== "typed" &&
         options.helpersNamespace &&
         options.helpersNamespace !== ownNamespace
       ) {
@@ -1706,6 +1826,7 @@ function buildServiceUsings(
   for (const ref of references) {
     if (ref.kind === "Model" && isMergePatch(program, ref as Model)) {
       if (
+        options.mergePatchStyle !== "typed" &&
         options.helpersNamespace &&
         options.helpersNamespace !== ownNamespace
       ) {
@@ -1949,6 +2070,7 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     validatorsOutputDir: resolvePath(baseDir, validatorsDir),
     validatorsTypes: raw["validators"] ?? "both",
     validatorsVersionStrategy: raw["validators-version-strategy"],
+    mergePatchStyle: raw["merge-patch-style"] ?? "generic",
   };
 }
 
@@ -1972,6 +2094,7 @@ function resolveTemplatePaths(
     "controller",
     "service-interface",
     "merge-patch",
+    "entity-merge-patch",
     "enum-member-converter",
     "validator-post",
     "validator-patch",

@@ -62,6 +62,8 @@ export interface ControllerOptions {
   abstractSuffix: string;
   /** Whether to add a CancellationToken parameter to operations. */
   cancellationToken: boolean;
+  /** Whether to use the generic `MergePatch<T>` helper or per-entity typed classes. */
+  mergePatchStyle: "generic" | "typed";
 }
 
 /**
@@ -499,7 +501,9 @@ function typeRef(
         if (source) {
           const sourceName =
             getServerName(program, source) ?? pascalCase(source.name);
-          return `MergePatch<${sourceName}>`;
+          return options.mergePatchStyle === "typed"
+            ? `${sourceName}MergePatch`
+            : `MergePatch<${sourceName}>`;
         }
       }
       return getServerName(program, type) ?? pascalCase(type.name || "object");

@@ -9,7 +9,7 @@ When the PATCH body type in a TypeSpec operation is (or extends) `MergePatchUpda
 This design means:
 
 - Controllers receive `MergePatch<Widget>` instead of a generated `WidgetMergePatchUpdate` class.
-- Validators test `IsDefined` / `IsNull` to distinguish "field absent" from "field explicitly null".
+- Validators use `IsDefined` / `IsNull` to distinguish "field absent" from "field explicitly null".
 - A single shared helper handles all entity types — no per-model boilerplate.
 
 ## TypeSpec usage
@@ -71,14 +71,75 @@ public class MergePatch<T>
     public bool TryGetValue<TValue>(string propertyName, out TValue? value,
         JsonSerializerOptions? options = null);
 
-    // Names of all properties that were explicitly sent in the payload.
+    // Names of all properties explicitly sent in the payload.
     public IEnumerable<string> DefinedProperties { get; }
+
+    // Same as DefinedProperties; provided as a method for use in LINQ chains.
+    public IEnumerable<string> GetChangedPropertyNames();
+
+    // Gets the declared System.Type of the named property on T via reflection.
+    // Returns false when T has no matching public instance property.
+    public bool TryGetPropertyType(string name, out Type? type);
+
+    // Gets the patch value for the named property, deserialized to T's
+    // declared property type via reflection.
+    // Returns false when the property is absent from the patch, T has no
+    // such property, or deserialization fails.
+    public bool TryGetPropertyValue(string name, out object? value,
+        JsonSerializerOptions? options = null);
+
+    // Serializes value and stores it as a patch entry for the named property.
+    // Pass null to mark the field for clearing (RFC 7396 semantics).
+    // Returns false when serialization fails.
+    public bool TrySetPropertyValue(string name, object? value,
+        JsonSerializerOptions? options = null);
+
+    // Constructs a MergePatch<T> from a raw JSON string. Every property
+    // present in the JSON is treated as explicitly defined in the patch.
+    // Keys reflect JSON wire names, not C# property names.
+    public static MergePatch<T> FromJson(string json,
+        JsonSerializerOptions? options = null);
+
+    // Constructs a MergePatch<T> from an existing T instance by serializing
+    // it to JSON. All serialized properties are treated as explicitly defined.
+    // Respects options.DefaultIgnoreCondition — pass null options to include
+    // all properties regardless of value.
+    public static MergePatch<T> From(T entity,
+        JsonSerializerOptions? options = null);
+
+    // Applies all defined patch properties to original via reflection.
+    // Each property is deserialized to T's declared type and written back.
+    // Properties absent from T, that cannot be deserialized, or that are
+    // read-only are silently skipped.
+    public void Patch(T original, JsonSerializerOptions? options = null);
+
+    // Async variant of Patch. Applies the patch synchronously, then returns
+    // ValueTask.CompletedTask. Throws OperationCanceledException if
+    // cancellationToken is cancelled before work begins.
+    public ValueTask PatchAsync(T original, JsonSerializerOptions? options = null,
+        CancellationToken cancellationToken = default);
 }
 ```
 
 ## Applying the patch
 
-The helper does not apply patches automatically. Use `IsDefined` and `TryGetValue` to copy only the fields the client sent:
+### Simple: `Patch` / `PatchAsync`
+
+For straightforward use cases, call `Patch` (or `PatchAsync` in an async context) to apply all defined properties to the entity in one step:
+
+```csharp
+var entity = await repository.GetAsync(id);
+await body.PatchAsync(entity, cancellationToken: cancellationToken);
+await repository.SaveAsync(entity);
+```
+
+Both methods use reflection to match each JSON property name to a writable property on `T` (case-insensitive). Properties absent from `T`, read-only, or that cannot be deserialized are silently skipped. Pass a `JsonSerializerOptions` instance if custom converters are needed.
+
+`PatchAsync` returns a `ValueTask` (no allocation on the hot path) and checks the cancellation token before starting work. The patch application itself is synchronous — `PatchAsync` exists for seamless composition in async controller actions.
+
+### Fine-grained: `IsDefined` and `TryGetValue`
+
+For precise control over individual fields — for example when you need to apply business logic per property or handle null-clear semantics differently:
 
 ```csharp
 var entity = await repository.GetAsync(id);
@@ -89,11 +150,41 @@ if (body.TryGetValue<int>("weight", out var weight)) entity.Weight = weight!.Val
 await repository.SaveAsync(entity);
 ```
 
-Using `IsDefined` instead of `TryGetValue` lets you handle null-clear operations (RFC 7396 semantics: a `null` value removes the field):
+Use `IsDefined` / `IsNull` when you need to distinguish "field absent" from "field explicitly set to null" (RFC 7396 clear-field semantics):
 
 ```csharp
 if (body.IsDefined("name"))
     entity.Name = body.IsNull("name") ? null : body.GetString("name")!;
+```
+
+### Building a patch programmatically
+
+**From a JSON string** — use `FromJson` when you already have a raw JSON payload:
+
+```csharp
+var patch = MergePatch<Widget>.FromJson("""{"name":"Sprocket","weight":42}""");
+patch.Patch(entity);
+```
+
+**From an existing entity** — use `From` to build a patch that treats every serialized property as defined. Useful for seeding test scenarios or applying a full-object replace:
+
+```csharp
+var source = new Widget { Name = "Sprocket", Weight = 42 };
+var patch = MergePatch<Widget>.From(source);
+patch.Patch(entity);
+```
+
+> **Note:** `FromJson` and `From` key properties by their JSON wire names. If `T` uses `[JsonPropertyName]` attributes or a naming policy, those wire names may not match the C# property names used internally by `Patch` / `PatchAsync`. Use matching `JsonSerializerOptions` for both construction and application when custom naming is in play.
+
+**Field by field** — use `TrySetPropertyValue` when constructing the patch incrementally:
+
+```csharp
+var patch = new MergePatch<Widget>();
+patch.TrySetPropertyValue("name", "Sprocket");
+patch.TrySetPropertyValue("weight", 42);
+patch.TrySetPropertyValue("tag", null);   // RFC 7396 clear-field
+
+patch.Patch(entity);
 ```
 
 ## Validator integration
@@ -114,6 +205,53 @@ this.RuleFor(x => x)
     .WithName("name");
 ```
 
+## Choosing a style: `merge-patch-style`
+
+The `merge-patch-style` option controls whether the emitter uses a single shared generic helper or generates a separate class per entity.
+
+| Style       | Default | Description                                                                                                          |
+| ----------- | ------- | -------------------------------------------------------------------------------------------------------------------- |
+| `"generic"` | ✓       | Emits one shared `MergePatch<T>` class in the helpers directory. All PATCH operations share this class via generics. |
+| `"typed"`   |         | Emits a concrete `{Model}MergePatch` class per entity directly in the models directory. No generic helper is needed. |
+
+Both styles expose the same API surface (`IsDefined`, `IsNull`, `Patch`, `PatchAsync`, `FromJson`, `From`, etc.).
+
+```yaml
+options:
+  "@massivescale/tsp-aspnetcore-api":
+    merge-patch-style: typed
+```
+
+### Generic style (default)
+
+```csharp
+// Generated in Helpers/MergePatch.g.cs
+public class MergePatch<T> { ... }
+
+// Controller signature
+public abstract Task<IActionResult> Update(
+    [FromRoute] string id,
+    [FromBody] MergePatch<Widget> body,
+    CancellationToken cancellationToken);
+```
+
+### Typed style
+
+```csharp
+// Generated in Models/WidgetMergePatch.g.cs (alongside Widget.g.cs)
+public class WidgetMergePatch { ... }
+
+// Controller signature
+public abstract Task<IActionResult> Update(
+    [FromRoute] string id,
+    [FromBody] WidgetMergePatch body,
+    CancellationToken cancellationToken);
+```
+
+The typed style avoids a dependency on the helpers namespace in controllers and services — the `WidgetMergePatch` type lives in the same `models-namespace` as `Widget` itself. Validators follow the same type name: `AbstractValidator<WidgetMergePatch>`.
+
 ## Helper file emission
 
-`MergePatch.g.cs` is always emitted into the helpers directory (it is required by PATCH operations and by the generated PATCH validator templates), regardless of the `emit-helpers` option. The `helpers-output-dir` option controls where the file is written (default: `Helpers/`).
+For `merge-patch-style: "generic"` (the default), `MergePatch.g.cs` is always emitted into the helpers directory regardless of the `emit-helpers` option. The `helpers-output-dir` option controls where the file is written (default: `Helpers/`).
+
+For `merge-patch-style: "typed"`, no shared helper is emitted. Instead, one `{Model}MergePatch.g.cs` file is written into the models output directory for each entity that has a PATCH operation.
