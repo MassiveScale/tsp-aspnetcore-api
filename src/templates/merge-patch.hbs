@@ -31,8 +31,7 @@ public class MergePatch<T>
     /// Populated automatically by <c>System.Text.Json</c> via <c>[JsonExtensionData]</c>.
     /// </summary>
     [JsonExtensionData]
-    public Dictionary<string, JsonElement> Properties { get; init; } = new();
-
+    public Dictionary<string, JsonElement> Properties { get; init; } = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>
     /// Returns <see langword="true"/> if <paramref name="propertyName"/> was explicitly
     /// included in the patch payload (even if its value is <see langword="null"/>).
