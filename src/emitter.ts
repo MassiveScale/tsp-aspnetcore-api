@@ -1721,8 +1721,16 @@ async function emitEntityMergePatches(
     const modelName = getServerName(program, model) ?? pascalCase(model.name);
     const qualifiedModelName = computeModelFqName(program, model, options);
     const fileName = `${modelName}MergePatch${options.fileExtension}`;
+    const typespecNs = csharpNamespaceFor(
+      model.namespace,
+      options,
+      options.effectiveRootNamespace,
+    );
+    const classFolder = options.namespaceFromPath
+      ? []
+      : folderSegments(options.effectiveRootNamespace, typespecNs);
     await emitFile(program, {
-      path: resolvePath(options.modelsOutputDir, fileName),
+      path: resolvePath(options.modelsOutputDir, ...classFolder, fileName),
       content: renderer.renderFile({
         fileName,
         namespace: options.modelsNamespace,

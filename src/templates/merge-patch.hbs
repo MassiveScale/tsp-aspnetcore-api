@@ -212,5 +212,9 @@ public class MergePatch<T>
     }
 
     private static PropertyInfo? FindProperty(string name) =>
-        Array.Find(_typeProperties, p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+        Array.Find(_typeProperties, p =>
+        {
+            var wireName = p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name;
+            return string.Equals(wireName, name, StringComparison.OrdinalIgnoreCase);
+        });
 }

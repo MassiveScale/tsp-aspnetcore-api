@@ -133,7 +133,7 @@ await body.PatchAsync(entity, cancellationToken: cancellationToken);
 await repository.SaveAsync(entity);
 ```
 
-Both methods use reflection to match each JSON property name to a writable property on `T` (case-insensitive). Properties absent from `T`, read-only, or that cannot be deserialized are silently skipped. Pass a `JsonSerializerOptions` instance if custom converters are needed.
+Both methods use reflection to match each JSON property name to a writable property on `T`. The lookup checks `[JsonPropertyName]` first, then falls back to the CLR property name (case-insensitive), so properties renamed via `@serverName` or an explicit `[JsonPropertyName]` attribute are resolved correctly. Properties absent from `T`, read-only, or that cannot be deserialized are silently skipped. Pass a `JsonSerializerOptions` instance if custom converters are needed.
 
 `PatchAsync` returns a `ValueTask` (no allocation on the hot path) and checks the cancellation token before starting work. The patch application itself is synchronous — `PatchAsync` exists for seamless composition in async controller actions.
 
@@ -174,7 +174,7 @@ var patch = MergePatch<Widget>.From(source);
 patch.Patch(entity);
 ```
 
-> **Note:** `FromJson` and `From` key properties by their JSON wire names. If `T` uses `[JsonPropertyName]` attributes or a naming policy, those wire names may not match the C# property names used internally by `Patch` / `PatchAsync`. Use matching `JsonSerializerOptions` for both construction and application when custom naming is in play.
+> **Note:** `FromJson` and `From` key properties by their JSON wire names. `Patch` / `PatchAsync` resolve those wire names to CLR properties by checking `[JsonPropertyName]` first, so explicit attribute renaming is handled transparently. A global `JsonNamingPolicy` set only via `JsonSerializerOptions` is **not** reflected in the attribute lookup — if your models rely solely on a naming policy rather than explicit `[JsonPropertyName]` attributes, use matching `JsonSerializerOptions` for both construction and application.
 
 **Field by field** — use `TrySetPropertyValue` when constructing the patch incrementally:
 
@@ -254,4 +254,4 @@ The typed style avoids a dependency on the helpers namespace in controllers and 
 
 For `merge-patch-style: "generic"` (the default), `MergePatch.g.cs` is always emitted into the helpers directory regardless of the `emit-helpers` option. The `helpers-output-dir` option controls where the file is written (default: `Helpers/`).
 
-For `merge-patch-style: "typed"`, no shared helper is emitted. Instead, one `{Model}MergePatch.g.cs` file is written into the models output directory for each entity that has a PATCH operation.
+For `merge-patch-style: "typed"`, no shared helper is emitted. Instead, one `{Model}MergePatch.g.cs` file is written per entity that has a PATCH operation. Each file follows the same namespace-derived subfolder placement rules as its corresponding model file — so in projects with nested TypeSpec namespaces and `root-namespace` configured, the merge-patch file lands alongside the model file rather than in the output root.
