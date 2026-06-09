@@ -54,7 +54,7 @@ public class MergePatch<T>
     {
         if (!Properties.TryGetValue(propertyName, out var element)) return null;
         if (element.ValueKind == JsonValueKind.Null) return null;
-        return element.GetString();
+        return element.ValueKind == JsonValueKind.String ? element.GetString() : element.ToString();
     }
 
     /// <summary>
