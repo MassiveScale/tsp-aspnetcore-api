@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-09
+
+### Added
+
+- `merge-patch-style` option (`"generic"` | `"typed"`, default `"generic"`). When set to `"typed"`, the emitter generates a concrete `{Model}MergePatch` class per entity (e.g. `WidgetMergePatch`) in the models output directory instead of a single shared `MergePatch<T>` generic helper in the helpers directory. Both styles expose the same full API surface. Controller and service signatures, patch validator `AbstractValidator<T>` declarations, and `ValidatorsInitializer` DI registrations all update automatically based on the selected style.
+- `entity-merge-patch` template key: a custom Handlebars template that replaces the built-in per-entity typed merge patch class when `merge-patch-style: "typed"`. Template variables: `modelName` (short C# class name) and `qualifiedModelName` (fully-qualified C# type).
+- `MergePatch<T>.Patch(T original)` — applies all explicitly defined patch properties to an existing entity instance via reflection. Each property is deserialized to the declared property type on `T` and written back; properties absent from `T`, read-only, or that cannot be deserialized are silently skipped. Replaces the previous approach of generating per-model patch methods from TypeSpec property types.
+- `MergePatch<T>.PatchAsync(T original, …, CancellationToken)` — asynchronous variant of `Patch`. Applies the patch synchronously and returns `ValueTask.CompletedTask`. Throws `OperationCanceledException` if the cancellation token is already cancelled before work begins. Returns a `ValueTask` (zero allocation on the hot path) for seamless composition in async controller actions.
+- `MergePatch<T>.FromJson(string json, JsonSerializerOptions?)` — static factory that deserializes a raw JSON string into a `MergePatch<T>`, treating every property present in the JSON as explicitly defined in the patch.
+- `MergePatch<T>.From(T entity, JsonSerializerOptions?)` — static factory that builds a `MergePatch<T>` from an existing entity instance by serializing it to JSON. Useful for seeding test scenarios or applying full-object replacements. Respects `JsonSerializerOptions.DefaultIgnoreCondition`.
+- `MergePatch<T>.TryGetPropertyValue(string name, out object? value, JsonSerializerOptions?)` — attempts to get and deserialize the patch value for a named property to its declared type on `T` via reflection.
+- `MergePatch<T>.TrySetPropertyValue(string name, object? value, JsonSerializerOptions?)` — serializes a value and stores it as a patch entry for the named property. Pass `null` to mark the field for clearing (RFC 7396 clear-field semantics).
+- `MergePatch<T>.TryGetPropertyType(string name, out Type? type)` — returns the declared `System.Type` of the named property on `T` via reflection.
+- `MergePatch<T>.GetChangedPropertyNames()` — returns the names of all properties explicitly included in the patch payload (equivalent to `DefinedProperties` but as a method for use in LINQ chains).
+- `MergePatch<T>` now caches the public instance properties of `T` in a static field (`_typeProperties`) so reflection is only performed once per concrete type at class initialization.
+
+### Fixed
+
+- `ValidatorsInitializer.g.cs` emitted `IValidator<MergePatch<{Model}>>` without qualifying the `MergePatch<T>` type with its helpers namespace, causing C# compilation errors when the validators namespace differs from the helpers namespace. Registration entries now use the fully-qualified form (e.g. `Demo.Helpers.MergePatch<Demo.Models.Widget>`).
+- `decimal.TryParse` in patch validator templates (`validator-patch.hbs`, `validator-patch-version-aware.hbs`) used the ambient culture by default. JSON numeric text is always culture-invariant; parsing now explicitly passes `System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture` to all `decimal.TryParse` calls, preventing invalid rejections in non-invariant server cultures.
+
+### Changed
+
+- `MergePatch<T>` no longer uses `MergePatchValue<T>` wrapper properties. The class now uses `[JsonExtensionData]` on a `Dictionary<string, JsonElement>` to capture all incoming JSON properties as raw `JsonElement` values. This eliminates per-property code generation and removes the `MergePatchValue<T>` dependency entirely. The `IsDefined` / `IsNull` / `GetString` / `TryGetValue` API is unchanged.
+
 ## [0.8.0] - 2026-06-06
 
 ### Changed

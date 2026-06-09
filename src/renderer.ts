@@ -37,7 +37,8 @@ export type TemplateName =
   | "validator-patch"
   | "validator-post-version-aware"
   | "validator-patch-version-aware"
-  | "validator-initializer";
+  | "validator-initializer"
+  | "entity-merge-patch";
 
 /**
  * Partial map of template names to absolute file paths used to override the
@@ -242,6 +243,14 @@ export interface ServiceView {
   operations: OperationView[];
 }
 
+/** View model for a per-entity typed merge patch class (used when merge-patch-style is "typed"). */
+export interface EntityMergePatchView {
+  /** Short C# class name of the target entity, e.g. `"Widget"`. */
+  modelName: string;
+  /** Fully-qualified C# type name of the target entity, e.g. `"Demo.Models.Widget"`. */
+  qualifiedModelName: string;
+}
+
 // ---------------------------------------------------------------------------
 // Renderer interface
 // ---------------------------------------------------------------------------
@@ -267,6 +276,8 @@ export interface Renderer {
   renderServiceInterface(view: ServiceView): string;
   /** Renders the generic `MergePatch<T>` helper class body. */
   renderMergePatch(): string;
+  /** Renders a per-entity typed merge patch class body (used when merge-patch-style is "typed"). */
+  renderEntityMergePatch(view: EntityMergePatchView): string;
   /** Renders the `EnumMemberConverterFactory` and `EnumMemberConverter<T>` helper class body. */
   renderEnumMemberConverter(): string;
 }
@@ -589,6 +600,11 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
     "merge-patch",
     overrides["merge-patch"],
   );
+  const entityMergePatchTemplate = loadTemplate(
+    env,
+    "entity-merge-patch",
+    overrides["entity-merge-patch"],
+  );
   const enumMemberConverterTemplate = loadTemplate(
     env,
     "enum-member-converter",
@@ -646,6 +662,9 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
     },
     renderMergePatch() {
       return mergePatchTemplate({});
+    },
+    renderEntityMergePatch(view) {
+      return entityMergePatchTemplate(view);
     },
     renderEnumMemberConverter() {
       return enumMemberConverterTemplate({});

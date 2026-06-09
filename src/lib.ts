@@ -31,6 +31,8 @@ export interface TemplateOverrides {
   "service-interface"?: string;
   /** Custom template for the generic MergePatch&lt;T&gt; helper class. */
   "merge-patch"?: string;
+  /** Custom template for the per-entity typed merge patch class (used when merge-patch-style is "typed"). */
+  "entity-merge-patch"?: string;
   /** Custom template for the EnumMemberConverter helper class. */
   "enum-member-converter"?: string;
   /** Custom template for the standard POST validator class. */
@@ -244,6 +246,14 @@ export interface EmitterOptions {
   validators?: "post" | "patch" | "both";
 
   /**
+   * Controls how `MergePatch` support is emitted for PATCH operations.
+   * - `"generic"` (default) — emits a single shared `MergePatch<T>` helper class in the helpers directory.
+   * - `"typed"` — emits a per-entity `{Model}MergePatch` class in the models directory, avoiding a
+   *   generic helper. Both styles expose the same API surface.
+   */
+  "merge-patch-style"?: "generic" | "typed";
+
+  /**
    * Controls how versioning affects validator generation when the TypeSpec spec
    * uses `@versioned`.
    * - `"earliest"` — emits validators based on the earliest version only.
@@ -306,6 +316,7 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
         controller: { type: "string", nullable: true },
         "service-interface": { type: "string", nullable: true },
         "merge-patch": { type: "string", nullable: true },
+        "entity-merge-patch": { type: "string", nullable: true },
         "enum-member-converter": { type: "string", nullable: true },
         "validator-post": { type: "string", nullable: true },
         "validator-patch": { type: "string", nullable: true },
@@ -329,6 +340,11 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
     "validators-version-strategy": {
       type: "string",
       enum: ["earliest", "latest", "per-version", "version-aware"],
+      nullable: true,
+    },
+    "merge-patch-style": {
+      type: "string",
+      enum: ["generic", "typed"],
       nullable: true,
     },
   },
