@@ -248,7 +248,7 @@ export interface EmitterOptions {
   /**
    * Controls how `MergePatch` support is emitted for PATCH operations.
    * - `"generic"` (default) — emits a single shared `MergePatch<T>` helper class in the helpers directory.
-   * - `"typed"` — emits a per-entity `{Model}MergePatch` class in the models directory, avoiding a
+   * - `"typed"` — emits a per-entity `{Model}MergePatchUpdate` class in the models directory, avoiding a
    *   generic helper. Both styles expose the same API surface.
    */
   "merge-patch-style"?: "generic" | "typed";

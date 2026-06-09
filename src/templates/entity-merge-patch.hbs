@@ -2,7 +2,7 @@
   entity-merge-patch.hbs — emitted once per entity when merge-patch-style is "typed".
 
   Generates a concrete, non-generic RFC 7396 JSON Merge Patch container class
-  named {ModelName}MergePatch (e.g. WidgetMergePatch for Widget).
+  named {ModelName}MergePatchUpdate (e.g. WidgetMergePatchUpdate for Widget).
 
   Override via tspconfig.yaml:
     options:
@@ -20,7 +20,7 @@
 /// distinguish "field absent from the request" from "field explicitly set to null".
 /// </summary>
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public class {{{modelName}}}MergePatch
+public class {{{modelName}}}MergePatchUpdate
 {
     private static readonly PropertyInfo[] _typeProperties =
         typeof({{{qualifiedModelName}}}).GetProperties(BindingFlags.Public | BindingFlags.Instance);
@@ -144,7 +144,7 @@ public class {{{modelName}}}MergePatch
     }
 
     /// <summary>
-    /// Constructs a <see cref="{{{modelName}}}MergePatch"/> from a JSON string, treating every
+    /// Constructs a <see cref="{{{modelName}}}MergePatchUpdate"/> from a JSON string, treating every
     /// property present in the JSON as explicitly defined in the patch.
     /// </summary>
     /// <remarks>
@@ -153,11 +153,11 @@ public class {{{modelName}}}MergePatch
     /// naming policy, the keys in <see cref="Properties"/> will reflect those wire names
     /// and may not match C# property names used by <see cref="Patch({{{qualifiedModelName}}}, JsonSerializerOptions?)"/>.
     /// </remarks>
-    public static {{{modelName}}}MergePatch FromJson(string json, JsonSerializerOptions? options = null) =>
-        JsonSerializer.Deserialize<{{{modelName}}}MergePatch>(json, options) ?? new {{{modelName}}}MergePatch();
+    public static {{{modelName}}}MergePatchUpdate FromJson(string json, JsonSerializerOptions? options = null) =>
+        JsonSerializer.Deserialize<{{{modelName}}}MergePatchUpdate>(json, options) ?? new {{{modelName}}}MergePatchUpdate();
 
     /// <summary>
-    /// Constructs a <see cref="{{{modelName}}}MergePatch"/> from an existing
+    /// Constructs a <see cref="{{{modelName}}}MergePatchUpdate"/> from an existing
     /// <see cref="{{{qualifiedModelName}}}"/> instance by serializing it to JSON.
     /// Every property that is included in the serialized output is treated as explicitly
     /// defined in the patch.
@@ -167,7 +167,7 @@ public class {{{modelName}}}MergePatch
     /// <c>DefaultIgnoreCondition</c>). Pass <see langword="null"/> options to include all
     /// properties, even those with <see langword="null"/> values.
     /// </remarks>
-    public static {{{modelName}}}MergePatch From({{{qualifiedModelName}}} entity, JsonSerializerOptions? options = null) =>
+    public static {{{modelName}}}MergePatchUpdate From({{{qualifiedModelName}}} entity, JsonSerializerOptions? options = null) =>
         FromJson(JsonSerializer.Serialize(entity, options), options);
 
     /// <summary>
