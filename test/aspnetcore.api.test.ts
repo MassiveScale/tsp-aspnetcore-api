@@ -2286,6 +2286,123 @@ namespace {{namespace}}
     });
   });
 
+  describe("merge-patch-style: typed", () => {
+    const TYPED_SPEC = `
+      import "@typespec/http";
+      using TypeSpec.Http;
+
+      @service(#{ title: "Widgets" })
+      namespace Demo;
+
+      model Widget {
+        id: string;
+        name: string;
+      }
+
+      model WidgetPatch is MergePatchUpdate<Widget>;
+
+      @route("/widgets/{id}")
+      interface Widgets {
+        @patch update(@path id: string, @body body: WidgetPatch): Widget;
+      }
+    `;
+
+    it("emits a WidgetMergePatchUpdate.g.cs file in the models directory", async () => {
+      const results = await emit(TYPED_SPEC, { "merge-patch-style": "typed" });
+
+      const file =
+        results["WidgetMergePatchUpdate.g.cs"] ??
+        results["Models/WidgetMergePatchUpdate.g.cs"];
+      ok(
+        file,
+        `expected WidgetMergePatchUpdate.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+    });
+
+    it("does not emit the generic MergePatch.g.cs helper", async () => {
+      const results = await emit(TYPED_SPEC, { "merge-patch-style": "typed" });
+
+      ok(
+        !results["Helpers/MergePatch.g.cs"],
+        "typed style must not emit generic MergePatch.g.cs",
+      );
+    });
+
+    it("generated class is named WidgetMergePatchUpdate", async () => {
+      const results = await emit(TYPED_SPEC, { "merge-patch-style": "typed" });
+
+      const file =
+        results["WidgetMergePatchUpdate.g.cs"] ??
+        results["Models/WidgetMergePatchUpdate.g.cs"];
+      ok(file, "expected WidgetMergePatchUpdate.g.cs");
+      ok(
+        file.includes("public class WidgetMergePatchUpdate"),
+        `expected 'public class WidgetMergePatchUpdate' in:\n${file}`,
+      );
+    });
+
+    it("controller uses WidgetMergePatchUpdate as the PATCH body type", async () => {
+      const results = await emit(TYPED_SPEC, { "merge-patch-style": "typed" });
+
+      const ctrl = results["Controllers/WidgetsControllerBase.g.cs"];
+      ok(ctrl, "expected controller");
+      ok(
+        ctrl.includes("WidgetMergePatchUpdate"),
+        `expected WidgetMergePatchUpdate in controller in:\n${ctrl}`,
+      );
+      ok(
+        !ctrl.includes("MergePatch<Widget>"),
+        `expected no generic MergePatch<Widget> in typed controller in:\n${ctrl}`,
+      );
+    });
+
+    it("exposes IsDefined, IsNull, Patch, and PatchAsync on the typed class", async () => {
+      const results = await emit(TYPED_SPEC, { "merge-patch-style": "typed" });
+
+      const file =
+        results["WidgetMergePatchUpdate.g.cs"] ??
+        results["Models/WidgetMergePatchUpdate.g.cs"];
+      ok(file, "expected WidgetMergePatchUpdate.g.cs");
+      ok(file.includes("IsDefined"), `expected IsDefined in:\n${file}`);
+      ok(file.includes("IsNull"), `expected IsNull in:\n${file}`);
+      ok(
+        file.includes("public void Patch(Demo.Models.Widget"),
+        `expected Patch method in:\n${file}`,
+      );
+      ok(
+        file.includes("public ValueTask PatchAsync(Demo.Models.Widget"),
+        `expected PatchAsync method in:\n${file}`,
+      );
+    });
+
+    it("colocates the typed file with the model when root-namespace is set", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service(#{ title: "API" })
+        namespace Demo.Api.V1;
+
+        model Widget { id: string; name: string; }
+        model WidgetPatch is MergePatchUpdate<Widget>;
+
+        @route("/widgets/{id}")
+        interface Widgets {
+          @patch update(@path id: string, @body body: WidgetPatch): Widget;
+        }
+      `,
+        { "merge-patch-style": "typed", "root-namespace": "Demo" },
+      );
+
+      const file = results["Models/Api/V1/WidgetMergePatchUpdate.g.cs"];
+      ok(
+        file,
+        `expected Models/Api/V1/WidgetMergePatchUpdate.g.cs alongside Widget.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+    });
+  });
+
   describe("per-section namespace options", () => {
     it("models-namespace sets verbatim C# namespace for all model files", async () => {
       const results = await emit(`model Free { id: string; }`, {

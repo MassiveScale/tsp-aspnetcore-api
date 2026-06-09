@@ -209,10 +209,10 @@ this.RuleFor(x => x)
 
 The `merge-patch-style` option controls whether the emitter uses a single shared generic helper or generates a separate class per entity.
 
-| Style       | Default | Description                                                                                                          |
-| ----------- | ------- | -------------------------------------------------------------------------------------------------------------------- |
-| `"generic"` | ✓       | Emits one shared `MergePatch<T>` class in the helpers directory. All PATCH operations share this class via generics. |
-| `"typed"`   |         | Emits a concrete `{Model}MergePatch` class per entity directly in the models directory. No generic helper is needed. |
+| Style       | Default | Description                                                                                                                |
+| ----------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `"generic"` | ✓       | Emits one shared `MergePatch<T>` class in the helpers directory. All PATCH operations share this class via generics.       |
+| `"typed"`   |         | Emits a concrete `{Model}MergePatchUpdate` class per entity directly in the models directory. No generic helper is needed. |
 
 Both styles expose the same API surface (`IsDefined`, `IsNull`, `Patch`, `PatchAsync`, `FromJson`, `From`, etc.).
 
@@ -238,20 +238,20 @@ public abstract Task<IActionResult> Update(
 ### Typed style
 
 ```csharp
-// Generated in Models/WidgetMergePatch.g.cs (alongside Widget.g.cs)
-public class WidgetMergePatch { ... }
+// Generated in Models/WidgetMergePatchUpdate.g.cs (alongside Widget.g.cs)
+public class WidgetMergePatchUpdate { ... }
 
 // Controller signature
 public abstract Task<IActionResult> Update(
     [FromRoute] string id,
-    [FromBody] WidgetMergePatch body,
+    [FromBody] WidgetMergePatchUpdate body,
     CancellationToken cancellationToken);
 ```
 
-The typed style avoids a dependency on the helpers namespace in controllers and services — the `WidgetMergePatch` type lives in the same `models-namespace` as `Widget` itself. Validators follow the same type name: `AbstractValidator<WidgetMergePatch>`.
+The typed style avoids a dependency on the helpers namespace in controllers and services — the `WidgetMergePatchUpdate` type lives in the same `models-namespace` as `Widget` itself. Validators follow the same type name: `AbstractValidator<WidgetMergePatchUpdate>`.
 
 ## Helper file emission
 
 For `merge-patch-style: "generic"` (the default), `MergePatch.g.cs` is always emitted into the helpers directory regardless of the `emit-helpers` option. The `helpers-output-dir` option controls where the file is written (default: `Helpers/`).
 
-For `merge-patch-style: "typed"`, no shared helper is emitted. Instead, one `{Model}MergePatch.g.cs` file is written per entity that has a PATCH operation. Each file follows the same namespace-derived subfolder placement rules as its corresponding model file — so in projects with nested TypeSpec namespaces and `root-namespace` configured, the merge-patch file lands alongside the model file rather than in the output root.
+For `merge-patch-style: "typed"`, no shared helper is emitted. Instead, one `{Model}MergePatchUpdate.g.cs` file is written per entity that has a PATCH operation. Each file follows the same namespace-derived subfolder placement rules as its corresponding model file — so in projects with nested TypeSpec namespaces and `root-namespace` configured, the merge-patch file lands alongside the model file rather than in the output root.

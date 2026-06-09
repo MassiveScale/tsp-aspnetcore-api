@@ -502,7 +502,7 @@ function typeRef(
           const sourceName =
             getServerName(program, source) ?? pascalCase(source.name);
           return options.mergePatchStyle === "typed"
-            ? `${sourceName}MergePatch`
+            ? `${sourceName}MergePatchUpdate`
             : `MergePatch<${sourceName}>`;
         }
       }

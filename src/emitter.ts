@@ -1056,7 +1056,7 @@ function collectValidatorModelsFromRoutes(
  * entry from `patchModels` (e.g. `"MergePatch<Widget>"` or a plain model name).
  *
  * For `merge-patch-style: "generic"` the generic helper class is used.
- * For `merge-patch-style: "typed"` a per-entity `{Model}MergePatch` class is used.
+ * For `merge-patch-style: "typed"` a per-entity `{Model}MergePatchUpdate` class is used.
  */
 function resolvePatchBodyInfo(
   rawBodyTypeName: string,
@@ -1082,8 +1082,8 @@ function resolvePatchBodyInfo(
     };
   }
   if (options.mergePatchStyle === "typed") {
-    const typedName = `${modelName}MergePatch`;
-    const fullyQualified = `${options.modelsNamespace}.${modelName}MergePatch`;
+    const typedName = `${modelName}MergePatchUpdate`;
+    const fullyQualified = `${options.modelsNamespace}.${modelName}MergePatchUpdate`;
     return {
       patchBodyTypeName: typedName,
       qualifiedPatchBodyTypeName: fullyQualified,
@@ -1702,7 +1702,7 @@ async function emitMergePatch(
 }
 
 /**
- * Writes one `{ModelName}MergePatch` file per entity in `patchModels` to the
+ * Writes one `{ModelName}MergePatchUpdate` file per entity in `patchModels` to the
  * models output directory. Only called when `merge-patch-style` is `"typed"`.
  *
  * @param program - The compiled TypeSpec program (needed by `emitFile`).
@@ -1720,7 +1720,7 @@ async function emitEntityMergePatches(
     if (!rawTypeName.startsWith("MergePatch<")) continue;
     const modelName = getServerName(program, model) ?? pascalCase(model.name);
     const qualifiedModelName = computeModelFqName(program, model, options);
-    const fileName = `${modelName}MergePatch${options.fileExtension}`;
+    const fileName = `${modelName}MergePatchUpdate${options.fileExtension}`;
     const typespecNs = csharpNamespaceFor(
       model.namespace,
       options,
