@@ -4,11 +4,11 @@ When `emit-validators: true`, the emitter generates [FluentValidation](https://d
 
 ## Generated files
 
-| File                         | Content                                                                                                                                      |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `{Model}Validator.g.cs`      | `AbstractValidator<{Model}>` with rules for POST bodies.                                                                                     |
-| `{Model}PatchValidator.g.cs` | Patch-aware `AbstractValidator<{Model}MergePatchUpdate>` whose rules fire only when the corresponding property is present in the patch body. |
-| `ValidatorsInitializer.g.cs` | Static `AddGeneratedValidators(this IServiceCollection)` extension method for DI setup.                                                      |
+| File                         | Content                                                                                                                                  |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `{Model}Validator.g.cs`      | `AbstractValidator<{Model}>` with rules for POST bodies.                                                                                 |
+| `{Model}PatchValidator.g.cs` | Patch-aware `AbstractValidator<MergePatch<{Model}>>` whose rules fire only when the corresponding property is present in the patch body. |
+| `ValidatorsInitializer.g.cs` | Static `AddGeneratedValidators(this IServiceCollection)` extension method for DI setup.                                                  |
 
 ## Setup
 
@@ -42,7 +42,7 @@ The emitter reads TypeSpec constraint decorators and translates them to FluentVa
 | Enum property                  | `IsInEnum()`                                     |
 | Nested model property          | `SetValidator(childValidator)` (injected via DI) |
 
-Properties marked `@visibility(Lifecycle.Read)` (read-only) are excluded from generated POST and PATCH validators.
+Properties marked `@visibility(Lifecycle.Read)` (read-only) generate rejection rules rather than validation rules. In PATCH validators they emit a "must not be present" rule so clients cannot supply the field at all. In POST validators, nullable read-only properties emit a `Null()` rule; non-nullable read-only properties produce no rule (the field is simply ignored on creation).
 
 ## Custom rules
 

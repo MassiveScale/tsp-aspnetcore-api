@@ -2,20 +2,17 @@
 
 The emitter automatically generates support for [RFC 7396 Merge Patch](https://tools.ietf.org/html/rfc7396) semantics when TypeSpec models use the `MergePatchUpdate<T>` template from `@typespec/http`.
 
-## MergePatchValue\<T\> wrapper
+## How it works
 
-For models that implement `MergePatchUpdate<T>`, all properties are wrapped in `MergePatchValue<T>` to distinguish between:
+When the PATCH body type in a TypeSpec operation is (or extends) `MergePatchUpdate<T>`, the emitter replaces that type with the generic `MergePatch<T>` helper in the generated controller and validator signatures. The `MergePatchUpdate<T>` model itself is **not** emitted as a separate C# class — the helper handles the entire merge-patch contract.
 
-- **Property not provided** — `MergePatchValue<T>.Absent` (omitted from JSON)
-- **Property explicitly set to null** — `MergePatchValue<T>.Of(null)` (serialized as JSON `null`)
+This design means:
 
-This distinction is necessary because RFC 7396 treats missing properties differently from null values during merge operations.
+- Controllers receive `MergePatch<Widget>` instead of a generated `WidgetMergePatchUpdate` class.
+- Validators test `IsDefined` / `IsNull` to distinguish "field absent" from "field explicitly null".
+- A single shared helper handles all entity types — no per-model boilerplate.
 
-## Naming convention
-
-Models must follow the standard `@typespec/http` naming convention: the model name **must end with `MergePatchUpdate`** (case-insensitive). The `@typespec/http` library automatically generates models named `{ResourceName}MergePatchUpdate` when you use `MergePatchUpdate<ResourceType>` in operation parameters or response types.
-
-## Example
+## TypeSpec usage
 
 ```typespec
 import "@typespec/http";
@@ -29,74 +26,94 @@ model Widget {
   weight: int32;
 }
 
-model WidgetMergePatchUpdate is MergePatchUpdate<Widget>;
+model WidgetPatch is MergePatchUpdate<Widget>;
 
 @route("/widgets/{id}")
-@patch
-op updateWidget(@path id: string, @body patch: WidgetMergePatchUpdate): Widget;
-```
-
-Generated C#:
-
-```csharp
-public partial class WidgetMergePatchUpdate : IWidgetMergePatchUpdate
-{
-    [JsonPropertyName("id")]
-    public MergePatchValue<string?> Id { get; set; } = MergePatchValue<string?>.Absent;
-
-    [JsonPropertyName("name")]
-    public MergePatchValue<string?> Name { get; set; } = MergePatchValue<string?>.Absent;
-
-    [JsonPropertyName("weight")]
-    public MergePatchValue<int?> Weight { get; set; } = MergePatchValue<int?>.Absent;
+interface Widgets {
+  @patch update(@path id: string, @body body: WidgetPatch): Widget;
 }
 ```
 
-## Patch method
-
-Each generated MergePatch class includes a `Patch(TEntity target)` method that applies the patch in-place, similar to the `Delta<T>.Patch()` method from `Microsoft.AspNetCore.OData`.
+## Generated controller signature
 
 ```csharp
-var patch = await JsonSerializer.DeserializeAsync<WidgetMergePatchUpdate>(requestBody);
+[HttpPatch("{id}")]
+public abstract Task<IActionResult> Update(
+    [FromRoute] string id,
+    [FromBody] MergePatch<Widget> body,
+    CancellationToken cancellationToken);
+```
+
+The `WidgetPatch` name never appears in generated C# output. Any model whose TypeSpec name ends with `MergePatchUpdate` (case-insensitive) is detected as a merge-patch body and mapped to `MergePatch<T>`.
+
+## `MergePatch<T>` API
+
+The helper class is emitted into the helpers directory and exposes these members:
+
+```csharp
+public class MergePatch<T>
+{
+    // Raw JSON payload, keyed by property name (case-insensitive).
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement> Properties { get; init; }
+
+    // True when the property was present in the JSON payload (even if null).
+    public bool IsDefined(string propertyName);
+
+    // True when the property is present and its value is JSON null.
+    public bool IsNull(string propertyName);
+
+    // Returns the string value of a property, or null when absent or null.
+    public string? GetString(string propertyName);
+
+    // Attempts to deserialize a property to TValue.
+    // Returns true when the property is present (even if its value is null).
+    public bool TryGetValue<TValue>(string propertyName, out TValue? value,
+        JsonSerializerOptions? options = null);
+
+    // Names of all properties that were explicitly sent in the payload.
+    public IEnumerable<string> DefinedProperties { get; }
+}
+```
+
+## Applying the patch
+
+The helper does not apply patches automatically. Use `IsDefined` and `TryGetValue` to copy only the fields the client sent:
+
+```csharp
 var entity = await repository.GetAsync(id);
-patch.Patch(entity);
+
+if (body.TryGetValue<string>("name", out var name)) entity.Name = name!;
+if (body.TryGetValue<int>("weight", out var weight)) entity.Weight = weight!.Value;
+
 await repository.SaveAsync(entity);
 ```
 
-Only properties that were **explicitly set** in the JSON payload (i.e. `IsPresent == true`) are copied to the target entity. Properties that were absent from the payload are left unchanged.
-
-### Type-compatible properties
-
-The emitter compares the inner type of each `MergePatchValue<T>` property against the corresponding property type on the source entity. Properties whose types match exactly are included in the generated assignments:
+Using `IsDefined` instead of `TryGetValue` lets you handle null-clear operations (RFC 7396 semantics: a `null` value removes the field):
 
 ```csharp
-public void Patch(Widget target)
-{
-    if (Name.IsPresent) target.Name = Name.Value;
-    if (Weight.IsPresent) target.Weight = Weight.Value;
-}
+if (body.IsDefined("name"))
+    entity.Name = body.IsNull("name") ? null : body.GetString("name")!;
 ```
 
-### Skipped properties
+## Validator integration
 
-Properties where the MergePatch inner type differs from the entity property type are excluded from the generated assignments. The most common case is nested-model array properties, where the patch model uses a `ReplaceOnly` variant (e.g. `IList<TagMergePatchUpdateReplaceOnly>?`) while the entity uses the original type (e.g. `IList<Tag>?`).
-
-A comment is generated to identify each skipped property and explain the mismatch, so developers know exactly what to handle manually:
+The generated PATCH validator uses `IsDefined` to block read-only properties and enforce constraints only when a property is present:
 
 ```csharp
-public void Patch(Pet target)
-{
-    if (Name.IsPresent) target.Name = Name.Value;
-    if (PhotoUrls.IsPresent) target.PhotoUrls = PhotoUrls.Value;
-    // The following properties were not applied because the MergePatch inner type
-    // differs from the entity property type. Handle them manually after calling Patch():
-    //   Tags (patch inner: IList<TagMergePatchUpdateReplaceOnly>? vs entity: IList<Tag>?)
-    //   Status (patch inner: object? vs entity: PetStatus?)
-}
+// Read-only property: reject if client tries to set it
+this.RuleFor(x => x)
+    .Must(x => !x.IsDefined("id"))
+    .WithName("id")
+    .WithMessage("'id' is read-only and cannot be modified.");
+
+// Optional string constraint: only validate when the property is present
+this.RuleFor(x => x)
+    .Must(x => (x.GetString("name")?.Length ?? 0) > 0)
+    .When(x => x.IsDefined("name") && !x.IsNull("name"))
+    .WithName("name");
 ```
 
 ## Helper file emission
 
-The `MergePatchValue<T>` helper class is automatically emitted to the helpers directory whenever any `MergePatchUpdate` model is generated, regardless of the `emit-helpers` option setting. This ensures merge-patch models always have access to the required helper type.
-
-Use the `helpers-output-dir` option to control where the helper is written (default: `Helpers/`).
+`MergePatch.g.cs` is always emitted into the helpers directory (it is required by PATCH operations and by the generated PATCH validator templates), regardless of the `emit-helpers` option. The `helpers-output-dir` option controls where the file is written (default: `Helpers/`).

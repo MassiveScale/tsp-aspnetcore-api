@@ -56,8 +56,8 @@ import {
 } from "@typespec/versioning";
 import type { Version } from "@typespec/versioning";
 import Handlebars from "handlebars";
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getServerName } from "./decorators.js";
 import { EmitterOptions, reportDiagnostic } from "./lib.js";
@@ -66,9 +66,6 @@ import {
   ClassView,
   EnumView,
   InterfaceView,
-  PatchMethodView,
-  PatchablePropertyView,
-  SkippedPropertyView,
   PropertyView,
   Renderer,
   TemplateName,
@@ -81,18 +78,6 @@ import {
   ControllerOptions,
   collectControllers,
 } from "./controllers.js";
-
-/**
- * Deletes all files and subdirectories inside `dir` without removing the
- * directory itself.  If the directory does not exist on the real filesystem
- * (e.g. during tests that use a virtual host) this is a safe no-op.
- */
-function cleanDirectory(dir: string): void {
-  if (!existsSync(dir)) return;
-  for (const entry of readdirSync(dir)) {
-    rmSync(join(dir, entry), { recursive: true, force: true });
-  }
-}
 
 /** Default C# namespace used for top-level TypeSpec models with no namespace. */
 const DEFAULT_NAMESPACE = "Models";
@@ -112,9 +97,10 @@ const CONTROLLER_USINGS = [
   "Microsoft.AspNetCore.Mvc",
 ];
 
-/** `using` directives included in the MergePatchValue helper file. */
-const HELPER_USINGS = [
+/** `using` directives included in the MergePatch helper file. */
+const MERGE_PATCH_USINGS = [
   "System",
+  "System.Collections.Generic",
   "System.Text.Json",
   "System.Text.Json.Serialization",
 ];
@@ -226,6 +212,14 @@ interface PropertyData {
   name: string;
   hasRules: boolean;
   notEmpty: boolean;
+  /** True when the property is read-only (not writable for the target lifecycle). */
+  isReadOnly?: boolean;
+  /**
+   * True when the C# property can hold `null` after deserialization of an
+   * absent field. When `false`, `.Null()` would always fail — the read-only
+   * rejection rule is skipped for this property in POST validators.
+   */
+  nullable: boolean;
   minLength?: number;
   maxLength?: number;
   pattern?: string;
@@ -235,6 +229,8 @@ interface PropertyData {
   minValue?: NumericRule;
   maxValue?: NumericRule;
   referencedModelName?: string;
+  /** Kept for FQ name computation; not serialized to Handlebars templates. */
+  referencedModel?: Model;
   referencedParamName?: string;
   isCollectionReference?: boolean;
 }
@@ -242,6 +238,7 @@ interface PropertyData {
 /** Validator for a referenced child model (injected as constructor parameter). */
 interface ReferencedValidator {
   modelName: string;
+  qualifiedModelName: string;
   paramName: string;
 }
 
@@ -249,8 +246,16 @@ interface ReferencedValidator {
 interface ValidatorTemplateData {
   namespace?: string;
   modelName: string;
-  /** C# type name of the validated PATCH body (e.g. `PetMergePatchUpdate`). Only set for patch validators. */
+  /** Fully-qualified C# type name of the validated model (e.g. `MyApp.Models.Pet`). */
+  qualifiedModelName: string;
+  /** C# type name of the validated PATCH body (e.g. `MergePatch<Pet>`). Only set for patch validators. */
   patchBodyTypeName?: string;
+  /** Fully-qualified C# type name of the PATCH body (e.g. `MergePatch<MyApp.Models.Pet>`). Only set for patch validators. */
+  qualifiedPatchBodyTypeName?: string;
+  /** C# namespace for the MergePatch helper (used for the `using` directive in PATCH templates). Only set for patch validators. */
+  helpersNamespace?: string;
+  /** True when the PATCH body is a `MergePatch<T>` — suppresses property-accessor-based rules that won't compile. */
+  isMergePatchBody?: boolean;
   properties: PropertyData[];
   referencedValidators?: ReferencedValidator[];
 }
@@ -265,8 +270,16 @@ interface VersionGroup {
 interface VersionAwareValidatorTemplateData {
   namespace?: string;
   modelName: string;
-  /** C# type name of the validated PATCH body (e.g. `PetMergePatchUpdate`). Only set for patch validators. */
+  /** Fully-qualified C# type name of the validated model (e.g. `MyApp.Models.Pet`). */
+  qualifiedModelName: string;
+  /** C# type name of the validated PATCH body (e.g. `MergePatch<Pet>`). Only set for patch validators. */
   patchBodyTypeName?: string;
+  /** Fully-qualified C# type name of the PATCH body (e.g. `MergePatch<MyApp.Models.Pet>`). Only set for patch validators. */
+  qualifiedPatchBodyTypeName?: string;
+  /** C# namespace for the MergePatch helper (used for the `using` directive in PATCH templates). Only set for patch validators. */
+  helpersNamespace?: string;
+  /** True when the PATCH body is a `MergePatch<T>` — suppresses property-accessor-based rules that won't compile. */
+  isMergePatchBody?: boolean;
   allVersions: string[];
   defaultVersion: string;
   baseProperties: PropertyData[];
@@ -277,6 +290,7 @@ interface VersionAwareValidatorTemplateData {
 /** One entry in the generated `ValidatorsInitializer`. */
 interface ValidatorRegistration {
   modelTypeName: string;
+  qualifiedModelTypeName: string;
   validatorName: string;
 }
 
@@ -296,19 +310,22 @@ interface ResolvedOptions {
   /** Value of `root-namespace`, or `undefined` if not configured. */
   rootNamespace: string | undefined;
   /**
-   * Effective root namespace for models and enums — `models-root-namespace` when
-   * set, otherwise the same as the inferred/configured global root namespace.
-   * Used as the fallback for unnamespaced types and as the prefix stripped from
-   * folder paths when `namespace-from-path` is `false`.
-   */
-  modelsEffectiveRootNs: string | undefined;
-  /** Effective root namespace for interface files. Falls back to inferred global root. */
-  interfacesEffectiveRootNs: string | undefined;
-  /**
    * Inferred or explicitly configured global root namespace.
    * Equals `root-namespace` when set, otherwise inferred from the TypeSpec namespace tree.
    */
   effectiveRootNamespace: string | undefined;
+  /** Verbatim C# namespace for all model and enum files. */
+  modelsNamespace: string;
+  /** Verbatim C# namespace for all interface files (always equals modelsNamespace). */
+  interfacesNamespace: string;
+  /** Verbatim C# namespace for all controller files. */
+  controllersNamespace: string;
+  /** Verbatim C# namespace for all service files. */
+  servicesNamespace: string;
+  /** Verbatim C# namespace for all validator files (version suffix may be appended). */
+  validatorsNamespace: string;
+  /** Verbatim C# namespace for all helper files. */
+  helpersNamespace: string;
   /** Sorted namespace-map entries (longest key first for longest-match wins). */
   namespaceMap: Array<{ key: string; value: string }>;
   /** File extension for all emitted files, e.g. `".g.cs"`. */
@@ -343,29 +360,10 @@ interface ResolvedOptions {
   emitHelpers: boolean;
   /** Absolute path to the helpers output directory. */
   helpersOutputDir: string;
-  /** Whether to derive C# namespaces from output folder paths (controllers, services, helpers). */
+  /** When `true`, model/enum/interface files are placed flat in their output dir; otherwise placed in TypeSpec-namespace-mirrored subdirectories. */
   namespaceFromPath: boolean;
-  /**
-   * PascalCased namespace suffix derived from `models-output-dir` path segments
-   * (e.g. `"models"` → `"Models"`, `"src/models"` → `"Src.Models"`).
-   * Empty string when no `models-output-dir` is configured.
-   */
-  modelsDirSuffix: string;
-  /**
-   * PascalCased namespace suffix derived from `interfaces-output-dir` path segments.
-   * Empty string when no `interfaces-output-dir` is configured.
-   */
-  interfacesDirSuffix: string;
-  /** Path-derived namespace for controller files (used when `namespaceFromPath` is `true`). */
-  controllersPathNamespace: string;
-  /** Path-derived namespace for service files (used when `namespaceFromPath` is `true`). */
-  servicesPathNamespace: string;
-  /** C# namespace for helper files (always path-derived). */
-  helpersNamespace: string;
   /** Whether to emit FluentValidation validator files. */
   emitValidators: boolean;
-  /** Path-derived C# namespace for the ValidatorsInitializer file. */
-  validatorsPathNamespace: string;
   /** Absolute path to the validators output directory. */
   validatorsOutputDir: string;
   /** Which validator type(s) to emit: "post", "patch", or "both". */
@@ -381,8 +379,6 @@ interface ResolvedOptions {
     | "per-version"
     | "version-aware"
     | undefined;
-  /** Whether to delete all files in the emitter output directory before emitting. */
-  cleanOutputDir: boolean;
 }
 
 /** Inferred enum derived from a string-literal union property. */
@@ -420,10 +416,6 @@ export async function $onEmit(
   const program = context.program;
   const options = resolveOptions(context);
 
-  if (options.cleanOutputDir) {
-    cleanDirectory(context.emitterOutputDir);
-  }
-
   const renderer = buildRenderer(program, options);
   if (!renderer) return;
 
@@ -433,72 +425,35 @@ export async function $onEmit(
 
   navigateProgram(program, {
     model(model) {
-      if (shouldEmitModel(model)) models.push(model);
+      if (shouldEmitModel(model) && !isMergePatch(program, model))
+        models.push(model);
     },
     enum(en) {
       if (shouldEmitEnum(en)) enums.push(en);
     },
   });
 
-  const hasMergePatchUpdateModels = models.some(isMergePatchUpdateModel);
   const inferredEnums = collectInferredEnums(models, enums, options);
 
   for (const model of models) {
-    const isMergePatchModel = isMergePatchUpdateModel(model);
+    // All models and interfaces share a flat namespace.
+    const classNs = options.modelsNamespace;
+    const interfaceNs = options.interfacesNamespace;
+    // File placement: flat when namespace-from-path is enabled; subdirs otherwise.
     const typespecNs = csharpNamespaceFor(
       model.namespace,
       options,
-      options.modelsEffectiveRootNs,
+      options.effectiveRootNamespace,
     );
-    // When `interfaces-root-namespace` differs from `models-root-namespace`, the
-    // fallback for top-level (unnamespaced) types must be resolved separately so
-    // interface files land under the correct root.
-    const typespecIfaceNs = csharpNamespaceFor(
-      model.namespace,
-      options,
-      options.interfacesEffectiveRootNs,
-    );
-    // When `namespaceFromPath` is enabled and an output-dir is configured,
-    // append the PascalCased dir segments to the TypeSpec namespace so the C#
-    // namespace reflects the physical output path
-    // (e.g. "App.Users" + models-dir "models" → "App.Users.Models").
-    // When no dir is configured, or `namespaceFromPath` is disabled, use the
-    // TypeSpec namespace as-is and let `folderSegments` compute the sub-path.
-    const classNs =
-      options.namespaceFromPath && options.modelsDirSuffix
-        ? `${typespecNs}.${options.modelsDirSuffix}`
-        : typespecNs;
-    const interfaceNs =
-      options.namespaceFromPath && options.interfacesDirSuffix
-        ? `${typespecIfaceNs}.${options.interfacesDirSuffix}`
-        : typespecIfaceNs;
-    // Flatten into the output dir when a suffix was applied; otherwise keep
-    // the folderSegments sub-directory layout.
-    const classFolder =
-      options.namespaceFromPath && options.modelsDirSuffix
-        ? []
-        : folderSegments(options.modelsEffectiveRootNs, typespecNs);
-    const interfaceFolder =
-      options.namespaceFromPath && options.interfacesDirSuffix
-        ? []
-        : folderSegments(options.interfacesEffectiveRootNs, typespecIfaceNs);
+    const classFolder = options.namespaceFromPath
+      ? []
+      : folderSegments(options.effectiveRootNamespace, typespecNs);
+    const interfaceFolder = options.namespaceFromPath
+      ? []
+      : folderSegments(options.effectiveRootNamespace, typespecNs);
     const refs = modelReferences(model);
-    // Pass modelsDirSuffix so that usings for referenced types also resolve to
-    // the correct suffixed namespace.
-    const classUsings = collectUsings(
-      classNs,
-      refs,
-      options,
-      options.modelsDirSuffix,
-      isMergePatchModel,
-    );
-    const interfaceUsings = collectUsings(
-      interfaceNs,
-      refs,
-      options,
-      options.modelsDirSuffix,
-      isMergePatchModel,
-    );
+    const classUsings = collectUsings(classNs, refs, options);
+    const interfaceUsings = collectUsings(interfaceNs, refs, options);
 
     const emittedModelName =
       getServerName(program, model) ?? pascalCase(model.name);
@@ -509,9 +464,7 @@ export async function $onEmit(
         fileName: classFileName,
         namespace: classNs,
         usings: classUsings,
-        body: renderer.renderClass(
-          buildClassView(program, model, options, isMergePatchModel),
-        ),
+        body: renderer.renderClass(buildClassView(program, model, options)),
       }),
     });
 
@@ -531,7 +484,7 @@ export async function $onEmit(
           namespace: interfaceNs,
           usings: interfaceUsings,
           body: renderer.renderInterface(
-            buildInterfaceView(program, model, options, isMergePatchModel),
+            buildInterfaceView(program, model, options),
           ),
         }),
       });
@@ -539,20 +492,15 @@ export async function $onEmit(
   }
 
   for (const en of enums) {
-    // Enums follow the same namespace strategy as model classes.
+    const ns = options.modelsNamespace;
     const typespecEnumNs = csharpNamespaceFor(
       en.namespace,
       options,
-      options.modelsEffectiveRootNs,
+      options.effectiveRootNamespace,
     );
-    const ns =
-      options.namespaceFromPath && options.modelsDirSuffix
-        ? `${typespecEnumNs}.${options.modelsDirSuffix}`
-        : typespecEnumNs;
-    const folder =
-      options.namespaceFromPath && options.modelsDirSuffix
-        ? []
-        : folderSegments(options.modelsEffectiveRootNs, typespecEnumNs);
+    const folder = options.namespaceFromPath
+      ? []
+      : folderSegments(options.effectiveRootNamespace, typespecEnumNs);
     const emittedEnumName = pascalCase(en.name);
     const enumFileName = `${emittedEnumName}${options.fileExtension}`;
     await emitFile(program, {
@@ -602,10 +550,7 @@ export async function $onEmit(
     await emitControllerGroup(program, group, renderer, options);
   }
 
-  // Emit MergePatchValue helper when any MergePatchUpdate models exist (required).
-  if (hasMergePatchUpdateModels) {
-    await emitMergePatchValue(program, renderer, options);
-  }
+  await emitMergePatch(program, renderer, options);
 
   // Emit EnumMemberConverter helper only when emit-helpers is true (optional).
   if (options.emitHelpers) {
@@ -642,6 +587,73 @@ function isStringScalar(type: Type): boolean {
     current = current.baseScalar;
   }
   return false;
+}
+
+/**
+ * Returns `true` when a C# property can realistically hold `null` after
+ * `System.Text.Json` deserialises a request body that omits the field.
+ *
+ * - If the property is TypeSpec-optional, the C# type always has `?` → null.
+ * - If `nullable-properties: true` (the default), every property is `T?` → null.
+ * - Reference types (`string`, `byte[]`, `Uri`, model classes, arrays) hold null
+ *   even without an explicit `?` annotation.
+ * - C# value-type scalars (`bool`, `int`, `Guid`, `DateTimeOffset`, …) mapped from
+ *   TypeSpec scalars or `@format` annotations are **non-nullable** unless either of
+ *   the above conditions applies.
+ */
+function isNullableForValidator(
+  program: Program,
+  prop: ModelProperty,
+  nullableProperties: boolean,
+): boolean {
+  if (prop.optional || nullableProperties) return true;
+
+  const VALUE_TYPE_SCALAR_NAMES = new Set([
+    "boolean",
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "safeint",
+    "integer",
+    "float",
+    "float32",
+    "float64",
+    "decimal",
+    "decimal128",
+    "numeric",
+    "plainDate",
+    "plainTime",
+    "utcDateTime",
+    "offsetDateTime",
+    "duration",
+  ]);
+  const VALUE_TYPE_FORMATS = new Set([
+    "uuid",
+    "guid",
+    "date-time",
+    "date",
+    "time",
+  ]);
+
+  const format = (
+    getFormat(program, prop) ?? getFormat(program, prop.type)
+  )?.toLowerCase();
+  if (format && VALUE_TYPE_FORMATS.has(format)) return false;
+
+  if (prop.type.kind === "Scalar") {
+    let current: Scalar | undefined = prop.type as Scalar;
+    while (current !== undefined) {
+      if (VALUE_TYPE_SCALAR_NAMES.has(current.name)) return false;
+      current = current.baseScalar;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -688,9 +700,12 @@ function getValidatorModelReference(
 function buildSinglePropertyData(
   program: Program,
   prop: ModelProperty,
+  isReadOnly = false,
+  nullableProperties = true,
 ): PropertyData {
   const hasDefault = prop.defaultValue !== undefined;
   const notEmpty =
+    !isReadOnly &&
     !prop.optional &&
     !hasDefault &&
     (isStringScalar(prop.type) || isStringLiteralUnion(prop.type));
@@ -731,6 +746,7 @@ function buildSinglePropertyData(
   const isCollectionReference = modelRef?.isCollection;
 
   const hasRules =
+    isReadOnly ||
     notEmpty ||
     minLength !== undefined ||
     maxLength !== undefined ||
@@ -745,25 +761,28 @@ function buildSinglePropertyData(
     name: getServerName(program, prop) ?? pascalCase(prop.name),
     hasRules,
     notEmpty,
+    isReadOnly: isReadOnly || undefined,
+    nullable: isNullableForValidator(program, prop, nullableProperties),
     minLength,
     maxLength,
     pattern,
     emailAddress,
-    isInEnum,
-    enumTypeName,
-    minValue,
-    maxValue,
-    referencedModelName,
-    referencedParamName,
-    isCollectionReference,
+    isInEnum: isReadOnly ? false : isInEnum,
+    enumTypeName: isReadOnly ? undefined : enumTypeName,
+    minValue: isReadOnly ? undefined : minValue,
+    maxValue: isReadOnly ? undefined : maxValue,
+    referencedModelName: isReadOnly ? undefined : referencedModelName,
+    referencedModel: isReadOnly ? undefined : modelRef?.model,
+    referencedParamName: isReadOnly ? undefined : referencedParamName,
+    isCollectionReference: isReadOnly ? undefined : isCollectionReference,
   };
 }
 
 /**
  * Builds the `PropertyData` array for all properties of a model,
  * respecting lifecycle visibility and an optional version filter.
- * Properties that are not writable (not visible for Create or Update)
- * are always excluded.
+ * Read-only (non-writable) properties are included with `isReadOnly: true`
+ * so validators can emit a rejection rule for them.
  */
 function buildValidatorProperties(
   program: Program,
@@ -771,15 +790,21 @@ function buildValidatorProperties(
   writeMembers: Set<EnumMember>,
   visibilityMember?: EnumMember,
   versionFilter?: (prop: ModelProperty) => boolean,
+  nullableProperties = true,
 ): PropertyData[] {
   const result: PropertyData[] = [];
   for (const [, prop] of model.properties) {
-    // Exclude read-only (non-writable) properties regardless of the lifecycle filter.
-    if (
-      writeMembers.size > 0 &&
-      !isVisible(program, prop, { any: writeMembers })
-    )
+    const isWritable =
+      writeMembers.size === 0 ||
+      isVisible(program, prop, { any: writeMembers });
+
+    if (!isWritable) {
+      // Include read-only property so the validator can reject it.
+      result.push(
+        buildSinglePropertyData(program, prop, true, nullableProperties),
+      );
       continue;
+    }
     if (
       visibilityMember &&
       !isVisible(program, prop, { any: new Set([visibilityMember]) })
@@ -787,7 +812,9 @@ function buildValidatorProperties(
       continue;
     }
     if (versionFilter && !versionFilter(prop)) continue;
-    result.push(buildSinglePropertyData(program, prop));
+    result.push(
+      buildSinglePropertyData(program, prop, false, nullableProperties),
+    );
   }
   return result;
 }
@@ -795,8 +822,8 @@ function buildValidatorProperties(
 /**
  * Builds version-aware property data (base properties + versioned groups)
  * for the `"version-aware"` strategy.
- * Properties that are not writable (not visible for Create or Update)
- * are always excluded.
+ * Read-only (non-writable) properties are included with `isReadOnly: true`
+ * so validators can emit a rejection rule for them.
  */
 function buildVersionAwareValidatorProperties(
   program: Program,
@@ -804,24 +831,34 @@ function buildVersionAwareValidatorProperties(
   writeMembers: Set<EnumMember>,
   visibilityMember: EnumMember | undefined,
   allVersions: Version[],
+  nullableProperties = true,
 ): { baseProperties: PropertyData[]; versionGroups: VersionGroup[] } {
   const baseProperties: PropertyData[] = [];
   const groupMap = new Map<string, PropertyData[]>();
 
   for (const [, prop] of model.properties) {
-    // Exclude read-only (non-writable) properties regardless of the lifecycle filter.
-    if (
-      writeMembers.size > 0 &&
-      !isVisible(program, prop, { any: writeMembers })
-    )
+    const isWritable =
+      writeMembers.size === 0 ||
+      isVisible(program, prop, { any: writeMembers });
+
+    if (!isWritable) {
+      baseProperties.push(
+        buildSinglePropertyData(program, prop, true, nullableProperties),
+      );
       continue;
+    }
     if (
       visibilityMember &&
       !isVisible(program, prop, { any: new Set([visibilityMember]) })
     ) {
       continue;
     }
-    const propData = buildSinglePropertyData(program, prop);
+    const propData = buildSinglePropertyData(
+      program,
+      prop,
+      false,
+      nullableProperties,
+    );
     const availMap = getAvailabilityMap(program, prop);
     if (availMap === undefined) {
       baseProperties.push(propData);
@@ -871,6 +908,8 @@ function makeValidatorVersionFilter(
 
 /** Collects unique `ReferencedValidator` entries from one or more property lists. */
 function deriveReferencedValidators(
+  program: Program,
+  options: ResolvedOptions,
   ...propertyGroups: PropertyData[][]
 ): ReferencedValidator[] {
   const seen = new Set<string>();
@@ -879,8 +918,12 @@ function deriveReferencedValidators(
     for (const p of props) {
       if (p.referencedModelName && !seen.has(p.referencedModelName)) {
         seen.add(p.referencedModelName);
+        const qualifiedModelName = p.referencedModel
+          ? computeModelFqName(program, p.referencedModel, options)
+          : p.referencedModelName;
         result.push({
           modelName: p.referencedModelName,
+          qualifiedModelName,
           paramName: p.referencedParamName!,
         });
       }
@@ -962,12 +1005,19 @@ function collectValidatorModelsFromRoutes(
           ? getMergePatchSource(program, bodyModel)
           : bodyModel;
         if (sourceModel) {
-          patchModels.set(sourceModel, bodyModel.name);
+          const sourceName =
+            getServerName(program, sourceModel) ?? pascalCase(sourceModel.name);
+          const bodyTypeName = isMergePatchBody
+            ? `MergePatch<${sourceName}>`
+            : bodyModel.name;
+          patchModels.set(sourceModel, bodyTypeName);
           // Also register direct descendants, deriving their patch body type name.
           for (const candidate of allModels) {
             if (candidate.baseModel === sourceModel) {
+              const candidateName =
+                getServerName(program, candidate) ?? pascalCase(candidate.name);
               const descBodyTypeName = isMergePatchBody
-                ? `${candidate.name}MergePatchUpdate`
+                ? `MergePatch<${candidateName}>`
                 : candidate.name;
               patchModels.set(candidate, descBodyTypeName);
             }
@@ -987,15 +1037,11 @@ interface EmitValidatorSingleOptions {
   versionNsSuffix?: string;
 }
 
-/**
- * Resolves the C# namespace for a validator file, using the same path-based
- * logic as controllers and services (`validatorsPathNamespace`).
- */
 function resolveValidatorNamespace(
   options: ResolvedOptions,
   versionNsSuffix?: string,
 ): string | undefined {
-  let ns: string | undefined = options.validatorsPathNamespace || undefined;
+  let ns: string | undefined = options.validatorsNamespace || undefined;
   if (versionNsSuffix) {
     ns = ns ? `${ns}.${versionNsSuffix}` : versionNsSuffix;
   }
@@ -1034,6 +1080,9 @@ async function emitValidatorModels(
       emitPatch &&
       (routeModels === undefined || routeModels.patchModels.has(model));
 
+    const qualifiedModelName = computeModelFqName(program, model, options);
+    const modelName = getServerName(program, model) ?? pascalCase(model.name);
+
     if (doPost) {
       const postProps = buildValidatorProperties(
         program,
@@ -1041,18 +1090,20 @@ async function emitValidatorModels(
         writeMembers,
         createMember,
         versionFilter,
+        options.nullableProperties,
       );
-      const postRefs = deriveReferencedValidators(postProps);
+      const postRefs = deriveReferencedValidators(program, options, postProps);
       const data: ValidatorTemplateData = {
         namespace,
-        modelName: model.name,
+        modelName,
+        qualifiedModelName,
         properties: postProps,
         referencedValidators: postRefs.length > 0 ? postRefs : undefined,
       };
       await emitFile(program, {
         path: resolvePath(
           options.validatorsOutputDir,
-          `${versionDir}${model.name}Validator${options.fileExtension}`,
+          `${versionDir}${modelName}Validator${options.fileExtension}`,
         ),
         content: getValidatorPostTemplate(options.templates["validator-post"])(
           data,
@@ -1062,26 +1113,37 @@ async function emitValidatorModels(
 
     if (doPatch) {
       const patchBodyTypeName =
-        routeModels?.patchModels.get(model) ?? model.name;
+        routeModels?.patchModels.get(model) ?? modelName;
+      const isMergePatchBody = patchBodyTypeName.startsWith("MergePatch<");
+      const qualifiedPatchBodyTypeName = isMergePatchBody
+        ? `MergePatch<${qualifiedModelName}>`
+        : qualifiedModelName;
       const patchProps = buildValidatorProperties(
         program,
         model,
         writeMembers,
         updateMember,
         versionFilter,
+        options.nullableProperties,
       );
-      const patchRefs = deriveReferencedValidators(patchProps);
+      const patchRefs = isMergePatchBody
+        ? []
+        : deriveReferencedValidators(program, options, patchProps);
       const data: ValidatorTemplateData = {
         namespace,
-        modelName: model.name,
+        modelName,
+        qualifiedModelName,
         patchBodyTypeName,
+        qualifiedPatchBodyTypeName,
+        helpersNamespace: options.helpersNamespace || undefined,
+        isMergePatchBody: isMergePatchBody || undefined,
         properties: patchProps,
         referencedValidators: patchRefs.length > 0 ? patchRefs : undefined,
       };
       await emitFile(program, {
         path: resolvePath(
           options.validatorsOutputDir,
-          `${versionDir}${model.name}PatchValidator${options.fileExtension}`,
+          `${versionDir}${modelName}PatchValidator${options.fileExtension}`,
         ),
         content: getValidatorPatchTemplate(
           options.templates["validator-patch"],
@@ -1122,6 +1184,9 @@ async function emitVersionAwareValidatorModels(
       emitPatch &&
       (routeModels === undefined || routeModels.patchModels.has(model));
 
+    const qualifiedModelName = computeModelFqName(program, model, options);
+    const modelName = getServerName(program, model) ?? pascalCase(model.name);
+
     if (doPost) {
       const { baseProperties, versionGroups } =
         buildVersionAwareValidatorProperties(
@@ -1130,14 +1195,18 @@ async function emitVersionAwareValidatorModels(
           writeMembers,
           createMember,
           allVersions,
+          options.nullableProperties,
         );
       const postRefs = deriveReferencedValidators(
+        program,
+        options,
         baseProperties,
         ...versionGroups.map((g) => g.properties),
       );
       const data: VersionAwareValidatorTemplateData = {
         namespace,
-        modelName: model.name,
+        modelName,
+        qualifiedModelName,
         allVersions: versionValues,
         defaultVersion,
         baseProperties,
@@ -1147,7 +1216,7 @@ async function emitVersionAwareValidatorModels(
       await emitFile(program, {
         path: resolvePath(
           options.validatorsOutputDir,
-          `${model.name}Validator${options.fileExtension}`,
+          `${modelName}Validator${options.fileExtension}`,
         ),
         content: getValidatorPostVersionAwareTemplate(
           options.templates["validator-post-version-aware"],
@@ -1157,7 +1226,11 @@ async function emitVersionAwareValidatorModels(
 
     if (doPatch) {
       const patchBodyTypeName =
-        routeModels?.patchModels.get(model) ?? model.name;
+        routeModels?.patchModels.get(model) ?? modelName;
+      const isMergePatchBody = patchBodyTypeName.startsWith("MergePatch<");
+      const qualifiedPatchBodyTypeName = isMergePatchBody
+        ? `MergePatch<${qualifiedModelName}>`
+        : qualifiedModelName;
       const { baseProperties, versionGroups } =
         buildVersionAwareValidatorProperties(
           program,
@@ -1165,15 +1238,24 @@ async function emitVersionAwareValidatorModels(
           writeMembers,
           updateMember,
           allVersions,
+          options.nullableProperties,
         );
-      const patchRefs = deriveReferencedValidators(
-        baseProperties,
-        ...versionGroups.map((g) => g.properties),
-      );
+      const patchRefs = isMergePatchBody
+        ? []
+        : deriveReferencedValidators(
+            program,
+            options,
+            baseProperties,
+            ...versionGroups.map((g) => g.properties),
+          );
       const data: VersionAwareValidatorTemplateData = {
         namespace,
-        modelName: model.name,
+        modelName,
+        qualifiedModelName,
         patchBodyTypeName,
+        qualifiedPatchBodyTypeName,
+        helpersNamespace: options.helpersNamespace || undefined,
+        isMergePatchBody: isMergePatchBody || undefined,
         allVersions: versionValues,
         defaultVersion,
         baseProperties,
@@ -1183,7 +1265,7 @@ async function emitVersionAwareValidatorModels(
       await emitFile(program, {
         path: resolvePath(
           options.validatorsOutputDir,
-          `${model.name}PatchValidator${options.fileExtension}`,
+          `${modelName}PatchValidator${options.fileExtension}`,
         ),
         content: getValidatorPatchVersionAwareTemplate(
           options.templates["validator-patch-version-aware"],
@@ -1215,13 +1297,17 @@ async function emitValidatorsInitializer(
 
   const registrations: ValidatorRegistration[] = [];
   for (const model of allModels) {
+    const qualifiedModelName = computeModelFqName(program, model, options);
+    const modelName = getServerName(program, model) ?? pascalCase(model.name);
+
     if (
       emitPost &&
       (routeModels === undefined || routeModels.postModels.has(model))
     ) {
       registrations.push({
-        modelTypeName: model.name,
-        validatorName: `${model.name}Validator`,
+        modelTypeName: modelName,
+        qualifiedModelTypeName: qualifiedModelName,
+        validatorName: `${modelName}Validator`,
       });
     }
     if (
@@ -1229,18 +1315,22 @@ async function emitValidatorsInitializer(
       (routeModels === undefined || routeModels.patchModels.has(model))
     ) {
       const patchBodyTypeName =
-        routeModels?.patchModels.get(model) ?? model.name;
+        routeModels?.patchModels.get(model) ?? modelName;
+      const isMergePatchBody = patchBodyTypeName.startsWith("MergePatch<");
+      const qualifiedModelTypeName = isMergePatchBody
+        ? `${options.helpersNamespace}.MergePatch<${qualifiedModelName}>`
+        : qualifiedModelName;
       registrations.push({
         modelTypeName: patchBodyTypeName,
-        validatorName: `${model.name}PatchValidator`,
+        qualifiedModelTypeName,
+        validatorName: `${modelName}PatchValidator`,
       });
     }
   }
 
   if (registrations.length === 0) return;
 
-  let namespace: string | undefined =
-    options.validatorsPathNamespace || undefined;
+  let namespace: string | undefined = options.validatorsNamespace || undefined;
   if (versionNsSuffix) {
     namespace = namespace ? `${namespace}.${versionNsSuffix}` : versionNsSuffix;
   }
@@ -1450,19 +1540,14 @@ async function emitControllerGroup(
 ): Promise<void> {
   const { controllerView, serviceView } = group;
 
-  // When namespace-from-path is enabled, derive namespaces from the output
-  // folder path and flatten files into the configured output dirs (no sub-folders).
-  const ctrlNamespace = options.namespaceFromPath
-    ? options.controllersPathNamespace
-    : group.namespace;
-  const svcNamespace = options.namespaceFromPath
-    ? options.servicesPathNamespace
-    : group.namespace;
-  const folder = options.namespaceFromPath ? [] : group.folder;
+  const ctrlNamespace = options.controllersNamespace;
+  const svcNamespace = options.servicesNamespace;
+  const folder: string[] = [];
 
   if (options.emitControllers) {
     const controllerFileName = `${controllerView.controllerName}${options.fileExtension}`;
     const ctrlUsings = buildControllerUsings(
+      program,
       options,
       group.references,
       ctrlNamespace,
@@ -1485,6 +1570,7 @@ async function emitControllerGroup(
   if (options.emitServices) {
     const serviceInterfaceFileName = `${serviceView.interfaceName}${options.fileExtension}`;
     const svcUsings = buildServiceUsings(
+      program,
       options,
       group.references,
       svcNamespace,
@@ -1514,19 +1600,19 @@ async function emitControllerGroup(
  * @param renderer - Pre-compiled renderer instance.
  * @param options - Resolved emitter options.
  */
-async function emitMergePatchValue(
+async function emitMergePatch(
   program: Program,
   renderer: Renderer,
   options: ResolvedOptions,
 ): Promise<void> {
-  const mergePatchFileName = `MergePatchValue${options.fileExtension}`;
+  const mergePatchFileName = `MergePatch${options.fileExtension}`;
   await emitFile(program, {
     path: resolvePath(options.helpersOutputDir, mergePatchFileName),
     content: renderer.renderFile({
       fileName: mergePatchFileName,
       namespace: options.helpersNamespace,
-      usings: sortUsings(new Set(HELPER_USINGS)),
-      body: renderer.renderMergePatchValue(),
+      usings: sortUsings(new Set(MERGE_PATCH_USINGS)),
+      body: renderer.renderMergePatch(),
     }),
   });
 }
@@ -1560,14 +1646,17 @@ async function emitEnumMemberConverter(
  * Builds the sorted list of `using` namespaces for a generated controller file.
  *
  * Includes {@link CONTROLLER_USINGS}, any `additional-usings` from options,
- * and namespaces for all types referenced by the operations.
+ * namespaces for all types referenced by the operations, and the helpers
+ * namespace when any reference is a `MergePatch<T>` body type.
  *
+ * @param program - The compiled TypeSpec program (needed for MergePatch detection).
  * @param options - Resolved emitter options (additional usings).
  * @param references - TypeSpec types referenced by controller operations.
  * @param ownNamespace - The C# namespace of the controller file being emitted.
  * @returns Sorted, deduplicated array of `using` namespace strings.
  */
 function buildControllerUsings(
+  program: Program,
   options: ResolvedOptions,
   references: Type[],
   ownNamespace: string,
@@ -1576,18 +1665,16 @@ function buildControllerUsings(
   if (options.cancellationToken) usings.add("System.Threading");
   for (const u of options.additionalUsings) usings.add(u);
   for (const ref of references) {
-    for (const type of collectReferencedTypes(ref)) {
-      const typespecNs = csharpNamespaceFor(
-        type.namespace,
-        options,
-        options.modelsEffectiveRootNs,
-      );
-      // When namespace-from-path is enabled, apply the appropriate directory suffix
-      // (modelsDirSuffix for models/enums that go in the models output dir)
-      const ns =
-        options.namespaceFromPath && options.modelsDirSuffix && typespecNs
-          ? `${typespecNs}.${options.modelsDirSuffix}`
-          : typespecNs;
+    if (ref.kind === "Model" && isMergePatch(program, ref as Model)) {
+      if (
+        options.helpersNamespace &&
+        options.helpersNamespace !== ownNamespace
+      ) {
+        usings.add(options.helpersNamespace);
+      }
+    }
+    for (const _type of collectReferencedTypes(ref)) {
+      const ns = options.modelsNamespace;
       if (ns && ns !== ownNamespace) usings.add(ns);
     }
   }
@@ -1598,14 +1685,17 @@ function buildControllerUsings(
  * Builds the sorted list of `using` namespaces for a generated service interface file.
  *
  * Includes base service usings (System, System.Collections.Generic, System.Threading.Tasks),
- * any `additional-usings` from options, and namespaces for all types referenced by operations.
+ * any `additional-usings` from options, namespaces for all types referenced by operations,
+ * and the helpers namespace when any reference is a `MergePatch<T>` body type.
  *
+ * @param program - The compiled TypeSpec program (needed for MergePatch detection).
  * @param options - Resolved emitter options (additional usings).
  * @param references - TypeSpec types referenced by service operations.
  * @param ownNamespace - The C# namespace of the service file being emitted.
  * @returns Sorted, deduplicated array of `using` namespace strings.
  */
 function buildServiceUsings(
+  program: Program,
   options: ResolvedOptions,
   references: Type[],
   ownNamespace: string,
@@ -1614,18 +1704,16 @@ function buildServiceUsings(
   if (options.cancellationToken) usings.add("System.Threading");
   for (const u of options.additionalUsings) usings.add(u);
   for (const ref of references) {
-    for (const type of collectReferencedTypes(ref)) {
-      const typespecNs = csharpNamespaceFor(
-        type.namespace,
-        options,
-        options.modelsEffectiveRootNs,
-      );
-      // When namespace-from-path is enabled, apply the appropriate directory suffix
-      // (modelsDirSuffix for models/enums that go in the models output dir)
-      const ns =
-        options.namespaceFromPath && options.modelsDirSuffix && typespecNs
-          ? `${typespecNs}.${options.modelsDirSuffix}`
-          : typespecNs;
+    if (ref.kind === "Model" && isMergePatch(program, ref as Model)) {
+      if (
+        options.helpersNamespace &&
+        options.helpersNamespace !== ownNamespace
+      ) {
+        usings.add(options.helpersNamespace);
+      }
+    }
+    for (const _type of collectReferencedTypes(ref)) {
+      const ns = options.modelsNamespace;
       if (ns && ns !== ownNamespace) usings.add(ns);
     }
   }
@@ -1711,13 +1799,18 @@ function findFailingTemplatePath(
  * pathNamespace("MyApp", "Controllers") // → "MyApp.Controllers"
  * pathNamespace(undefined, "Services")  // → "Services"
  */
-function pathNamespace(rootNs: string | undefined, rawDir: string): string {
-  const segments = rawDir
-    .replace(/\\/g, "/")
-    .split("/")
-    .filter(Boolean)
-    .map(pascalCase);
-  return rootNs ? [rootNs, ...segments].join(".") : segments.join(".");
+/**
+ * Returns the fully-qualified C# class name for a model, using the same
+ * namespace logic as class file emission (TypeSpec namespace + optional dir suffix).
+ */
+function computeModelFqName(
+  program: Program,
+  model: Model,
+  options: ResolvedOptions,
+): string {
+  const classNs = options.modelsNamespace;
+  const className = getServerName(program, model) ?? pascalCase(model.name);
+  return classNs ? `${classNs}.${className}` : className;
 }
 
 /**
@@ -1801,37 +1894,43 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
   const validatorsDir = raw["validators-output-dir"] ?? "Validators";
   const rootNs = raw["root-namespace"];
   // When the user does not supply root-namespace, infer it from the TypeSpec
-  // namespace tree so that controller, service, and helper files automatically
-  // receive a properly-qualified namespace (e.g. "MyApp.Controllers" rather
-  // than just "Controllers").
+  // namespace tree so that generated files automatically receive a
+  // properly-qualified namespace (e.g. "MyApp.Controllers").
   const effectiveRootNs = rootNs ?? inferRootNamespace(context.program);
-  // Per-section effective roots — fall back to the global effective root when not set.
-  const modelsEffectiveRootNs = raw["models-root-namespace"] ?? effectiveRootNs;
-  const interfacesEffectiveRootNs =
-    raw["interfaces-root-namespace"] ?? effectiveRootNs;
-  const controllersRootNs =
-    raw["controllers-root-namespace"] ?? effectiveRootNs;
-  const servicesRootNs = raw["services-root-namespace"] ?? effectiveRootNs;
-  const validatorsRootNs = raw["validators-root-namespace"] ?? effectiveRootNs;
-  // Determine if we should use namespace-from-path mode
-  const useNamespaceFromPath = raw["namespace-from-path"] ?? true;
-  // When namespace-from-path is enabled, always compute the dir suffixes
-  // to include output directories in namespaces. Otherwise, leave them empty.
-  const modelsDirSuffix = useNamespaceFromPath
-    ? pathNamespace(undefined, modelsDir)
-    : "";
-  const interfacesDirSuffix = useNamespaceFromPath
-    ? pathNamespace(undefined, interfacesDir)
-    : "";
+  // Determine if we should use namespace-from-path mode (controls file placement only).
+  const useNamespaceFromPath = raw["namespace-from-path"] ?? false;
+
+  // Each section has an explicit namespace option. When not set, synthesize
+  // from effectiveRootNs + the conventional suffix segment.
+  const modelsNamespace =
+    raw["models-namespace"] ??
+    (effectiveRootNs ? `${effectiveRootNs}.Models` : "Models");
+  const controllersNamespace =
+    raw["controllers-namespace"] ??
+    (effectiveRootNs ? `${effectiveRootNs}.Controllers` : "Controllers");
+  const servicesNamespace =
+    raw["services-namespace"] ??
+    (effectiveRootNs ? `${effectiveRootNs}.Services` : "Services");
+  const validatorsNamespace =
+    raw["validators-namespace"] ??
+    (effectiveRootNs ? `${effectiveRootNs}.Validators` : "Validators");
+  const helpersNamespace =
+    raw["helpers-namespace"] ??
+    (effectiveRootNs ? `${effectiveRootNs}.Helpers` : "Helpers");
+
   return {
     rootNamespace: rootNs,
     effectiveRootNamespace: effectiveRootNs,
-    modelsEffectiveRootNs,
-    interfacesEffectiveRootNs,
+    modelsNamespace,
+    interfacesNamespace: modelsNamespace,
+    controllersNamespace,
+    servicesNamespace,
+    validatorsNamespace,
+    helpersNamespace,
     namespaceMap,
     fileExtension: raw["file-extension"] ?? ".g.cs",
     modelsOutputDir: resolvePath(baseDir, modelsDir),
-    emitInterfaces: raw["emit-interfaces"] ?? true,
+    emitInterfaces: raw["emit-interfaces"] ?? false,
     interfacesOutputDir: resolvePath(baseDir, interfacesDir),
     emitControllers: raw["emit-controllers"] ?? true,
     controllersOutputDir: resolvePath(baseDir, controllersDir),
@@ -1841,22 +1940,15 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     helpersOutputDir: resolvePath(baseDir, helpersDir),
     routePrefix: raw["route-prefix"] ?? "api/{version}",
     namespaceFromPath: useNamespaceFromPath,
-    modelsDirSuffix,
-    interfacesDirSuffix,
-    controllersPathNamespace: pathNamespace(controllersRootNs, controllersDir),
-    servicesPathNamespace: pathNamespace(servicesRootNs, servicesDir),
-    helpersNamespace: pathNamespace(effectiveRootNs, helpersDir),
     additionalUsings: raw["additional-usings"] ?? [],
     nullableProperties: raw["nullable-properties"] ?? true,
     abstractSuffix: raw["abstract-suffix"] ?? "Base",
     cancellationToken: raw["cancellation-token"] ?? true,
     templates: resolveTemplatePaths(raw.templates),
     emitValidators: raw["emit-validators"] ?? false,
-    validatorsPathNamespace: pathNamespace(validatorsRootNs, validatorsDir),
     validatorsOutputDir: resolvePath(baseDir, validatorsDir),
     validatorsTypes: raw["validators"] ?? "both",
     validatorsVersionStrategy: raw["validators-version-strategy"],
-    cleanOutputDir: raw["clean-output-dir"] ?? true,
   };
 }
 
@@ -1879,7 +1971,7 @@ function resolveTemplatePaths(
     "enum",
     "controller",
     "service-interface",
-    "merge-patch-value",
+    "merge-patch",
     "enum-member-converter",
     "validator-post",
     "validator-patch",
@@ -2090,31 +2182,12 @@ function collectUsings(
   ownNamespace: string,
   references: Type[],
   options: ResolvedOptions,
-  /** The dir-suffix currently applied to the emitting file's namespace. */
-  dirSuffix = "",
-  usesMergePatchValue = false,
 ): string[] {
   const usings = new Set<string>(SYSTEM_USINGS);
   for (const u of options.additionalUsings) usings.add(u);
-  for (const ref of references) {
-    for (const type of collectReferencedTypes(ref)) {
-      const typespecNs = csharpNamespaceFor(
-        type.namespace,
-        options,
-        options.modelsEffectiveRootNs,
-      );
-      // When a dir-suffix has been applied to the emitting file's namespace,
-      // the same suffix must be applied to referenced types so that
-      // using-directives point at the correct C# namespace.
-      const ns =
-        options.namespaceFromPath && dirSuffix && typespecNs
-          ? `${typespecNs}.${dirSuffix}`
-          : typespecNs;
-      if (ns && ns !== ownNamespace) usings.add(ns);
-    }
-  }
-  if (usesMergePatchValue && options.helpersNamespace !== ownNamespace) {
-    usings.add(options.helpersNamespace);
+  for (const _ref of references) {
+    const ns = options.modelsNamespace;
+    if (ns && ns !== ownNamespace) usings.add(ns);
   }
   return sortUsings(usings);
 }
@@ -2153,71 +2226,20 @@ function buildClassView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
-  isMergePatchModel: boolean,
 ): ClassView {
   const className = getServerName(program, model) ?? pascalCase(model.name);
-
-  let patchMethod: PatchMethodView | undefined;
-  if (isMergePatchModel) {
-    const sourceModel = getMergePatchSource(program, model);
-    if (sourceModel) {
-      const sourcePropTypes = new Map<string, string>();
-      for (const sp of sourceModel.properties.values()) {
-        sourcePropTypes.set(
-          sp.name,
-          propertyTypeName(program, sourceModel, sp, options, false),
-        );
-      }
-
-      const properties: PatchablePropertyView[] = [];
-      const skippedProperties: SkippedPropertyView[] = [];
-
-      for (const prop of model.properties.values()) {
-        const fullPatchType = propertyTypeName(
-          program,
-          model,
-          prop,
-          options,
-          true,
-        );
-        const patchInnerType =
-          fullPatchType.startsWith("MergePatchValue<") &&
-          fullPatchType.endsWith(">")
-            ? fullPatchType.slice("MergePatchValue<".length, -1)
-            : fullPatchType;
-
-        const entityType = sourcePropTypes.get(prop.name);
-        const propName = getServerName(program, prop) ?? pascalCase(prop.name);
-
-        if (entityType !== undefined && patchInnerType === entityType) {
-          properties.push({ name: propName });
-        } else if (entityType !== undefined) {
-          skippedProperties.push({
-            name: propName,
-            patchInnerType,
-            entityType,
-          });
-        }
-      }
-
-      patchMethod = {
-        targetType:
-          getServerName(program, sourceModel) ?? pascalCase(sourceModel.name),
-        properties,
-        skippedProperties,
-      };
-    }
-  }
+  const safeClassName = className.startsWith("@")
+    ? className.slice(1)
+    : className;
 
   return {
     doc: docFor(program, model),
     className,
-    interfaceName: `I${className.startsWith("@") ? className.slice(1) : className}`,
+    interfaceName: options.emitInterfaces ? `I${safeClassName}` : undefined,
     baseClass: model.baseModel
       ? typeReference(model.baseModel, program)
       : undefined,
-    properties: buildPropertyViews(program, model, options, isMergePatchModel),
-    patchMethod,
+    properties: buildPropertyViews(program, model, options),
   };
 }
 
@@ -2233,7 +2255,6 @@ function buildInterfaceView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
-  isMergePatchModel: boolean,
 ): InterfaceView {
   const ifaceName = getServerName(program, model) ?? pascalCase(model.name);
   const baseIfaceName = model.baseModel
@@ -2246,7 +2267,7 @@ function buildInterfaceView(
     baseInterface: baseIfaceName
       ? `I${baseIfaceName.startsWith("@") ? baseIfaceName.slice(1) : baseIfaceName}`
       : undefined,
-    properties: buildPropertyViews(program, model, options, isMergePatchModel),
+    properties: buildPropertyViews(program, model, options),
   };
 }
 
@@ -2323,30 +2344,38 @@ function buildPropertyViews(
   program: Program,
   model: Model,
   options: ResolvedOptions,
-  isMergePatchModel: boolean,
 ): PropertyView[] {
   return [...model.properties.values()].map((prop) => {
-    const type = propertyTypeName(
-      program,
-      model,
-      prop,
-      options,
-      isMergePatchModel,
-    );
+    const type = propertyTypeName(program, model, prop, options);
+    const inferredEnumType = inferredEnumTypeNameForProperty(model, prop);
     return {
       doc: docFor(program, prop),
       type,
       name: getServerName(program, prop) ?? pascalCase(prop.name),
       jsonName: camelCase(prop.name),
       nullable: type.endsWith("?"),
-      initializer:
-        isMergePatchModel && type.startsWith("MergePatchValue<")
-          ? `${type}.Absent`
-          : prop.defaultValue !== undefined
-            ? defaultValueInitializer(prop.defaultValue)
-            : undefined,
+      initializer: resolveInitializer(prop.defaultValue, inferredEnumType),
     };
   });
+}
+
+/**
+ * Resolves a C# property initializer expression for a default value.
+ *
+ * When the property has an inferred enum type and the default is a string
+ * literal (anonymous string union), converts `"available"` → `PetStatus.Available`
+ * instead of the raw string. Falls back to {@link defaultValueInitializer} for
+ * all other cases.
+ */
+function resolveInitializer(
+  value: Value | undefined,
+  inferredEnumType: string | undefined,
+): string | undefined {
+  if (value === undefined) return undefined;
+  if (inferredEnumType && value.valueKind === "StringValue") {
+    return `${inferredEnumType}.${pascalCase(value.value)}`;
+  }
+  return defaultValueInitializer(value);
 }
 
 /**
@@ -2381,7 +2410,6 @@ function propertyTypeName(
   model: Model,
   prop: ModelProperty,
   options: ResolvedOptions,
-  isMergePatchModel: boolean,
 ): string {
   const propFormat = getFormat(program, prop);
   const scalarFormat =
@@ -2391,19 +2419,11 @@ function propertyTypeName(
   if (format && FORMAT_MAP[format.toLowerCase()]) {
     type = FORMAT_MAP[format.toLowerCase()];
   } else {
-    const inferredEnumType = inferredEnumTypeNameForProperty(
-      model,
-      prop,
-      isMergePatchModel,
-    );
+    const inferredEnumType = inferredEnumTypeNameForProperty(model, prop);
     type = inferredEnumType ?? typeReference(prop.type, program);
   }
   const nullable = prop.optional || options.nullableProperties;
-  const nullableType = nullable && !type.endsWith("?") ? `${type}?` : type;
-  if (isMergePatchModel) {
-    return `MergePatchValue<${nullableType}>`;
-  }
-  return nullableType;
+  return nullable && !type.endsWith("?") ? `${type}?` : type;
 }
 
 /**
@@ -2415,14 +2435,9 @@ function propertyTypeName(
 function inferredEnumTypeNameForProperty(
   model: Model,
   prop: ModelProperty,
-  isMergePatchModel: boolean,
 ): string | undefined {
   if (!getStringLiteralUnionValues(prop.type)) return undefined;
-
-  const modelStem = isMergePatchModel
-    ? model.name.replace(/MergePatchUpdate$/i, "")
-    : model.name;
-  return `${pascalCase(modelStem)}${pascalCase(prop.name)}`;
+  return `${pascalCase(model.name)}${pascalCase(prop.name)}`;
 }
 
 /**
@@ -2453,46 +2468,22 @@ function collectInferredEnums(
   options: ResolvedOptions,
 ): InferredEnum[] {
   const byKey = new Map<string, InferredEnum>();
+  const ns = options.modelsNamespace;
   const explicitEnumKeys = new Set(
-    explicitEnums.map((en) => {
-      const typespecNs = csharpNamespaceFor(
-        en.namespace,
-        options,
-        options.modelsEffectiveRootNs,
-      );
-      const ns =
-        options.namespaceFromPath && options.modelsDirSuffix
-          ? `${typespecNs}.${options.modelsDirSuffix}`
-          : typespecNs;
-      return `${ns}.${pascalCase(en.name)}`;
-    }),
+    explicitEnums.map((en) => `${ns}.${pascalCase(en.name)}`),
   );
 
   for (const model of models) {
-    const isMergePatchModel = isMergePatchUpdateModel(model);
-    const typespecNs = csharpNamespaceFor(
-      model.namespace,
-      options,
-      options.modelsEffectiveRootNs,
-    );
-    const ns =
-      options.namespaceFromPath && options.modelsDirSuffix
-        ? `${typespecNs}.${options.modelsDirSuffix}`
-        : typespecNs;
-    const folder =
-      options.namespaceFromPath && options.modelsDirSuffix
-        ? []
-        : folderSegments(options.modelsEffectiveRootNs, typespecNs);
+    const typespecNs = csharpNamespaceFor(model.namespace, options);
+    const folder = options.namespaceFromPath
+      ? []
+      : folderSegments(options.effectiveRootNamespace, typespecNs);
 
     for (const prop of model.properties.values()) {
       const values = getStringLiteralUnionValues(prop.type);
       if (!values) continue;
 
-      const name = inferredEnumTypeNameForProperty(
-        model,
-        prop,
-        isMergePatchModel,
-      );
+      const name = inferredEnumTypeNameForProperty(model, prop);
       if (!name) continue;
 
       const key = `${ns}.${name}`;
@@ -2517,21 +2508,6 @@ function buildInferredEnumView(inferred: InferredEnum): EnumView {
       memberValue: value,
     })),
   };
-}
-
-/**
- * Returns `true` when a model's name ends with `"MergePatchUpdate"` (case-insensitive),
- * matching the `{ResourceName}MergePatchUpdate` convention used by `@typespec/http`.
- *
- * Merge-patch models have every property wrapped in `MergePatchValue<T>` so that
- * RFC 7396 semantics — distinguishing an absent field from an explicit `null` —
- * are preserved end-to-end.
- *
- * @param model - The TypeSpec model to check.
- * @returns `true` if the model represents a merge-patch update payload.
- */
-function isMergePatchUpdateModel(model: Model): boolean {
-  return /MergePatchUpdate$/i.test(model.name);
 }
 
 /**
@@ -2565,6 +2541,14 @@ function typeReference(type: Type, program?: Program): string {
       }
       if (isRecordModelType(type)) {
         return `IDictionary<string, ${typeReference(type.indexer.value, program)}>`;
+      }
+      if (program && isMergePatch(program, type)) {
+        const source = getMergePatchSource(program, type);
+        if (source) {
+          const sourceName =
+            getServerName(program, source) ?? pascalCase(source.name);
+          return `MergePatch<${sourceName}>`;
+        }
       }
       return (
         (program ? getServerName(program, type) : undefined) ??

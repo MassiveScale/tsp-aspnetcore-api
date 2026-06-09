@@ -17,14 +17,21 @@ namespace {{{namespace}}};
 /// Extend this partial class to add custom validation rules.
 /// </summary>
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial class {{{modelName}}}Validator : AbstractValidator<{{{modelName}}}>
+public partial class {{{modelName}}}Validator : AbstractValidator<{{{qualifiedModelName}}}>
 {
     /// <summary>
     /// Initializes a new instance of <see cref="{{{modelName}}}Validator"/> with the auto-generated rules.
     /// </summary>
-    public {{{modelName}}}Validator({{#each referencedValidators}}{{#unless @first}}, {{/unless}}AbstractValidator<{{{modelName}}}> {{{paramName}}}{{/each}})
+    public {{{modelName}}}Validator({{#each referencedValidators}}{{#unless @first}}, {{/unless}}AbstractValidator<{{{qualifiedModelName}}}> {{{paramName}}}{{/each}})
     {
 {{#each properties}}
+{{#if isReadOnly}}
+{{#if nullable}}
+        // {{{name}}} is read-only and must not be set on creation
+        RuleFor(x => x.{{{name}}}).Null();
+
+{{/if}}
+{{else}}
 {{#if notEmpty}}
         // {{{name}}} is required
         RuleFor(x => x.{{{name}}}).NotEmpty();
@@ -74,6 +81,7 @@ public partial class {{{modelName}}}Validator : AbstractValidator<{{{modelName}}
         // {{{name}}} is validated recursively
         RuleFor(x => x.{{{name}}}).SetValidator({{{referencedParamName}}});
 
+{{/if}}
 {{/if}}
 {{/if}}
 {{/each}}

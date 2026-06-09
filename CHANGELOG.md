@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-06
+
 ### Changed
 
 - `@serverName` is no longer supported on `enum` types or `enum` members. Applying it to a TypeSpec `enum` or enum member now produces a compile-time error. Use `@serverName` on `model` or `model property` targets only. Enum files and enum member identifiers continue to use the PascalCased TypeSpec names.
@@ -12,27 +14,43 @@ All notable changes to this project will be documented in this file.
 - Controller and service type resolution now honors model `@serverName` overrides. Request/response body parameter types and return types in generated controller/service signatures now match the renamed model identifier.
 - Interface filename generation is now consistent with interface type naming for verbatim identifiers. For a model renamed to `@name`, interface output is emitted as `Iname.g.cs` to match `interface Iname`.
 - Validator dependency injection constructor parameters and `referencedValidators` entries now derive their names from `@serverName` when the referenced model has one. Previously the raw TypeSpec model name was used, causing validators to reference non-existent C# identifiers when the model was renamed.
+- `MergePatchUpdate<T>` models are no longer emitted as individual C# classes. The emitter replaces any PATCH body whose TypeSpec type is (or extends) `MergePatchUpdate<T>` with the generic `MergePatch<T>` helper in controller and validator signatures. This eliminates per-model boilerplate and reduces generated output size. The `MergePatch<T>` helper is emitted once per project into the helpers directory and exposes `IsDefined`, `IsNull`, `GetString`, `TryGetValue`, and `DefinedProperties` for RFC 7396-conformant patch handling.
+- Validators now always use fully-qualified C# type names in `AbstractValidator<T>`, constructor parameter types, and `ValidatorsInitializer` registrations. Previously the short model name was used, which produced uncompilable output when the validator namespace differed from the model namespace.
+- `namespace-from-path: false` is now correctly respected in validator files. Previously, validators always included the output directory suffix in their namespace even when `namespace-from-path` was disabled.
+- `emit-interfaces` now defaults to `false`. Interfaces are no longer generated unless `emit-interfaces: true` is set in `tspconfig.yaml`.
+- `namespace-from-path` now defaults to `false`. Output-directory segments are no longer automatically appended to C# namespaces. Set `namespace-from-path: true` to restore the previous behaviour.
 
-## [1.8.0] - 2026-06-06
+### Changed (continued)
+
+- Per-section namespace options renamed and redesigned. The old `*-root-namespace` options (`controllers-root-namespace`, `services-root-namespace`, `validators-root-namespace`, `models-root-namespace`, `interfaces-root-namespace`) are removed. Replacements are `controllers-namespace`, `services-namespace`, `validators-namespace`, `models-namespace`, and `helpers-namespace` (new). Each option now sets the C# namespace **verbatim** for its section — no output-directory suffix is appended. When unset, each section defaults to `<root-namespace>.<Section>` (e.g. `App.Models`, `App.Controllers`). Interfaces always share the models namespace and no longer have a dedicated option.
+- `namespace-from-path` now controls **file placement only**. It no longer affects C# namespace strings in any generated file. When `true`, all files are placed flat inside their output directory. When `false` (the default), files are placed in subdirectories derived from the TypeSpec namespace with the root namespace prefix stripped.
+- `namespace-map` now affects **file placement** (folder path computation) only. It no longer changes the C# namespace written into generated files. The mapped TypeSpec namespace is used to compute the output subdirectory when `namespace-from-path` is `false`.
+- `When(() => IsAtLeast(...))` in version-aware validator templates corrected to `When(_ => IsAtLeast(...))` so the lambda signature matches FluentValidation's `Func<T, bool>` overload.
+
+### Fixed
+
+- `RuleFor(x => x.{Prop}).Null()` is no longer emitted for non-nullable value-type properties (e.g. `bool`, `int`, `Guid`, `DateTimeOffset`) on POST validators. FluentValidation's `.Null()` rule always fails for non-nullable value types; the emitter now skips the rule for such properties. The constraint is still emitted for reference-type and nullable properties.
+
+## [0.7.0] - 2026-06-06
 
 ### Added
 
 - `@serverName` decorator: overrides the C# identifier for models and model properties. For models it also changes the generated file name **and** updates all generated references to that model (including property types, base classes, and controller/service signatures). `JsonPropertyName` attribute values are unchanged.
 - `Patch(TEntity target)` method on generated MergePatch classes. Applies all present fields from the patch to an existing entity instance in-place — only properties that were explicitly set in the JSON Merge Patch payload (`IsPresent == true`) are copied; absent properties leave the target unchanged. Mirrors the `Delta<T>.Patch()` pattern from `Microsoft.AspNetCore.OData`. Properties whose `MergePatchValue<T>` inner type differs from the corresponding entity property type (e.g. nested-model array properties that use a `ReplaceOnly` variant) are excluded from the generated assignments; a comment identifies each skipped property and its type mismatch so developers know what to handle manually.
 
-## [1.7.0] - 2026-05-30
+## [0.6.0] - 2026-05-30
 
 ### Added
 
 - `route-prefix` option: an optional string prefix prepended to every generated controller route. Supports `{version}` tokens — when the spec is versioned and `route-prefix` contains `{version}`, the token is replaced with each version's route value (e.g. `api/{version}` → `[Route("api/v1/pets")]`). Repeated slashes produced by prefix/path concatenation are normalized automatically.
 
-## [1.6.0] - 2026-05-28
+## [0.5.0] - 2026-05-28
 
 ### Added
 
 - `cancellation-token` option (default `true`): adds `CancellationToken cancellationToken` to every generated controller action and service method, and emits `using System.Threading;` in controller and service files. Set `cancellation-token: false` in `tspconfig.yaml` to opt out.
 
-## [1.5.0] - 2026-05-15
+## [0.4.0] - 2026-05-15
 
 ### Fixed
 
@@ -65,7 +83,7 @@ All notable changes to this project will be documented in this file.
 - Added `SERVICE_USINGS` constant, consistent with `SYSTEM_USINGS`, `CONTROLLER_USINGS`, and other `*_USINGS` constants.
 - Updated `renderer.ts` to use the `node:` module-protocol prefix on built-in imports, matching the style already used in `emitter.ts`.
 
-## [1.3.0] - 2026-05-15
+## [0.3.0] - 2026-05-15
 
 ### Added
 
@@ -80,7 +98,7 @@ All notable changes to this project will be documented in this file.
 - Version-aware validators embed `ResolveApiVersion` and apply later-version rules conditionally via `When(() => IsAtLeast(...))` guards. They accept `IHttpContextAccessor` to read the version from the route, `api-version` header, or `api-version` query parameter.
 - New options: `emit-validators`, `validators`, `validators-output-dir`, `validators-output-subdirectory`, `validators-version-strategy`.
 
-## [1.2.0] - 2026-05-12
+## [0.2.0] - 2026-05-12
 
 ### Added
 
@@ -93,7 +111,7 @@ All notable changes to this project will be documented in this file.
 - `@error` models are excluded from service return types entirely — errors are surfaced as exceptions and must not be returned by service methods.
 - Added `eq` Handlebars helper to the template environment, enabling `{{#if (eq returnType "void")}}` in custom service templates.
 
-## [1.1.0] - 2026-05-10
+## [0.1.0] - 2026-05-10
 
 ### Fixed
 

@@ -40,8 +40,8 @@ public static class ValidatorsInitializer
     {
 {{#each registrations}}
         services.AddScoped<{{{validatorName}}}>();
-        services.AddScoped<AbstractValidator<{{{modelTypeName}}}>>(sp => sp.GetRequiredService<{{{validatorName}}}>());
-        services.AddScoped<IValidator<{{{modelTypeName}}}>>(sp => sp.GetRequiredService<{{{validatorName}}}>());
+        services.AddScoped<AbstractValidator<{{{qualifiedModelTypeName}}}>>(sp => sp.GetRequiredService<{{{validatorName}}}>());
+        services.AddScoped<IValidator<{{{qualifiedModelTypeName}}}>>(sp => sp.GetRequiredService<{{{validatorName}}}>());
 
 {{/each}}
         return services;

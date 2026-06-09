@@ -31,7 +31,7 @@ export type TemplateName =
   | "enum"
   | "controller"
   | "service-interface"
-  | "merge-patch-value"
+  | "merge-patch"
   | "enum-member-converter"
   | "validator-post"
   | "validator-patch"
@@ -98,8 +98,8 @@ export interface ClassView {
   doc?: string;
   /** PascalCase class name. */
   className: string;
-  /** Name of the generated companion interface, e.g. `"IUser"`. */
-  interfaceName: string;
+  /** Name of the generated companion interface, e.g. `"IUser"`. Omit when interfaces are disabled. */
+  interfaceName?: string;
   /** Name of the C# base class if the TypeSpec model extends another model. */
   baseClass?: string;
   /** Ordered list of property view models for this class. */
@@ -265,8 +265,8 @@ export interface Renderer {
   renderController(view: ControllerView): string;
   /** Renders a `public interface I<Name>Service` declaration. */
   renderServiceInterface(view: ServiceView): string;
-  /** Renders the static `MergePatchValue<T>` helper class body. */
-  renderMergePatchValue(): string;
+  /** Renders the generic `MergePatch<T>` helper class body. */
+  renderMergePatch(): string;
   /** Renders the `EnumMemberConverterFactory` and `EnumMemberConverter<T>` helper class body. */
   renderEnumMemberConverter(): string;
 }
@@ -586,8 +586,8 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
   );
   const mergePatchTemplate = loadTemplate(
     env,
-    "merge-patch-value",
-    overrides["merge-patch-value"],
+    "merge-patch",
+    overrides["merge-patch"],
   );
   const enumMemberConverterTemplate = loadTemplate(
     env,
@@ -644,7 +644,7 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
           : "";
       return serviceInterfaceTemplate({ ...view, methodsBlock });
     },
-    renderMergePatchValue() {
+    renderMergePatch() {
       return mergePatchTemplate({});
     },
     renderEnumMemberConverter() {

@@ -94,7 +94,7 @@
 --}}
 {{#if doc}}{{doc}}
 {{/if}}[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial class {{className}} : {{bases}}
+public partial class {{className}}{{#if bases}} : {{bases}}{{/if}}
 {
 {{#each properties}}{{#if doc}}{{indent doc}}
 {{/if}}    [JsonPropertyName("{{jsonName}}")]

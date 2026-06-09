@@ -7,6 +7,9 @@
 #nullable enable
 
 using FluentValidation;
+{{#if helpersNamespace}}
+using {{{helpersNamespace}}};
+{{/if}}
 {{#if namespace}}
 
 namespace {{{namespace}}};
@@ -18,92 +21,101 @@ namespace {{{namespace}}};
 /// Extend this partial class to add custom validation rules.
 /// </summary>
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{patchBodyTypeName}}}>
+public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualifiedPatchBodyTypeName}}}>
 {
     /// <summary>
     /// Initializes a new instance of <see cref="{{{modelName}}}PatchValidator"/> with the auto-generated rules.
     /// </summary>
-    public {{{modelName}}}PatchValidator({{#each referencedValidators}}{{#unless @first}}, {{/unless}}AbstractValidator<{{{modelName}}}> {{{paramName}}}{{/each}})
+    public {{{modelName}}}PatchValidator({{#each referencedValidators}}{{#unless @first}}, {{/unless}}AbstractValidator<{{{qualifiedModelName}}}> {{{paramName}}}{{/each}})
     {
 {{#each properties}}
-{{#if notEmpty}}
-        // {{{name}}} is required when provided
+{{#if isReadOnly}}
+        // {{{name}}} is read-only and cannot be modified via patch
         this.RuleFor(x => x)
-            .Must(x => x.TryGetPropertyValue("{{{name}}}", out object value) && (value?.ToString()?.Length ?? 0) > 0)
-            .When(x => x.GetChangedPropertyNames().Any(p => p.Equals("{{{name}}}", StringComparison.OrdinalIgnoreCase)))
+            .Must(x => !x.IsDefined("{{{name}}}"))
+            .WithName("{{{name}}}")
+            .WithMessage("'{{{name}}}' is read-only and cannot be modified.");
+
+{{else}}
+{{#if notEmpty}}
+        // {{{name}}} must not be empty when provided
+        this.RuleFor(x => x)
+            .Must(x => (x.GetString("{{{name}}}")?.Length ?? 0) > 0)
+            .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
             .WithName("{{{name}}}");
 
 {{/if}}
 {{#if minLength}}
         // {{{name}}} must be at least {{minLength}} characters when provided
         this.RuleFor(x => x)
-            .Must(x => x.TryGetPropertyValue("{{{name}}}", out object value) && (value?.ToString()?.Length ?? 0) >= {{minLength}})
-            .When(x => x.GetChangedPropertyNames().Any(p => p.Equals("{{{name}}}", StringComparison.OrdinalIgnoreCase)))
+            .Must(x => (x.GetString("{{{name}}}")?.Length ?? 0) >= {{minLength}})
+            .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
             .WithName("{{{name}}}");
 
 {{/if}}
 {{#if maxLength}}
         // {{{name}}} cannot exceed a MaxLength of {{maxLength}} when provided
         this.RuleFor(x => x)
-            .Must(x => x.TryGetPropertyValue("{{{name}}}", out object value) && ((value?.ToString()?.Length ?? 0) <= {{maxLength}}))
-            .When(x => x.GetChangedPropertyNames().Any(p => p.Equals("{{{name}}}", StringComparison.OrdinalIgnoreCase)))
+            .Must(x => (x.GetString("{{{name}}}")?.Length ?? 0) <= {{maxLength}})
+            .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
             .WithName("{{{name}}}");
 
 {{/if}}
 {{#if pattern}}
         // {{{name}}} must match the pattern '{{pattern}}' when provided
         this.RuleFor(x => x)
-            .Must(x => x.TryGetPropertyValue("{{{name}}}", out object value) && System.Text.RegularExpressions.Regex.IsMatch(value?.ToString() ?? string.Empty, @"{{pattern}}"))
-            .When(x => x.GetChangedPropertyNames().Any(p => p.Equals("{{{name}}}", StringComparison.OrdinalIgnoreCase)))
+            .Must(x => System.Text.RegularExpressions.Regex.IsMatch(x.GetString("{{{name}}}") ?? string.Empty, @"{{pattern}}"))
+            .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
             .WithName("{{{name}}}");
 
 {{/if}}
 {{#if emailAddress}}
         // {{{name}}} must be a valid email address when provided
         this.RuleFor(x => x)
-            .Must(x => x.TryGetPropertyValue("{{{name}}}", out object value) && System.Net.Mail.MailAddress.TryCreate(value?.ToString() ?? string.Empty, out _))
-            .When(x => x.GetChangedPropertyNames().Any(p => p.Equals("{{{name}}}", StringComparison.OrdinalIgnoreCase)))
+            .Must(x => System.Net.Mail.MailAddress.TryCreate(x.GetString("{{{name}}}") ?? string.Empty, out _))
+            .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
             .WithName("{{{name}}}");
 
 {{/if}}
 {{#if minValue}}
         // {{{name}}} must be greater than or equal to {{minValue.formatted}} when provided
         this.RuleFor(x => x)
-            .Must(x => x.TryGetPropertyValue("{{{name}}}", out object value) && decimal.TryParse(value?.ToString(), out decimal n) && n >= {{minValue.formatted}}m)
-            .When(x => x.GetChangedPropertyNames().Any(p => p.Equals("{{{name}}}", StringComparison.OrdinalIgnoreCase)))
+            .Must(x => decimal.TryParse(x.GetString("{{{name}}}"), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out decimal n) && n >= {{minValue.formatted}}m)
+            .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
             .WithName("{{{name}}}");
 
 {{/if}}
 {{#if maxValue}}
         // {{{name}}} cannot exceed a MaxValue of {{maxValue.formatted}} when provided
         this.RuleFor(x => x)
-            .Must(x => x.TryGetPropertyValue("{{{name}}}", out object value) && decimal.TryParse(value?.ToString(), out decimal n) && n <= {{maxValue.formatted}}m)
-            .When(x => x.GetChangedPropertyNames().Any(p => p.Equals("{{{name}}}", StringComparison.OrdinalIgnoreCase)))
+            .Must(x => decimal.TryParse(x.GetString("{{{name}}}"), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out decimal n) && n <= {{maxValue.formatted}}m)
+            .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
             .WithName("{{{name}}}");
 
 {{/if}}
 {{#if isInEnum}}
-        // {{{name}}} must be a valid enum value when provided
+        // {{{name}}} must be a valid {{{enumTypeName}}} value when provided
         this.RuleFor(x => x)
-            .Must(x => x.TryGetPropertyValue("{{{name}}}", out object value) && value != null && Enum.IsDefined(typeof({{{enumTypeName}}}), value))
-            .When(x => x.GetChangedPropertyNames().Any(p => p.Equals("{{{name}}}", StringComparison.OrdinalIgnoreCase)))
+            .Must(x => x.TryGetValue<{{{enumTypeName}}}?>("{{{name}}}", out _))
+            .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
             .WithName("{{{name}}}");
 
 {{/if}}
-{{#if referencedModelName}}
+{{#unless ../isMergePatchBody}}{{#if referencedModelName}}
 {{#if isCollectionReference}}
         // {{{name}}} items are validated recursively when provided
         RuleForEach(x => x.{{{name}}})
             .SetValidator({{{referencedParamName}}})
-            .When(x => x.GetChangedPropertyNames().Any(p => p.Equals("{{{name}}}", StringComparison.OrdinalIgnoreCase)));
+            .When(x => x.IsDefined("{{{name}}}"));
 
 {{else}}
         // {{{name}}} is validated recursively when provided
         RuleFor(x => x.{{{name}}})
             .SetValidator({{{referencedParamName}}})
-            .When(x => x.GetChangedPropertyNames().Any(p => p.Equals("{{{name}}}", StringComparison.OrdinalIgnoreCase)));
+            .When(x => x.IsDefined("{{{name}}}"));
 
 {{/if}}
+{{/if}}{{/unless}}
 {{/if}}
 {{/each}}
         ExtendRules();

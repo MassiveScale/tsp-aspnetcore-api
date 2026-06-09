@@ -1,0 +1,83 @@
+{{!--
+  merge-patch.hbs — static helper emitted once per project into the
+  helpers output directory (default: `Helpers/`).
+
+  Implements a generic RFC 7396 JSON Merge Patch container in C#.
+  MergePatch<T> uses [JsonExtensionData] to capture all incoming JSON
+  properties as raw JsonElements, allowing callers to distinguish between
+  a property that was absent from the patch and one explicitly set to null.
+
+  Override via tspconfig.yaml:
+    options:
+      "@massivescale/tsp-aspnetcore-api":
+        templates:
+          merge-patch: "./templates/merge-patch.hbs"
+
+  ── Template variables ──────────────────────────────────────────────────────
+
+  (none — this template renders a fully static class body)
+--}}
+/// <summary>
+/// Generic RFC 7396 JSON Merge Patch container.
+/// Captures all properties sent by the client; use <see cref="IsDefined"/> to
+/// distinguish "field absent from the request" from "field explicitly set to null".
+/// </summary>
+/// <typeparam name="T">The entity type this patch targets.</typeparam>
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+public class MergePatch<T>
+{
+    /// <summary>
+    /// Raw JSON properties received in the patch payload, keyed by property name.
+    /// Populated automatically by <c>System.Text.Json</c> via <c>[JsonExtensionData]</c>.
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement> Properties { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Returns <see langword="true"/> if <paramref name="propertyName"/> was explicitly
+    /// included in the patch payload (even if its value is <see langword="null"/>).
+    /// </summary>
+    public bool IsDefined(string propertyName) =>
+        Properties.ContainsKey(propertyName);
+
+    /// <summary>
+    /// Returns <see langword="true"/> if <paramref name="propertyName"/> is present in the
+    /// patch and its JSON value is <c>null</c> (RFC 7396 "clear field" signal).
+    /// </summary>
+    public bool IsNull(string propertyName) =>
+        Properties.TryGetValue(propertyName, out var el) && el.ValueKind == JsonValueKind.Null;
+
+    /// <summary>
+    /// Returns the string value of <paramref name="propertyName"/>, or
+    /// <see langword="null"/> when the property is absent or its JSON value is null.
+    /// </summary>
+    public string? GetString(string propertyName)
+    {
+        if (!Properties.TryGetValue(propertyName, out var element)) return null;
+        if (element.ValueKind == JsonValueKind.Null) return null;
+        return element.ValueKind == JsonValueKind.String ? element.GetString() : element.ToString();
+    }
+
+    /// <summary>
+    /// Attempts to deserialize <paramref name="propertyName"/> to <typeparamref name="TValue"/>.
+    /// Returns <see langword="true"/> when the property is present (even if null);
+    /// <see langword="false"/> when it is absent or cannot be deserialized.
+    /// </summary>
+    public bool TryGetValue<TValue>(string propertyName, out TValue? value, JsonSerializerOptions? options = null)
+    {
+        value = default;
+        if (!Properties.TryGetValue(propertyName, out var element)) return false;
+        if (element.ValueKind == JsonValueKind.Null) return true;
+        try
+        {
+            value = JsonSerializer.Deserialize<TValue>(element.GetRawText(), options);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Returns the names of all properties explicitly provided in this patch.</summary>
+    public IEnumerable<string> DefinedProperties => Properties.Keys;
+}
