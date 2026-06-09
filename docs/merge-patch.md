@@ -116,4 +116,4 @@ this.RuleFor(x => x)
 
 ## Helper file emission
 
-`MergePatch.g.cs` is automatically emitted into the helpers directory whenever a `MergePatchUpdate` body type is encountered, regardless of the `emit-helpers` option. The `helpers-output-dir` option controls where the file is written (default: `Helpers/`).
+`MergePatch.g.cs` is always emitted into the helpers directory (it is required by PATCH operations and by the generated PATCH validator templates), regardless of the `emit-helpers` option. The `helpers-output-dir` option controls where the file is written (default: `Helpers/`).
