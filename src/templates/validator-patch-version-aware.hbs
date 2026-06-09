@@ -87,7 +87,7 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
 {{#if minValue}}
         // {{{name}}} must be greater than or equal to {{minValue.formatted}} when provided
         this.RuleFor(x => x)
-            .Must(x => decimal.TryParse(x.GetString("{{{name}}}"), out decimal n) && n >= {{minValue.formatted}}m)
+            .Must(x => decimal.TryParse(x.GetString("{{{name}}}"), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out decimal n) && n >= {{minValue.formatted}}m)
             .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
             .WithName("{{{name}}}");
 
@@ -95,7 +95,7 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
 {{#if maxValue}}
         // {{{name}}} cannot exceed a MaxValue of {{maxValue.formatted}} when provided
         this.RuleFor(x => x)
-            .Must(x => decimal.TryParse(x.GetString("{{{name}}}"), out decimal n) && n <= {{maxValue.formatted}}m)
+            .Must(x => decimal.TryParse(x.GetString("{{{name}}}"), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out decimal n) && n <= {{maxValue.formatted}}m)
             .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
             .WithName("{{{name}}}");
 
@@ -181,7 +181,7 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
 {{#if minValue}}
             // {{{name}}} must be greater than or equal to {{minValue.formatted}} when provided
             this.RuleFor(x => x)
-                .Must(x => decimal.TryParse(x.GetString("{{{name}}}"), out decimal n) && n >= {{minValue.formatted}}m)
+                .Must(x => decimal.TryParse(x.GetString("{{{name}}}"), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out decimal n) && n >= {{minValue.formatted}}m)
                 .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
                 .WithName("{{{name}}}");
 
@@ -189,7 +189,7 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
 {{#if maxValue}}
             // {{{name}}} cannot exceed a MaxValue of {{maxValue.formatted}} when provided
             this.RuleFor(x => x)
-                .Must(x => decimal.TryParse(x.GetString("{{{name}}}"), out decimal n) && n <= {{maxValue.formatted}}m)
+                .Must(x => decimal.TryParse(x.GetString("{{{name}}}"), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out decimal n) && n <= {{maxValue.formatted}}m)
                 .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
                 .WithName("{{{name}}}");
 
