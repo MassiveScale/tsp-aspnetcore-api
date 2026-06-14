@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-13
+
+### Changed
+
+- Service interfaces are now emitted as `public partial interface` to enable extension and composition patterns. This allows consuming applications to add custom methods and behavior to generated service interfaces without modifying generated code.
+
 ## [0.10.0] - 2026-06-09
 
 ### Added
