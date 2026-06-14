@@ -4,10 +4,10 @@ When the TypeSpec source includes `@typespec/http` operations, the emitter produ
 
 For each HTTP `interface` (or `namespace`) that carries routes, the emitter writes:
 
-| File                      | Content                                                                                                                           |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `<Name>ControllerBase.cs` | Abstract ASP.NET Core controller inheriting `ControllerBase`. Injects `I<Name>Service` and delegates every action to the service. |
-| `I<Name>Service.cs`       | Service interface with one `Task<T>` method per operation.                                                                        |
+| File                      | Content                                                                                                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<Name>ControllerBase.cs` | Abstract ASP.NET Core controller inheriting `ControllerBase`. Injects `I<Name>Service` and delegates every action to the service.                               |
+| `I<Name>Service.cs`       | Partial service interface with one `Task<T>` method per operation. The `partial` keyword enables extending the interface with custom methods in consuming code. |
 
 **Routes** — one `[Http<Verb>("...")]` attribute is emitted per available API version of each operation. Without versioning a single attribute is emitted using the resolved operation path.
 
@@ -63,7 +63,7 @@ public abstract class UsersControllerBase : ControllerBase
 
 ```csharp
 // Services/IUsersService.cs
-public interface IUsersService
+public partial interface IUsersService
 {
     Task<IList<User>> List();
     Task<User> Read(string id);

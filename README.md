@@ -6,7 +6,7 @@ For each TypeSpec `model` the emitter produces a `public partial class <Name>`. 
 
 TypeSpec `enum` declarations and named string-literal `union` types become C# enums with `[JsonConverter(typeof(EnumMemberConverterFactory))]` and optional `[EnumMember(Value = "...")]` attributes.
 
-When HTTP operations are present the emitter generates ASP.NET Core controllers and service interfaces. PATCH operations receive a `MergePatch<T>` body (RFC 7396 JSON Merge Patch semantics) rather than a distinct update model — the same entity class is used for both POST and PATCH. `MergePatch<T>` exposes `Patch(T)` / `PatchAsync(T)` for one-call entity updates, plus `IsDefined` / `IsNull` / `TryGetValue` helpers for fine-grained field-level control. FluentValidation validators enforce which fields are writable per operation. Each output type can be disabled independently via the `emit-*` options.
+When HTTP operations are present the emitter generates ASP.NET Core controllers and service interfaces. Controllers are emitted as abstract classes, and service interfaces are emitted as `partial` to enable extension and composition. PATCH operations receive a `MergePatch<T>` body (RFC 7396 JSON Merge Patch semantics) rather than a distinct update model — the same entity class is used for both POST and PATCH. `MergePatch<T>` exposes `Patch(T)` / `PatchAsync(T)` for one-call entity updates, plus `IsDefined` / `IsNull` / `TryGetValue` helpers for fine-grained field-level control. FluentValidation validators enforce which fields are writable per operation. Each output type can be disabled independently via the `emit-*` options.
 
 ---
 

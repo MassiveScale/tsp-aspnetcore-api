@@ -1539,7 +1539,7 @@ namespace {{namespace}}
       const svc = results["Services/IOrdersService.g.cs"];
       ok(svc, `expected Services/IOrdersService.g.cs`);
       ok(
-        svc.includes("public interface IOrdersService"),
+        svc.includes("public partial interface IOrdersService"),
         `expected interface decl in:\n${svc}`,
       );
     });
@@ -1694,7 +1694,7 @@ namespace {{namespace}}
       const svc = results["Services/IUsersService.g.cs"];
       ok(svc, `expected Services/IUsersService.g.cs`);
       ok(
-        svc.includes("public interface IUsersService"),
+        svc.includes("public partial interface IUsersService"),
         `expected interface decl in:\n${svc}`,
       );
       ok(svc.includes("Task<"), `expected Task<> signature in:\n${svc}`);

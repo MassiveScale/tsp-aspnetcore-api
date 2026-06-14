@@ -1,6 +1,6 @@
 {
   "name": "@massivescale/tsp-aspnetcore-api",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "type": "module",
   "main": "dist/src/index.js",
   "tspMain": "lib/main.tsp",
@@ -12,17 +12,17 @@
     }
   },
   "peerDependencies": {
-    "@typespec/compiler": "latest",
-    "@typespec/http": "latest",
-    "@typespec/versioning": "latest",
-    "@typespec/emitter-framework": "latest"
+    "@typespec/compiler": "^1.13.0",
+    "@typespec/http": "^1.13.0",
+    "@typespec/versioning": "^0.83.0",
+    "@typespec/emitter-framework": "^0.17.0"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "@typespec/compiler": "latest",
-    "@typespec/http": "latest",
-    "@typespec/versioning": "latest",
-    "eslint": "^9.15.0",
+    "@types/node": "^25.9.3",
+    "@typespec/compiler": "^1.13.0",
+    "@typespec/http": "^1.13.0",
+    "@typespec/versioning": "^0.83.0",
+    "eslint": "^9.39.4",
     "prettier": "^3.3.3",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.4"
