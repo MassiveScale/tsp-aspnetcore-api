@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-06-24
+
+### Fixed
+
+- Validator template XML summary `<see cref="..."/>` references now use fully-qualified generated type names (`qualifiedModelName` / `qualifiedPatchBodyTypeName`) instead of short model names. This prevents invalid or ambiguous cref targets in generated C# documentation comments when namespaces differ.
+
 ## [0.11.0] - 2026-06-13
 
 ### Changed
