@@ -78,6 +78,61 @@ public enum TrafficLight
 
 The `EnumMemberConverterFactory` helper is emitted once into `helpers-output-dir` (default `Helpers/`). It implements `JsonConverterFactory` and serializes each member using the `[EnumMember(Value = "...")]` attribute; when the attribute is absent, the field name is used verbatim. Deserialization is case-insensitive.
 
+## @discriminator
+
+TypeSpec's built-in `@discriminator` decorator marks a base model as polymorphic. The emitter resolves every derived model down to a concrete wire value and emits `[JsonPolymorphic]` / `[JsonDerivedType]` attributes so System.Text.Json can (de)serialize the hierarchy through the base type.
+
+```typespec
+@discriminator("kind")
+model Pet {
+  kind: string;
+  name: string;
+}
+
+model Dog extends Pet {
+  kind: "dog";
+}
+
+model Cat extends Pet {
+  kind: "cat";
+}
+```
+
+```csharp
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(Cat), "cat")]
+[JsonDerivedType(typeof(Dog), "dog")]
+public partial class Pet
+{
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+}
+
+public partial class Dog : Pet
+{
+}
+```
+
+`[JsonDerivedType]` attributes are sorted by discriminator value for stable output, and intermediate models with no discriminator value of their own are skipped in favor of their nearest descendant that has one.
+
+The discriminator property may be typed as `string`, a string-literal union, or an `enum` whose members carry string values (or no value, in which case the member name is used) — TypeSpec resolves the wire value the same way for all three. Enum members with a **numeric** value are rejected by the TypeSpec compiler itself with an `invalid-discriminator-value` diagnostic, since the discriminator must resolve to a string.
+
+```typespec
+enum PetKind { Dog: "dog", Cat: "cat" }
+
+@discriminator("kind")
+model Pet {
+  kind: PetKind;
+  name: string;
+}
+
+model Dog extends Pet {
+  kind: PetKind.Dog;
+}
+```
+
+The discriminator property (`kind` above) is **omitted from the generated class and companion interface everywhere in the hierarchy** — it is never a declared C# property, only polymorphic JSON metadata. This is intentional: System.Text.Json throws (or, on older runtimes, silently produces invalid duplicate JSON) when a declared property's wire name collides with `TypeDiscriminatorPropertyName`. The runtime type carries the discriminator information instead.
+
 ## @serverName
 
 The `@serverName` decorator overrides the C# identifier for a model or model property. Import the package and open the namespace to use it:

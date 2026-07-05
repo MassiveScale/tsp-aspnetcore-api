@@ -152,7 +152,7 @@ When a model server name starts with `@` (for a C# verbatim identifier), the cla
 ## Documentation
 
 - [Type Mapping](docs/type-mapping.md) — TypeSpec-to-C# scalar and collection mappings, `@format` overrides
-- [Model Generation](docs/models.md) — Default property values, enums, cross-namespace references
+- [Model Generation](docs/models.md) — Default property values, enums, `@discriminator` polymorphism, cross-namespace references
 - [Namespace Resolution](docs/namespace-resolution.md) — How C# namespaces are derived from output paths and TypeSpec namespaces
 - [Controllers and Services](docs/controllers-and-services.md) — ASP.NET Core controller and service interface generation
 - [RFC 7396 Merge Patch](docs/merge-patch.md) — `MergePatch<T>` generic container, PATCH body generation, and validator integration

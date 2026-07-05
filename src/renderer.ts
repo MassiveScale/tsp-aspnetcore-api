@@ -93,6 +93,22 @@ export interface PatchMethodView {
   skippedProperties: SkippedPropertyView[];
 }
 
+/** A known derived type contributing one `[JsonDerivedType]` attribute. */
+export interface DiscriminatedTypeView {
+  /** PascalCase class name of the derived type, e.g. `"Dog"`. */
+  className: string;
+  /** Wire value that identifies this derived type, e.g. `"dog"`. */
+  discriminatorValue: string;
+}
+
+/** View model driving `[JsonPolymorphic]` / `[JsonDerivedType]` generation on a base class. */
+export interface DiscriminatorView {
+  /** JSON property name used as the type discriminator, e.g. `"kind"`. */
+  propertyName: string;
+  /** Known derived types, one per resolved discriminator value, sorted by value. */
+  derivedTypes: DiscriminatedTypeView[];
+}
+
 /** View model for a C# class (`public partial class`). */
 export interface ClassView {
   /** Optional XML `<summary>` doc comment (pre-rendered). */
@@ -107,6 +123,8 @@ export interface ClassView {
   properties: PropertyView[];
   /** Present only on MergePatch classes; drives the generated `Patch(TEntity)` method. */
   patchMethod?: PatchMethodView;
+  /** Present only on models carrying `@discriminator`; drives polymorphic JSON attributes. */
+  discriminator?: DiscriminatorView;
 }
 
 /** View model for a C# interface (`public partial interface`). */

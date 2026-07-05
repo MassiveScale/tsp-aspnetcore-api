@@ -1157,6 +1157,145 @@ describe("csharp emitter", () => {
     });
   });
 
+  describe("@discriminator decorator", () => {
+    it("adds [JsonPolymorphic] and [JsonDerivedType] to the base class", async () => {
+      const results = await emit(`
+        namespace Demo;
+        @discriminator("kind")
+        model Pet { kind: string; name: string; }
+        model Dog extends Pet { kind: "dog"; }
+        model Cat extends Pet { kind: "cat"; }
+      `);
+      const pet = results["Pet.g.cs"];
+      ok(
+        pet.includes(
+          '[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]',
+        ),
+        `missing JsonPolymorphic in:\n${pet}`,
+      );
+      ok(
+        pet.includes('[JsonDerivedType(typeof(Dog), "dog")]'),
+        `missing Dog JsonDerivedType in:\n${pet}`,
+      );
+      ok(
+        pet.includes('[JsonDerivedType(typeof(Cat), "cat")]'),
+        `missing Cat JsonDerivedType in:\n${pet}`,
+      );
+    });
+
+    it("omits the discriminator property from the base class", async () => {
+      const results = await emit(`
+        namespace Demo;
+        @discriminator("kind")
+        model Pet { kind: string; name: string; }
+        model Dog extends Pet { kind: "dog"; }
+      `);
+      const pet = results["Pet.g.cs"];
+      ok(
+        !pet.includes("Kind"),
+        `Kind property leaked into base class:\n${pet}`,
+      );
+      ok(pet.includes("Name"), `expected Name property in:\n${pet}`);
+    });
+
+    it("omits the discriminator property from derived classes and adds no polymorphic attributes there", async () => {
+      const results = await emit(`
+        namespace Demo;
+        @discriminator("kind")
+        model Pet { kind: string; name: string; }
+        model Dog extends Pet { kind: "dog"; }
+      `);
+      const dog = results["Dog.g.cs"];
+      ok(
+        !dog.includes("Kind"),
+        `Kind property leaked into derived class:\n${dog}`,
+      );
+      ok(
+        !dog.includes("JsonPolymorphic") && !dog.includes("JsonDerivedType"),
+        `unexpected polymorphic attribute on derived class:\n${dog}`,
+      );
+      ok(dog.includes("public partial class Dog : Pet"), dog);
+    });
+
+    it("resolves discriminator values through an intermediate model with no own literal value", async () => {
+      const results = await emit(`
+        namespace Demo;
+        @discriminator("kind")
+        model Pet { kind: string; name: string; }
+        model Mammal extends Pet {}
+        model Dog extends Mammal { kind: "dog"; }
+      `);
+      const pet = results["Pet.g.cs"];
+      ok(
+        pet.includes('[JsonDerivedType(typeof(Dog), "dog")]'),
+        `missing recursive Dog JsonDerivedType in:\n${pet}`,
+      );
+      ok(
+        !pet.includes("Mammal"),
+        `Mammal (no own discriminator value) should not appear in:\n${pet}`,
+      );
+    });
+
+    it("resolves discriminator values from a string-valued enum member type", async () => {
+      const results = await emit(`
+        namespace Demo;
+        enum PetKind { Dog: "dog", Cat: "cat" }
+        @discriminator("kind")
+        model Pet { kind: PetKind; name: string; }
+        model Dog extends Pet { kind: PetKind.Dog; }
+        model Cat extends Pet { kind: PetKind.Cat; }
+      `);
+      const pet = results["Pet.g.cs"];
+      ok(
+        pet.includes('[JsonDerivedType(typeof(Dog), "dog")]'),
+        `missing Dog JsonDerivedType in:\n${pet}`,
+      );
+      ok(
+        pet.includes('[JsonDerivedType(typeof(Cat), "cat")]'),
+        `missing Cat JsonDerivedType in:\n${pet}`,
+      );
+      ok(
+        !pet.includes("Kind"),
+        `Kind property leaked into base class:\n${pet}`,
+      );
+    });
+
+    it("orders [JsonDerivedType] attributes deterministically by discriminator value", async () => {
+      const results = await emit(`
+        namespace Demo;
+        @discriminator("kind")
+        model Pet { kind: string; name: string; }
+        model Zebra extends Pet { kind: "zebra"; }
+        model Ant extends Pet { kind: "ant"; }
+      `);
+      const pet = results["Pet.g.cs"];
+      const antIndex = pet.indexOf('[JsonDerivedType(typeof(Ant), "ant")]');
+      const zebraIndex = pet.indexOf(
+        '[JsonDerivedType(typeof(Zebra), "zebra")]',
+      );
+      ok(antIndex !== -1 && zebraIndex !== -1, pet);
+      ok(antIndex < zebraIndex, `expected Ant before Zebra in:\n${pet}`);
+    });
+
+    it("omits the discriminator property from the companion interface", async () => {
+      const results = await emit(
+        `
+        namespace Demo;
+        @discriminator("kind")
+        model Pet { kind: string; name: string; }
+        model Dog extends Pet { kind: "dog"; }
+      `,
+        { "emit-interfaces": true },
+      );
+      const iface = results["IPet.g.cs"];
+      ok(
+        !iface.includes("Kind"),
+        `Kind property leaked into interface:\n${iface}`,
+      );
+      ok(iface.includes("Name"), `expected Name property in:\n${iface}`);
+    });
+  });
+
   describe("templates option", () => {
     it("uses a custom class template when provided", async () => {
       const tpl = writeTemplate(

@@ -4,11 +4,21 @@ import "./versioning.tsp";
 using Versioning;
 namespace MassiveScale.Sandbox.Api;
 
+@doc("Represents the category of a pet, e.g. dog, cat, fish, etc.")
+enum PetKind {
+    Dog: "dog",
+    Cat: "cat",
+    Fish: "fish",
+    Bird: "bird",
+    Reptile: "reptile",
+}
+
 @doc("Represents a pet in the pet store.")
+@discriminator("petKind")
 model Pet is EntityBase {
-    @doc("The category of the pet, e.g. dog, cat, etc.")
+    @doc("The discriminator property for the pet type.")
     @visibility(Lifecycle.Read)
-    category?: PetCategory;
+    petKind: PetKind;
 
     @doc("The name of the pet.")
     name: string = "Unnamed Pet";
@@ -27,6 +37,26 @@ model Pet is EntityBase {
     status: "available" | "pending" | "sold" = "available";
 }
 
+@doc("Represents a dog in the pet store.")
+model Dog extends Pet {
+    @doc("The discriminator property for the pet type.")
+    @visibility(Lifecycle.Read)
+    petKind: PetKind.Dog;
+
+    @doc("Indicates whether the dog barks.")
+    isBarker: boolean;
+}
+
+@doc("Represents a cat in the pet store.")
+model Cat extends Pet {
+    @doc("The discriminator property for the pet type.")
+    @visibility(Lifecycle.Read)
+    petKind: PetKind.Cat;
+
+    @doc("Indicates whether the cat purrs.")
+    isPurrer: boolean;
+}
+
 @doc("Represents a store in the pet store API.")
 model Store extends EntityBase {
     @doc("The name of the store.")
@@ -38,7 +68,7 @@ model Store extends EntityBase {
     phoneNumber: string;
 
     @doc("The email address of the store.")
-    @added(Versions.v2_0) 
+    @added(Versions.v2_0)
     @format("email")
     @maxLength(255)
     email: string;
