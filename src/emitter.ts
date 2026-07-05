@@ -1029,7 +1029,7 @@ function collectValidatorModelsFromRoutes(
             getServerName(program, sourceModel) ?? pascalCase(sourceModel.name);
           const bodyTypeName = isMergePatchBody
             ? `MergePatch<${sourceName}>`
-            : bodyModel.name;
+            : sourceName;
           patchModels.set(sourceModel, bodyTypeName);
           // Also register direct descendants, deriving their patch body type name.
           for (const candidate of allModels) {
@@ -1038,7 +1038,7 @@ function collectValidatorModelsFromRoutes(
                 getServerName(program, candidate) ?? pascalCase(candidate.name);
               const descBodyTypeName = isMergePatchBody
                 ? `MergePatch<${candidateName}>`
-                : candidate.name;
+                : candidateName;
               patchModels.set(candidate, descBodyTypeName);
             }
           }
