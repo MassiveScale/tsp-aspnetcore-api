@@ -3053,7 +3053,8 @@ namespace {{namespace}}
         },
       );
 
-      const validatorFile = results["Validators/WidgetResourcePatchValidator.g.cs"];
+      const validatorFile =
+        results["Validators/WidgetResourcePatchValidator.g.cs"];
       ok(
         validatorFile,
         `expected WidgetResourcePatchValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
