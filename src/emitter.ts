@@ -259,8 +259,6 @@ interface ValidatorTemplateData {
   patchBodyTypeName?: string;
   /** Fully-qualified C# type name of the PATCH body (e.g. `MergePatch<MyApp.Models.Pet>`). Only set for patch validators. */
   qualifiedPatchBodyTypeName?: string;
-  /** C# namespace for the MergePatch helper (used for the `using` directive in PATCH templates). Only set for patch validators. */
-  helpersNamespace?: string;
   /** True when the PATCH body is a `MergePatch<T>` — suppresses property-accessor-based rules that won't compile. */
   isMergePatchBody?: boolean;
   properties: PropertyData[];
@@ -283,8 +281,6 @@ interface VersionAwareValidatorTemplateData {
   patchBodyTypeName?: string;
   /** Fully-qualified C# type name of the PATCH body (e.g. `MergePatch<MyApp.Models.Pet>`). Only set for patch validators. */
   qualifiedPatchBodyTypeName?: string;
-  /** C# namespace for the MergePatch helper (used for the `using` directive in PATCH templates). Only set for patch validators. */
-  helpersNamespace?: string;
   /** True when the PATCH body is a `MergePatch<T>` — suppresses property-accessor-based rules that won't compile. */
   isMergePatchBody?: boolean;
   allVersions: string[];
@@ -460,9 +456,8 @@ export async function $onEmit(
     const interfaceFolder = options.namespaceFromPath
       ? []
       : folderSegments(options.effectiveRootNamespace, typespecNs);
-    const refs = modelReferences(model);
-    const classUsings = collectUsings(classNs, refs, options);
-    const interfaceUsings = collectUsings(interfaceNs, refs, options);
+    const classUsings = collectUsings(options);
+    const interfaceUsings = collectUsings(options);
 
     const emittedModelName =
       getServerName(program, model) ?? pascalCase(model.name);
@@ -547,6 +542,8 @@ export async function $onEmit(
     abstractSuffix: options.abstractSuffix,
     cancellationToken: options.cancellationToken,
     mergePatchStyle: options.mergePatchStyle,
+    modelsNamespace: options.modelsNamespace,
+    helpersNamespace: options.helpersNamespace,
   };
 
   const groups = collectControllers(
@@ -724,8 +721,8 @@ function getValidatorModelReference(
 function buildSinglePropertyData(
   program: Program,
   prop: ModelProperty,
+  options: ResolvedOptions,
   isReadOnly = false,
-  nullableProperties = true,
 ): PropertyData {
   const hasDefault = prop.defaultValue !== undefined;
   const notEmpty =
@@ -743,7 +740,7 @@ function buildSinglePropertyData(
 
   const isInEnum = prop.type.kind === "Enum";
   const enumTypeName = isInEnum
-    ? pascalCase((prop.type as Enum).name)
+    ? `${options.modelsNamespace}.${pascalCase((prop.type as Enum).name)}`
     : undefined;
 
   const rawMin = getMinValue(program, prop) ?? getMinValue(program, prop.type);
@@ -786,7 +783,7 @@ function buildSinglePropertyData(
     hasRules,
     notEmpty,
     isReadOnly: isReadOnly || undefined,
-    nullable: isNullableForValidator(program, prop, nullableProperties),
+    nullable: isNullableForValidator(program, prop, options.nullableProperties),
     minLength,
     maxLength,
     pattern,
@@ -812,9 +809,9 @@ function buildValidatorProperties(
   program: Program,
   model: Model,
   writeMembers: Set<EnumMember>,
+  options: ResolvedOptions,
   visibilityMember?: EnumMember,
   versionFilter?: (prop: ModelProperty) => boolean,
-  nullableProperties = true,
 ): PropertyData[] {
   const result: PropertyData[] = [];
   for (const [, prop] of model.properties) {
@@ -824,9 +821,7 @@ function buildValidatorProperties(
 
     if (!isWritable) {
       // Include read-only property so the validator can reject it.
-      result.push(
-        buildSinglePropertyData(program, prop, true, nullableProperties),
-      );
+      result.push(buildSinglePropertyData(program, prop, options, true));
       continue;
     }
     if (
@@ -836,9 +831,7 @@ function buildValidatorProperties(
       continue;
     }
     if (versionFilter && !versionFilter(prop)) continue;
-    result.push(
-      buildSinglePropertyData(program, prop, false, nullableProperties),
-    );
+    result.push(buildSinglePropertyData(program, prop, options, false));
   }
   return result;
 }
@@ -855,7 +848,7 @@ function buildVersionAwareValidatorProperties(
   writeMembers: Set<EnumMember>,
   visibilityMember: EnumMember | undefined,
   allVersions: Version[],
-  nullableProperties = true,
+  options: ResolvedOptions,
 ): { baseProperties: PropertyData[]; versionGroups: VersionGroup[] } {
   const baseProperties: PropertyData[] = [];
   const groupMap = new Map<string, PropertyData[]>();
@@ -867,7 +860,7 @@ function buildVersionAwareValidatorProperties(
 
     if (!isWritable) {
       baseProperties.push(
-        buildSinglePropertyData(program, prop, true, nullableProperties),
+        buildSinglePropertyData(program, prop, options, true),
       );
       continue;
     }
@@ -877,12 +870,7 @@ function buildVersionAwareValidatorProperties(
     ) {
       continue;
     }
-    const propData = buildSinglePropertyData(
-      program,
-      prop,
-      false,
-      nullableProperties,
-    );
+    const propData = buildSinglePropertyData(program, prop, options, false);
     const availMap = getAvailabilityMap(program, prop);
     if (availMap === undefined) {
       baseProperties.push(propData);
@@ -1071,9 +1059,7 @@ function resolvePatchBodyInfo(
   patchBodyTypeName: string;
   /** Fully-qualified form for use in `AbstractValidator<T>` (may embed generic args). */
   qualifiedPatchBodyTypeName: string;
-  /** Namespace added as a `using` directive in patch validator files; `undefined` when not needed. */
-  helpersNamespace: string | undefined;
-  /** Fully-qualified type for DI registration in `ValidatorsInitializer`. */
+  /** Fully-qualified type for DI registration in `ValidatorsInitializer`. Always equal to `qualifiedPatchBodyTypeName`. */
   fullyQualifiedTypeName: string;
 } {
   const isMergePatchBody = rawBodyTypeName.startsWith("MergePatch<");
@@ -1081,7 +1067,6 @@ function resolvePatchBodyInfo(
     return {
       patchBodyTypeName: rawBodyTypeName,
       qualifiedPatchBodyTypeName: qualifiedModelName,
-      helpersNamespace: undefined,
       fullyQualifiedTypeName: qualifiedModelName,
     };
   }
@@ -1091,16 +1076,15 @@ function resolvePatchBodyInfo(
     return {
       patchBodyTypeName: typedName,
       qualifiedPatchBodyTypeName: fullyQualified,
-      helpersNamespace: undefined,
       fullyQualifiedTypeName: fullyQualified,
     };
   }
   // Generic style
+  const fullyQualified = `${options.helpersNamespace}.MergePatch<${qualifiedModelName}>`;
   return {
     patchBodyTypeName: rawBodyTypeName,
-    qualifiedPatchBodyTypeName: `MergePatch<${qualifiedModelName}>`,
-    helpersNamespace: options.helpersNamespace || undefined,
-    fullyQualifiedTypeName: `${options.helpersNamespace}.MergePatch<${qualifiedModelName}>`,
+    qualifiedPatchBodyTypeName: fullyQualified,
+    fullyQualifiedTypeName: fullyQualified,
   };
 }
 
@@ -1161,9 +1145,9 @@ async function emitValidatorModels(
         program,
         model,
         writeMembers,
+        options,
         createMember,
         versionFilter,
-        options.nullableProperties,
       );
       const postRefs = deriveReferencedValidators(program, options, postProps);
       const data: ValidatorTemplateData = {
@@ -1189,7 +1173,6 @@ async function emitValidatorModels(
       const {
         patchBodyTypeName,
         qualifiedPatchBodyTypeName,
-        helpersNamespace,
         fullyQualifiedTypeName: _fqt,
       } = resolvePatchBodyInfo(
         rawBodyTypeName,
@@ -1202,9 +1185,9 @@ async function emitValidatorModels(
         program,
         model,
         writeMembers,
+        options,
         updateMember,
         versionFilter,
-        options.nullableProperties,
       );
       const patchRefs = isMergePatchBody
         ? []
@@ -1215,7 +1198,6 @@ async function emitValidatorModels(
         qualifiedModelName,
         patchBodyTypeName,
         qualifiedPatchBodyTypeName,
-        helpersNamespace,
         isMergePatchBody: isMergePatchBody || undefined,
         properties: patchProps,
         referencedValidators: patchRefs.length > 0 ? patchRefs : undefined,
@@ -1275,7 +1257,7 @@ async function emitVersionAwareValidatorModels(
           writeMembers,
           createMember,
           allVersions,
-          options.nullableProperties,
+          options,
         );
       const postRefs = deriveReferencedValidators(
         program,
@@ -1306,17 +1288,13 @@ async function emitVersionAwareValidatorModels(
 
     if (doPatch) {
       const rawBodyTypeName = routeModels?.patchModels.get(model) ?? modelName;
-      const {
-        patchBodyTypeName,
-        qualifiedPatchBodyTypeName,
-        helpersNamespace,
-        fullyQualifiedTypeName: _fqt,
-      } = resolvePatchBodyInfo(
-        rawBodyTypeName,
-        modelName,
-        qualifiedModelName,
-        options,
-      );
+      const { patchBodyTypeName, qualifiedPatchBodyTypeName } =
+        resolvePatchBodyInfo(
+          rawBodyTypeName,
+          modelName,
+          qualifiedModelName,
+          options,
+        );
       const isMergePatchBody = rawBodyTypeName.startsWith("MergePatch<");
       const { baseProperties, versionGroups } =
         buildVersionAwareValidatorProperties(
@@ -1325,7 +1303,7 @@ async function emitVersionAwareValidatorModels(
           writeMembers,
           updateMember,
           allVersions,
-          options.nullableProperties,
+          options,
         );
       const patchRefs = isMergePatchBody
         ? []
@@ -1341,7 +1319,6 @@ async function emitVersionAwareValidatorModels(
         qualifiedModelName,
         patchBodyTypeName,
         qualifiedPatchBodyTypeName,
-        helpersNamespace,
         isMergePatchBody: isMergePatchBody || undefined,
         allVersions: versionValues,
         defaultVersion,
@@ -1635,12 +1612,7 @@ async function emitControllerGroup(
 
   if (options.emitControllers) {
     const controllerFileName = `${controllerView.controllerName}${options.fileExtension}`;
-    const ctrlUsings = buildControllerUsings(
-      program,
-      options,
-      group.references,
-      ctrlNamespace,
-    );
+    const ctrlUsings = buildControllerUsings(options);
     await emitFile(program, {
       path: resolvePath(
         options.controllersOutputDir,
@@ -1658,12 +1630,7 @@ async function emitControllerGroup(
 
   if (options.emitServices) {
     const serviceInterfaceFileName = `${serviceView.interfaceName}${options.fileExtension}`;
-    const svcUsings = buildServiceUsings(
-      program,
-      options,
-      group.references,
-      svcNamespace,
-    );
+    const svcUsings = buildServiceUsings(options);
     await emitFile(program, {
       path: resolvePath(
         options.servicesOutputDir,
@@ -1776,80 +1743,34 @@ async function emitEnumMemberConverter(
 /**
  * Builds the sorted list of `using` namespaces for a generated controller file.
  *
- * Includes {@link CONTROLLER_USINGS}, any `additional-usings` from options,
- * namespaces for all types referenced by the operations, and the helpers
- * namespace when any reference is a `MergePatch<T>` body type.
+ * Model, enum, and helper (`MergePatch<T>`) references are always emitted as
+ * fully-qualified type names (see {@link typeReference}), so this only needs
+ * {@link CONTROLLER_USINGS} plus any `additional-usings` from options.
  *
- * @param program - The compiled TypeSpec program (needed for MergePatch detection).
  * @param options - Resolved emitter options (additional usings).
- * @param references - TypeSpec types referenced by controller operations.
- * @param ownNamespace - The C# namespace of the controller file being emitted.
  * @returns Sorted, deduplicated array of `using` namespace strings.
  */
-function buildControllerUsings(
-  program: Program,
-  options: ResolvedOptions,
-  references: Type[],
-  ownNamespace: string,
-): string[] {
+function buildControllerUsings(options: ResolvedOptions): string[] {
   const usings = new Set<string>(CONTROLLER_USINGS);
   if (options.cancellationToken) usings.add("System.Threading");
   for (const u of options.additionalUsings) usings.add(u);
-  for (const ref of references) {
-    if (ref.kind === "Model" && isMergePatch(program, ref as Model)) {
-      if (
-        options.mergePatchStyle !== "typed" &&
-        options.helpersNamespace &&
-        options.helpersNamespace !== ownNamespace
-      ) {
-        usings.add(options.helpersNamespace);
-      }
-    }
-    for (const _type of collectReferencedTypes(ref)) {
-      const ns = options.modelsNamespace;
-      if (ns && ns !== ownNamespace) usings.add(ns);
-    }
-  }
   return sortUsings(usings);
 }
 
 /**
  * Builds the sorted list of `using` namespaces for a generated service interface file.
  *
- * Includes base service usings (System, System.Collections.Generic, System.Threading.Tasks),
- * any `additional-usings` from options, namespaces for all types referenced by operations,
- * and the helpers namespace when any reference is a `MergePatch<T>` body type.
+ * Model, enum, and helper (`MergePatch<T>`) references are always emitted as
+ * fully-qualified type names (see {@link typeReference}), so this only needs
+ * {@link SERVICE_USINGS} plus any `additional-usings` from options.
  *
- * @param program - The compiled TypeSpec program (needed for MergePatch detection).
  * @param options - Resolved emitter options (additional usings).
- * @param references - TypeSpec types referenced by service operations.
- * @param ownNamespace - The C# namespace of the service file being emitted.
  * @returns Sorted, deduplicated array of `using` namespace strings.
  */
-function buildServiceUsings(
-  program: Program,
-  options: ResolvedOptions,
-  references: Type[],
-  ownNamespace: string,
-): string[] {
+function buildServiceUsings(options: ResolvedOptions): string[] {
   const usings = new Set<string>(SERVICE_USINGS);
   if (options.cancellationToken) usings.add("System.Threading");
   for (const u of options.additionalUsings) usings.add(u);
-  for (const ref of references) {
-    if (ref.kind === "Model" && isMergePatch(program, ref as Model)) {
-      if (
-        options.mergePatchStyle !== "typed" &&
-        options.helpersNamespace &&
-        options.helpersNamespace !== ownNamespace
-      ) {
-        usings.add(options.helpersNamespace);
-      }
-    }
-    for (const _type of collectReferencedTypes(ref)) {
-      const ns = options.modelsNamespace;
-      if (ns && ns !== ownNamespace) usings.add(ns);
-    }
-  }
   return sortUsings(usings);
 }
 
@@ -2257,73 +2178,19 @@ function folderSegments(
 }
 
 /**
- * Collects all TypeSpec types directly referenced by a model (base class and
- * all property types).
+ * Builds the sorted list of `using` namespaces for a single emitted model or
+ * interface file.
  *
- * @param model - The TypeSpec model node.
- * @returns Array of referenced TypeSpec type nodes.
- */
-function modelReferences(model: Model): Type[] {
-  const refs: Type[] = [];
-  if (model.baseModel) refs.push(model.baseModel);
-  for (const prop of model.properties.values()) {
-    refs.push(prop.type);
-  }
-  return refs;
-}
-
-/**
- * Recursively yields all {@link Model} and {@link Enum} nodes reachable from a
- * single TypeSpec type reference.
+ * Model, enum, and helper (`MergePatch<T>`) references are always emitted as
+ * fully-qualified type names (see {@link typeReference}), so this only needs
+ * {@link SYSTEM_USINGS} plus any `additional-usings` from options.
  *
- * Used to collect the set of C# namespaces that need `using` directives.
- *
- * @param type - Starting TypeSpec type node.
- * @yields All transitively referenced model and enum types.
- */
-function* collectReferencedTypes(type: Type): Generator<Model | Enum> {
-  switch (type.kind) {
-    case "Model":
-      if (isArrayModelType(type) || isRecordModelType(type)) {
-        yield* collectReferencedTypes(type.indexer.value);
-      } else if (type.name) {
-        yield type;
-      }
-      break;
-    case "Enum":
-      yield type;
-      break;
-    case "Union":
-      for (const variant of type.variants.values()) {
-        yield* collectReferencedTypes(variant.type);
-      }
-      break;
-  }
-}
-
-/**
- * Builds the sorted list of `using` namespaces for a single emitted file.
- *
- * Starts from {@link SYSTEM_USINGS}, adds any `additional-usings`, then adds
- * the C# namespace for each transitively-referenced type that lives in a
- * different namespace.  Deduplicates and sorts (System first).
- *
- * @param ownNamespace - The C# namespace of the file being emitted.
- * @param references - TypeSpec type nodes referenced by the model.
- * @param options - Resolved options (namespace map, additional usings).
+ * @param options - Resolved options (additional usings).
  * @returns Sorted, deduplicated array of `using` namespace strings.
  */
-function collectUsings(
-  ownNamespace: string,
-  references: Type[],
-  options: ResolvedOptions,
-): string[] {
+function collectUsings(options: ResolvedOptions): string[] {
   const usings = new Set<string>(SYSTEM_USINGS);
   for (const u of options.additionalUsings) usings.add(u);
-  for (const _ref of references) {
-    const ns = options.modelsNamespace;
-    if (ns && ns !== ownNamespace) usings.add(ns);
-  }
   return sortUsings(usings);
 }
 
@@ -2370,12 +2237,14 @@ function buildClassView(
   return {
     doc: docFor(program, model),
     className,
-    interfaceName: options.emitInterfaces ? `I${safeClassName}` : undefined,
+    interfaceName: options.emitInterfaces
+      ? `${options.interfacesNamespace}.I${safeClassName}`
+      : undefined,
     baseClass: model.baseModel
-      ? typeReference(model.baseModel, program)
+      ? typeReference(model.baseModel, options, program)
       : undefined,
     properties: buildPropertyViews(program, model, options),
-    discriminator: buildDiscriminatorView(program, model),
+    discriminator: buildDiscriminatorView(program, model, options),
   };
 }
 
@@ -2422,6 +2291,7 @@ function discriminatorPropertyNameInHierarchy(
 function buildDiscriminatorView(
   program: Program,
   model: Model,
+  options: ResolvedOptions,
 ): DiscriminatorView | undefined {
   const discriminator = getDiscriminator(program, model);
   if (!discriminator) return undefined;
@@ -2429,8 +2299,7 @@ function buildDiscriminatorView(
   const [union] = getDiscriminatedUnionFromInheritance(model, discriminator);
   const derivedTypes: DiscriminatedTypeView[] = [...union.variants.entries()]
     .map(([discriminatorValue, derivedModel]) => ({
-      className:
-        getServerName(program, derivedModel) ?? pascalCase(derivedModel.name),
+      className: `${options.modelsNamespace}.${getServerName(program, derivedModel) ?? pascalCase(derivedModel.name)}`,
       discriminatorValue,
     }))
     .sort((a, b) => a.discriminatorValue.localeCompare(b.discriminatorValue));
@@ -2463,7 +2332,7 @@ function buildInterfaceView(
     doc: docFor(program, model),
     interfaceName: `I${ifaceName.startsWith("@") ? ifaceName.slice(1) : ifaceName}`,
     baseInterface: baseIfaceName
-      ? `I${baseIfaceName.startsWith("@") ? baseIfaceName.slice(1) : baseIfaceName}`
+      ? `${options.interfacesNamespace}.I${baseIfaceName.startsWith("@") ? baseIfaceName.slice(1) : baseIfaceName}`
       : undefined,
     properties: buildPropertyViews(program, model, options),
   };
@@ -2508,13 +2377,17 @@ function buildEnumView(program: Program, en: Enum): EnumView {
  * cannot be represented as a simple C# literal.
  *
  * @param value - The TypeSpec default value from `ModelProperty.defaultValue`.
+ * @param options - Resolved options (namespace used to qualify the enum type).
  * @returns A C# initializer expression string, or `undefined` if unsupported.
  */
-function defaultValueInitializer(value: Value): string | undefined {
+function defaultValueInitializer(
+  value: Value,
+  options: ResolvedOptions,
+): string | undefined {
   switch (value.valueKind) {
     case "EnumValue": {
       const member = value.value;
-      return `${pascalCase(member.enum.name)}.${pascalCase(member.name)}`;
+      return `${options.modelsNamespace}.${pascalCase(member.enum.name)}.${pascalCase(member.name)}`;
     }
     case "StringValue":
       return `"${value.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -2552,13 +2425,20 @@ function buildPropertyViews(
     .map((prop) => {
       const type = propertyTypeName(program, model, prop, options);
       const inferredEnumType = inferredEnumTypeNameForProperty(model, prop);
+      const qualifiedInferredEnumType = inferredEnumType
+        ? `${options.modelsNamespace}.${inferredEnumType}`
+        : undefined;
       return {
         doc: docFor(program, prop),
         type,
         name: getServerName(program, prop) ?? pascalCase(prop.name),
         jsonName: camelCase(prop.name),
         nullable: type.endsWith("?"),
-        initializer: resolveInitializer(prop.defaultValue, inferredEnumType),
+        initializer: resolveInitializer(
+          prop.defaultValue,
+          qualifiedInferredEnumType,
+          options,
+        ),
       };
     });
 }
@@ -2567,19 +2447,23 @@ function buildPropertyViews(
  * Resolves a C# property initializer expression for a default value.
  *
  * When the property has an inferred enum type and the default is a string
- * literal (anonymous string union), converts `"available"` → `PetStatus.Available`
+ * literal (anonymous string union), converts `"available"` → `Ns.PetStatus.Available`
  * instead of the raw string. Falls back to {@link defaultValueInitializer} for
  * all other cases.
+ *
+ * @param qualifiedInferredEnumType - Fully-qualified inferred enum type name,
+ *   already prefixed with `options.modelsNamespace`.
  */
 function resolveInitializer(
   value: Value | undefined,
-  inferredEnumType: string | undefined,
+  qualifiedInferredEnumType: string | undefined,
+  options: ResolvedOptions,
 ): string | undefined {
   if (value === undefined) return undefined;
-  if (inferredEnumType && value.valueKind === "StringValue") {
-    return `${inferredEnumType}.${pascalCase(value.value)}`;
+  if (qualifiedInferredEnumType && value.valueKind === "StringValue") {
+    return `${qualifiedInferredEnumType}.${pascalCase(value.value)}`;
   }
-  return defaultValueInitializer(value);
+  return defaultValueInitializer(value, options);
 }
 
 /**
@@ -2624,7 +2508,9 @@ function propertyTypeName(
     type = FORMAT_MAP[format.toLowerCase()];
   } else {
     const inferredEnumType = inferredEnumTypeNameForProperty(model, prop);
-    type = inferredEnumType ?? typeReference(prop.type, program);
+    type = inferredEnumType
+      ? `${options.modelsNamespace}.${inferredEnumType}`
+      : typeReference(prop.type, options, program);
   }
   const nullable = prop.optional || options.nullableProperties;
   return nullable && !type.endsWith("?") ? `${type}?` : type;
@@ -2718,15 +2604,25 @@ function buildInferredEnumView(inferred: InferredEnum): EnumView {
  * Recursively resolves the C# type string for any TypeSpec {@link Type} node,
  * without applying nullability.
  *
+ * References to emitted models/enums are always fully qualified with
+ * `options.modelsNamespace` (and `MergePatch<T>` with `options.helpersNamespace`)
+ * so generated code never depends on a `using` directive to resolve — this
+ * holds even when the reference is within the same namespace.
+ *
  * When `program` is supplied, `@serverName` overrides on referenced models are
  * honoured so that renamed models are referenced by their C# identifier rather
  * than their TypeSpec name.
  *
  * @param type - The TypeSpec type node to resolve.
+ * @param options - Resolved emitter options (namespaces for qualification).
  * @param program - Optional compiled TypeSpec program used to look up `@serverName`.
  * @returns C# type string (non-nullable).
  */
-function typeReference(type: Type, program?: Program): string {
+function typeReference(
+  type: Type,
+  options: ResolvedOptions,
+  program?: Program,
+): string {
   switch (type.kind) {
     case "Scalar": {
       const mapped = SCALAR_MAP[type.name];
@@ -2741,26 +2637,26 @@ function typeReference(type: Type, program?: Program): string {
     }
     case "Model": {
       if (isArrayModelType(type)) {
-        return `IList<${typeReference(type.indexer.value, program)}>`;
+        return `IList<${typeReference(type.indexer.value, options, program)}>`;
       }
       if (isRecordModelType(type)) {
-        return `IDictionary<string, ${typeReference(type.indexer.value, program)}>`;
+        return `IDictionary<string, ${typeReference(type.indexer.value, options, program)}>`;
       }
       if (program && isMergePatch(program, type)) {
         const source = getMergePatchSource(program, type);
         if (source) {
           const sourceName =
             getServerName(program, source) ?? pascalCase(source.name);
-          return `MergePatch<${sourceName}>`;
+          return `${options.helpersNamespace}.MergePatch<${options.modelsNamespace}.${sourceName}>`;
         }
       }
-      return (
+      const modelName =
         (program ? getServerName(program, type) : undefined) ??
-        pascalCase(type.name || "object")
-      );
+        (type.name ? pascalCase(type.name) : undefined);
+      return modelName ? `${options.modelsNamespace}.${modelName}` : "object";
     }
     case "Enum":
-      return pascalCase(type.name);
+      return `${options.modelsNamespace}.${pascalCase(type.name)}`;
     case "Boolean":
       return "bool";
     case "String":
@@ -2774,7 +2670,7 @@ function typeReference(type: Type, program?: Program): string {
       );
       const hasNull = nonNull.length !== variants.length;
       if (nonNull.length === 1) {
-        const ref = typeReference(nonNull[0].type, program);
+        const ref = typeReference(nonNull[0].type, options, program);
         return hasNull ? `${ref}?` : ref;
       }
       return "object";

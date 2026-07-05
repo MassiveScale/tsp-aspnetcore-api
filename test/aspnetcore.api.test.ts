@@ -276,7 +276,7 @@ describe("csharp emitter", () => {
         `expected Models/Widget.g.cs, got ${Object.keys(results).join(", ")}`,
       );
       ok(
-        widget.includes("public WidgetColor? Color { get; set; }"),
+        widget.includes("public Demo.Models.WidgetColor? Color { get; set; }"),
         `expected WidgetColor in:\n${widget}`,
       );
       ok(
@@ -327,7 +327,7 @@ describe("csharp emitter", () => {
       const ctrl = results["Controllers/WidgetsControllerBase.g.cs"];
       ok(ctrl, "expected controller");
       ok(
-        ctrl.includes("MergePatch<Widget>"),
+        ctrl.includes("Demo.Helpers.MergePatch<Demo.Models.Widget>"),
         `expected MergePatch<Widget> in PATCH body in:\n${ctrl}`,
       );
       ok(
@@ -381,7 +381,7 @@ describe("csharp emitter", () => {
       const animal = results["Animal.g.cs"];
       const dog = results["Dog.g.cs"];
       ok(animal.includes("public partial class Animal"));
-      ok(dog.includes("public partial class Dog : Animal"));
+      ok(dog.includes("public partial class Dog : Demo.Models.Animal"));
     });
 
     it("treats nullable unions as nullable C# types", async () => {
@@ -454,7 +454,9 @@ describe("csharp emitter", () => {
       const file = results["Widget.g.cs"] ?? results["Models/Widget.g.cs"];
       ok(file, `expected Widget.g.cs, got ${Object.keys(results).join(", ")}`);
       ok(
-        file.includes("public Size? Size { get; set; } = Size.Medium;"),
+        file.includes(
+          "public Demo.Models.Size? Size { get; set; } = Demo.Models.Size.Medium;",
+        ),
         `expected enum default initializer in:\n${file}`,
       );
     });
@@ -530,7 +532,7 @@ describe("csharp emitter", () => {
       `);
       const file = results["B.g.cs"];
       ok(!file.includes("using Demo;"), `unexpected self-using in:\n${file}`);
-      ok(file.includes("public A? Ref { get; set; }"));
+      ok(file.includes("public Demo.Models.A? Ref { get; set; }"));
     });
 
     it("does not add cross-namespace usings when all models share the flat models namespace", async () => {
@@ -548,7 +550,7 @@ describe("csharp emitter", () => {
         !file.includes("using App.Common"),
         `unexpected cross-ns using in:\n${file}`,
       );
-      ok(file.includes("public Address? Home { get; set; }"));
+      ok(file.includes("public App.Models.Address? Home { get; set; }"));
     });
 
     it("does not add usings for array and record element types in the models namespace", async () => {
@@ -569,10 +571,10 @@ describe("csharp emitter", () => {
         !file.includes("using App.Common"),
         `unexpected cross-ns using in:\n${file}`,
       );
-      ok(file.includes("public IList<Tag>? Tags { get; set; }"));
+      ok(file.includes("public IList<App.Models.Tag>? Tags { get; set; }"));
       ok(
         file.includes(
-          "public IDictionary<string, Tag>? ScoresByTag { get; set; }",
+          "public IDictionary<string, App.Models.Tag>? ScoresByTag { get; set; }",
         ),
       );
     });
@@ -590,7 +592,7 @@ describe("csharp emitter", () => {
         !file.includes("using App.Base"),
         `unexpected cross-ns using in:\n${file}`,
       );
-      ok(file.includes("public partial class User : Entity"));
+      ok(file.includes("public partial class User : App.Models.Entity"));
     });
   });
 
@@ -670,7 +672,7 @@ describe("csharp emitter", () => {
         !file.includes("using Legacy.Common"),
         `unexpected original using in:\n${file}`,
       );
-      ok(file.includes("public Address? Home { get; set; }"));
+      ok(file.includes("public Models.Address? Home { get; set; }"));
     });
 
     it("places models in folders derived from the mapped namespace when namespace-from-path is disabled", async () => {
@@ -710,7 +712,7 @@ describe("csharp emitter", () => {
         !file.includes("using App.Users;"),
         `unexpected self-using in:\n${file}`,
       );
-      ok(file.includes("public Address? Home { get; set; }"));
+      ok(file.includes("public Models.Address? Home { get; set; }"));
     });
   });
 
@@ -729,7 +731,7 @@ describe("csharp emitter", () => {
       ok(cls, "expected User.g.cs");
       ok(iface, "expected IUser.g.cs");
 
-      ok(cls.includes("public partial class User : IUser"));
+      ok(cls.includes("public partial class User : Demo.Models.IUser"));
       ok(cls.includes("public string? Id { get; set; }"));
 
       ok(iface.includes("public partial interface IUser"));
@@ -754,8 +756,16 @@ describe("csharp emitter", () => {
       const dogClass = results["Dog.g.cs"];
       const dogIface = results["IDog.g.cs"];
 
-      ok(dogClass.includes("public partial class Dog : Animal, IDog"));
-      ok(dogIface.includes("public partial interface IDog : IAnimal"));
+      ok(
+        dogClass.includes(
+          "public partial class Dog : Demo.Models.Animal, Demo.Models.IDog",
+        ),
+      );
+      ok(
+        dogIface.includes(
+          "public partial interface IDog : Demo.Models.IAnimal",
+        ),
+      );
       ok(dogIface.includes("string? Breed { get; set; }"));
     });
 
@@ -1174,11 +1184,11 @@ describe("csharp emitter", () => {
         `missing JsonPolymorphic in:\n${pet}`,
       );
       ok(
-        pet.includes('[JsonDerivedType(typeof(Dog), "dog")]'),
+        pet.includes('[JsonDerivedType(typeof(Demo.Models.Dog), "dog")]'),
         `missing Dog JsonDerivedType in:\n${pet}`,
       );
       ok(
-        pet.includes('[JsonDerivedType(typeof(Cat), "cat")]'),
+        pet.includes('[JsonDerivedType(typeof(Demo.Models.Cat), "cat")]'),
         `missing Cat JsonDerivedType in:\n${pet}`,
       );
     });
@@ -1214,7 +1224,7 @@ describe("csharp emitter", () => {
         !dog.includes("JsonPolymorphic") && !dog.includes("JsonDerivedType"),
         `unexpected polymorphic attribute on derived class:\n${dog}`,
       );
-      ok(dog.includes("public partial class Dog : Pet"), dog);
+      ok(dog.includes("public partial class Dog : Demo.Models.Pet"), dog);
     });
 
     it("resolves discriminator values through an intermediate model with no own literal value", async () => {
@@ -1227,7 +1237,7 @@ describe("csharp emitter", () => {
       `);
       const pet = results["Pet.g.cs"];
       ok(
-        pet.includes('[JsonDerivedType(typeof(Dog), "dog")]'),
+        pet.includes('[JsonDerivedType(typeof(Demo.Models.Dog), "dog")]'),
         `missing recursive Dog JsonDerivedType in:\n${pet}`,
       );
       ok(
@@ -1247,11 +1257,11 @@ describe("csharp emitter", () => {
       `);
       const pet = results["Pet.g.cs"];
       ok(
-        pet.includes('[JsonDerivedType(typeof(Dog), "dog")]'),
+        pet.includes('[JsonDerivedType(typeof(Demo.Models.Dog), "dog")]'),
         `missing Dog JsonDerivedType in:\n${pet}`,
       );
       ok(
-        pet.includes('[JsonDerivedType(typeof(Cat), "cat")]'),
+        pet.includes('[JsonDerivedType(typeof(Demo.Models.Cat), "cat")]'),
         `missing Cat JsonDerivedType in:\n${pet}`,
       );
       ok(
@@ -1269,9 +1279,11 @@ describe("csharp emitter", () => {
         model Ant extends Pet { kind: "ant"; }
       `);
       const pet = results["Pet.g.cs"];
-      const antIndex = pet.indexOf('[JsonDerivedType(typeof(Ant), "ant")]');
+      const antIndex = pet.indexOf(
+        '[JsonDerivedType(typeof(Demo.Models.Ant), "ant")]',
+      );
       const zebraIndex = pet.indexOf(
-        '[JsonDerivedType(typeof(Zebra), "zebra")]',
+        '[JsonDerivedType(typeof(Demo.Models.Zebra), "zebra")]',
       );
       ok(antIndex !== -1 && zebraIndex !== -1, pet);
       ok(antIndex < zebraIndex, `expected Ant before Zebra in:\n${pet}`);
@@ -1318,7 +1330,7 @@ public partial class {{className}} : {{bases}}
 
       const cls = results["User.g.cs"];
       ok(cls.includes("[Serializable]"), `expected [Serializable] in:\n${cls}`);
-      ok(cls.includes("public partial class User : IUser"));
+      ok(cls.includes("public partial class User : Demo.Models.IUser"));
       ok(cls.includes("public string? Id { get; set; }"));
       ok(cls.includes("public string? Name { get; set; }"));
       ok(results["IUser.g.cs"].includes("public partial interface IUser"));
@@ -1496,7 +1508,7 @@ namespace {{namespace}}
       );
       ok(
         svc.includes(
-          "Task<IList<Item>?> ListAsync(CancellationToken cancellationToken);",
+          "Task<IList<Demo.Models.Item>?> ListAsync(CancellationToken cancellationToken);",
         ),
         `missing ListAsync in service:\n${svc}`,
       );
@@ -1524,7 +1536,7 @@ namespace {{namespace}}
       );
       ok(
         ctrl.includes(
-          "public abstract Task<IActionResult> Create([FromBody] Item body, CancellationToken cancellationToken);",
+          "public abstract Task<IActionResult> Create([FromBody] Demo.Models.Item body, CancellationToken cancellationToken);",
         ),
         `missing Create in controller:\n${ctrl}`,
       );
@@ -1537,13 +1549,13 @@ namespace {{namespace}}
       );
       ok(
         svc.includes(
-          "Task<IList<Item>?> ListAsync(CancellationToken cancellationToken);",
+          "Task<IList<Demo.Models.Item>?> ListAsync(CancellationToken cancellationToken);",
         ),
         `missing ListAsync in service:\n${svc}`,
       );
       ok(
         svc.includes(
-          "Task CreateAsync(Item body, CancellationToken cancellationToken);",
+          "Task CreateAsync(Demo.Models.Item body, CancellationToken cancellationToken);",
         ),
         `missing CreateAsync in service:\n${svc}`,
       );
@@ -1893,10 +1905,13 @@ namespace {{namespace}}
       const svc = results["Services/IWidgetsService.g.cs"];
       ok(svc, `expected Services/IWidgetsService.g.cs`);
       ok(
-        svc.includes("Task<IList<Widget>?>"),
+        svc.includes("Task<IList<Demo.Models.Widget>?>"),
         `expected IList<Widget> return in:\n${svc}`,
       );
-      ok(svc.includes("Task<Widget?>"), `expected Widget return in:\n${svc}`);
+      ok(
+        svc.includes("Task<Demo.Models.Widget?>"),
+        `expected Widget return in:\n${svc}`,
+      );
       ok(
         svc.includes("Task RemoveAsync("),
         `expected plain Task for void|error response in:\n${svc}`,
@@ -1930,7 +1945,7 @@ namespace {{namespace}}
       const svc = results["Services/IWidgetsService.g.cs"];
       ok(svc, `expected Services/IWidgetsService.g.cs`);
       ok(
-        svc.includes("Task<Widget?>"),
+        svc.includes("Task<Demo.Models.Widget?>"),
         `expected Task<Widget?> for @body response in:\n${svc}`,
       );
     });
@@ -3031,7 +3046,7 @@ namespace {{namespace}}
         ];
       ok(ctrl, "expected controller file to be emitted");
       ok(
-        ctrl.includes("[FromBody] PetResource body"),
+        ctrl.includes("[FromBody] Models.PetResource body"),
         "expected controller body parameter type to use @serverName",
       );
       ok(
@@ -3046,7 +3061,9 @@ namespace {{namespace}}
         ];
       ok(svc, "expected service interface file to be emitted");
       ok(
-        svc.includes("Task<PetResource?> CreateAsync(PetResource body"),
+        svc.includes(
+          "Task<Models.PetResource?> CreateAsync(Models.PetResource body",
+        ),
         "expected service method signature to use @serverName for parameter and return type",
       );
       ok(
@@ -3068,7 +3085,7 @@ namespace {{namespace}}
 
       const file = results["Widget.g.cs"];
       ok(
-        file.includes(": EntityBase"),
+        file.includes(": Models.EntityBase"),
         "expected base class reference to use @serverName",
       );
       ok(
@@ -3112,7 +3129,7 @@ namespace {{namespace}}
 
       const file = results["Widget.g.cs"];
       ok(
-        file.includes("IList<TagResource>?"),
+        file.includes("IList<Models.TagResource>?"),
         "expected array element type to use @serverName",
       );
     });

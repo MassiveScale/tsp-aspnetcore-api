@@ -64,6 +64,10 @@ export interface ControllerOptions {
   cancellationToken: boolean;
   /** Whether to use the generic `MergePatch<T>` helper or per-entity typed classes. */
   mergePatchStyle: "generic" | "typed";
+  /** Verbatim C# namespace for all model and enum files, used to fully qualify type references. */
+  modelsNamespace: string;
+  /** Verbatim C# namespace for all helper files, used to fully qualify `MergePatch<T>` references. */
+  helpersNamespace: string;
 }
 
 /**
@@ -81,8 +85,6 @@ export interface ControllerGroup {
   folder: string[];
   /** Original TypeSpec container name (Interface or Namespace name). */
   containerName: string;
-  /** TypeSpec types referenced by operations (for building using directives). */
-  references: Type[];
 }
 
 /** Union of the TypeSpec node kinds that can group HTTP operations. */
@@ -141,8 +143,6 @@ export function collectControllers(
         buildOperationView(program, op, options, versions),
       );
 
-      const references = collectOperationReferences(program, ops);
-
       groups.push({
         controllerView: {
           doc: doc ? renderDocComment(doc) : undefined,
@@ -160,52 +160,11 @@ export function collectControllers(
         namespace: ns,
         folder,
         containerName,
-        references,
       });
     }
   }
 
   return groups;
-}
-
-/**
- * Collects all TypeSpec types referenced by a group of HTTP operations.
- *
- * @param program - The compiled TypeSpec program.
- * @param operations - Array of HTTP operations.
- * @returns Array of TypeSpec type nodes referenced by the operations.
- */
-function collectOperationReferences(
-  program: Program,
-  operations: HttpOperation[],
-): Type[] {
-  const references = new Set<Type>();
-
-  for (const op of operations) {
-    // Collect parameter types
-    for (const param of op.parameters.parameters) {
-      references.add(param.param.type);
-    }
-
-    // Collect request body type
-    if (op.parameters.body?.bodyKind === "single") {
-      references.add(op.parameters.body.type);
-    }
-
-    // Collect response body types, excluding @error models (never used in service/controller signatures)
-    for (const response of op.responses) {
-      for (const content of response.responses) {
-        if (
-          content.body?.bodyKind === "single" &&
-          !isErrorModel(program, content.body.type)
-        ) {
-          references.add(content.body.type);
-        }
-      }
-    }
-  }
-
-  return [...references];
 }
 
 /**
@@ -502,14 +461,17 @@ function typeRef(
           const sourceName =
             getServerName(program, source) ?? pascalCase(source.name);
           return options.mergePatchStyle === "typed"
-            ? `${sourceName}MergePatchUpdate`
-            : `MergePatch<${sourceName}>`;
+            ? `${options.modelsNamespace}.${sourceName}MergePatchUpdate`
+            : `${options.helpersNamespace}.MergePatch<${options.modelsNamespace}.${sourceName}>`;
         }
       }
-      return getServerName(program, type) ?? pascalCase(type.name || "object");
+      const modelName =
+        getServerName(program, type) ??
+        (type.name ? pascalCase(type.name) : undefined);
+      return modelName ? `${options.modelsNamespace}.${modelName}` : "object";
     }
     case "Enum":
-      return pascalCase(type.name);
+      return `${options.modelsNamespace}.${pascalCase(type.name)}`;
     case "Boolean":
       return "bool";
     case "String":
