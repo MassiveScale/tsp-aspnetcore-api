@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-07-04
+
+### Fixed
+
+- `@serverName` on a model was not respected in the PATCH body type name derived for validators when the PATCH body is the plain entity type (not a `MergePatchUpdate<T>`). The raw, un-renamed TypeSpec model name was used instead, affecting descendants as well as the source model.
+
 ## [0.11.1] - 2026-06-24
 
 ### Fixed

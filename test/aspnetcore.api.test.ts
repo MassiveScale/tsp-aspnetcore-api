@@ -3019,6 +3019,48 @@ namespace {{namespace}}
         "expected validator param to be derived from the server name",
       );
     });
+
+    it("derives the plain (non-MergePatch) PATCH body type name from @serverName", async () => {
+      const tpl = writeTemplate(
+        "validator-patch",
+        `patchBodyTypeName={{{patchBodyTypeName}}}`,
+      );
+
+      const [results] = await emitWithDiagnostics(
+        `
+        import "@massivescale/tsp-aspnetcore-api";
+        import "@typespec/http";
+        using MassiveScale.AspNetCoreApi;
+        using TypeSpec.Http;
+
+        @service(#{ title: "Widgets" })
+        namespace Demo;
+
+        @serverName("WidgetResource")
+        model Widget { id: string; name: string; }
+
+        @route("/widgets/{id}")
+        interface Widgets {
+          @patch update(@path id: string, @body body: Widget): Widget;
+        }
+        `,
+        {
+          "emit-validators": true,
+          "emit-controllers": false,
+          "emit-services": false,
+          "emit-interfaces": false,
+          templates: { "validator-patch": tpl },
+        },
+      );
+
+      const validatorFile =
+        results["Validators/WidgetResourcePatchValidator.g.cs"];
+      ok(
+        validatorFile,
+        `expected WidgetResourcePatchValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      strictEqual(validatorFile, "patchBodyTypeName=WidgetResource");
+    });
   });
 
   describe("ValidatorsInitializer", () => {
