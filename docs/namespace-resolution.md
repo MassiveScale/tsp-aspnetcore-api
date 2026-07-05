@@ -57,3 +57,7 @@ options:
 ```
 
 With `namespace-from-path: false` and a matching root namespace, models in `Legacy.Common` are placed under `Models/Common/` because their TypeSpec namespace is mapped to `Acme.Common` before the `Acme` prefix is stripped.
+
+## Fully-qualified cross-references
+
+Because each section can have its own namespace, generated code never relies on `using` directives to reference types from another section (or another model in the same section) — every reference is written as a fully-qualified name, e.g. `Acme.Controllers` action signatures reference `Acme.Models.Widget`, not a bare `Widget` paired with `using Acme.Models;`. See [Cross-namespace references](models.md#cross-namespace-references) for the full list of reference sites this covers.

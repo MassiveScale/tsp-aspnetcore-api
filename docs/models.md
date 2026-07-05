@@ -193,4 +193,6 @@ When a model is renamed with `@serverName`, all references to it — including b
 
 ## Cross-namespace references
 
-When a model references a type from a different namespace, the corresponding `using` is added automatically. References inside `IList<T>`, `IDictionary<string, T>`, unions, and base classes are all tracked. The rewritten namespace from `namespace-map` is used in the generated `using` directive.
+Every reference to an emitted model, interface, or enum — base classes, property types (including inside `IList<T>`, `IDictionary<string, T>`, and unions), companion-interface implementations, discriminator `[JsonDerivedType(typeof(...))]` attributes, and `MergePatch<T>` — is always written as a fully-qualified C# type name (e.g. `Demo.Models.Widget`, `Demo.Helpers.MergePatch<Demo.Models.Widget>`), never a bare name paired with a `using` directive. This holds even when the reference is within the same namespace.
+
+Generated files therefore never depend on `using` resolution to compile, which avoids ambiguous- or missing-reference errors when `models-namespace`, `controllers-namespace`, `services-namespace`, `validators-namespace`, and `helpers-namespace` differ (the default configuration).
