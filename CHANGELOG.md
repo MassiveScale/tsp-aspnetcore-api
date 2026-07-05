@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Models carrying TypeSpec's built-in `@discriminator` decorator now emit `[JsonPolymorphic(TypeDiscriminatorPropertyName = "...")]` and one `[JsonDerivedType(typeof(...), "...")]` per resolvable derived type, enabling native System.Text.Json polymorphic (de)serialization. The discriminator property itself is omitted from the generated class/interface on every model in the hierarchy — System.Text.Json rejects a declared property whose JSON name collides with the type discriminator. See [Model Generation](docs/models.md#discriminator).
+
 ## [0.11.2] - 2026-07-04
 
 ### Fixed

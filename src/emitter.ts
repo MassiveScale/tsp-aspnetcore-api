@@ -25,6 +25,8 @@ import {
   type Union,
   Value,
   emitFile,
+  getDiscriminatedUnionFromInheritance,
+  getDiscriminator,
   getDoc,
   getFormat,
   getLifecycleVisibilityEnum,
@@ -64,6 +66,8 @@ import { EmitterOptions, reportDiagnostic } from "./lib.js";
 import { SCALAR_MAP, FORMAT_MAP, pascalCase, camelCase } from "./utils.js";
 import {
   ClassView,
+  DiscriminatedTypeView,
+  DiscriminatorView,
   EnumView,
   InterfaceView,
   PropertyView,
@@ -2371,6 +2375,69 @@ function buildClassView(
       ? typeReference(model.baseModel, program)
       : undefined,
     properties: buildPropertyViews(program, model, options),
+    discriminator: buildDiscriminatorView(program, model),
+  };
+}
+
+/**
+ * Finds the discriminator property name governing `model`, searching `model`
+ * itself and then its base-model chain.
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param model - The TypeSpec model node to inspect.
+ * @returns The `@discriminator` property name in effect for this model, or
+ *   `undefined` if the model does not participate in a discriminated hierarchy.
+ */
+function discriminatorPropertyNameInHierarchy(
+  program: Program,
+  model: Model,
+): string | undefined {
+  for (
+    let current: Model | undefined = model;
+    current;
+    current = current.baseModel
+  ) {
+    const discriminator = getDiscriminator(program, current);
+    if (discriminator) return discriminator.propertyName;
+  }
+  return undefined;
+}
+
+/**
+ * Builds a {@link DiscriminatorView} for a model carrying `@discriminator`.
+ *
+ * Resolves every derived model reachable through the inheritance tree down to
+ * a concrete discriminator value (recursing through intermediate models that
+ * don't redeclare the discriminator property) via
+ * {@link getDiscriminatedUnionFromInheritance}. The discriminator property
+ * itself is intentionally omitted from {@link ClassView.properties} (see
+ * {@link buildPropertyViews}) — System.Text.Json rejects a declared property
+ * name that collides with `TypeDiscriminatorPropertyName`.
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param model - The TypeSpec model node to inspect.
+ * @returns A populated discriminator view, or `undefined` when `model` has no
+ *   `@discriminator` decorator of its own.
+ */
+function buildDiscriminatorView(
+  program: Program,
+  model: Model,
+): DiscriminatorView | undefined {
+  const discriminator = getDiscriminator(program, model);
+  if (!discriminator) return undefined;
+
+  const [union] = getDiscriminatedUnionFromInheritance(model, discriminator);
+  const derivedTypes: DiscriminatedTypeView[] = [...union.variants.entries()]
+    .map(([discriminatorValue, derivedModel]) => ({
+      className:
+        getServerName(program, derivedModel) ?? pascalCase(derivedModel.name),
+      discriminatorValue,
+    }))
+    .sort((a, b) => a.discriminatorValue.localeCompare(b.discriminatorValue));
+
+  return {
+    propertyName: camelCase(discriminator.propertyName),
+    derivedTypes,
   };
 }
 
@@ -2476,18 +2543,24 @@ function buildPropertyViews(
   model: Model,
   options: ResolvedOptions,
 ): PropertyView[] {
-  return [...model.properties.values()].map((prop) => {
-    const type = propertyTypeName(program, model, prop, options);
-    const inferredEnumType = inferredEnumTypeNameForProperty(model, prop);
-    return {
-      doc: docFor(program, prop),
-      type,
-      name: getServerName(program, prop) ?? pascalCase(prop.name),
-      jsonName: camelCase(prop.name),
-      nullable: type.endsWith("?"),
-      initializer: resolveInitializer(prop.defaultValue, inferredEnumType),
-    };
-  });
+  const discriminatorPropertyName = discriminatorPropertyNameInHierarchy(
+    program,
+    model,
+  );
+  return [...model.properties.values()]
+    .filter((prop) => prop.name !== discriminatorPropertyName)
+    .map((prop) => {
+      const type = propertyTypeName(program, model, prop, options);
+      const inferredEnumType = inferredEnumTypeNameForProperty(model, prop);
+      return {
+        doc: docFor(program, prop),
+        type,
+        name: getServerName(program, prop) ?? pascalCase(prop.name),
+        jsonName: camelCase(prop.name),
+        nullable: type.endsWith("?"),
+        initializer: resolveInitializer(prop.defaultValue, inferredEnumType),
+      };
+    });
 }
 
 /**

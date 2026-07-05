@@ -39,7 +39,7 @@ namespace MassiveScale.Simple.Api.Example {
     /** Read widgets */
     @get read(@path id: string): Widget | Error;
     /** Create a widget */
-    @post create(@body body: Widget): Widget | Error;
+    @post create(@body body: Create<Widget>): Widget | Error;
     /** Update a widget */
     @patch update(
       @path id: string,

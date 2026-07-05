@@ -32,6 +32,11 @@
     .nullable         —   true when the type is nullable (ends with "?");
                           controls whether [JsonIgnore] is emitted
 
+                        Note: the `@discriminator` property (see {{discriminator}}
+                        below) is omitted from this list on every class in the
+                        hierarchy — it is never a declared C# property, only
+                        polymorphic JSON metadata.
+
   {{propertiesBlock}} — shortcut: all properties pre-rendered (with JSON
                         attributes) joined by blank lines; equivalent to
                         iterating {{properties}} with the default formatting.
@@ -49,6 +54,14 @@
   {{patchMethodBlock}}— shortcut: the Patch method pre-rendered as a C# method
                         string (4-space indented, no trailing newline). Falsy
                         when the class is not a MergePatch model.
+
+  {{discriminator}}   — present only on models carrying `@discriminator`; drives
+                        `[JsonPolymorphic]` / `[JsonDerivedType]` generation.
+    .propertyName     —   JSON property name used as the type discriminator,
+                          e.g. "kind"
+    .derivedTypes[]   —   known derived types, one per discriminator value
+      .className      —     PascalCase class name of the derived type
+      .discriminatorValue —  wire value identifying the derived type, e.g. "dog"
 
   ── Built-in helpers ────────────────────────────────────────────────────────
 
@@ -93,7 +106,9 @@
       public {{type}} {{name}} { get; set; }
 --}}
 {{#if doc}}{{doc}}
-{{/if}}[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+{{/if}}{{#if discriminator}}[JsonPolymorphic(TypeDiscriminatorPropertyName = "{{discriminator.propertyName}}")]
+{{#each discriminator.derivedTypes}}[JsonDerivedType(typeof({{className}}), "{{discriminatorValue}}")]
+{{/each}}{{/if}}[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public partial class {{className}}{{#if bases}} : {{bases}}{{/if}}
 {
 {{#each properties}}{{#if doc}}{{indent doc}}

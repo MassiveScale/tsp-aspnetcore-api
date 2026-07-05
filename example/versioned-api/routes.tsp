@@ -49,10 +49,9 @@ interface Pets {
     @get
     list(@path storeId: string): Pet[];
 
-    // This is using Create<Pet> to demonstrate how to generate a unique "CreatePets" model.
     @doc("Adds a new pet to the specified store.")
     @post
-    create(@path storeId: string, @body body: Create<Pet>): Pet | ErrorResponse;
+    create(@path storeId: string, @body body: Pet): Pet | ErrorResponse;
 
     @doc("Updates an existing pet in the specified store. Only the fields included in the request body will be updated.")
     @added(Versions.v2_0)
