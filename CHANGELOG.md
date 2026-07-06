@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Models carrying TypeSpec's built-in `@discriminator` decorator now emit `[JsonPolymorphic(TypeDiscriminatorPropertyName = "...")]` and one `[JsonDerivedType(typeof(...), "...")]` per resolvable derived type, enabling native System.Text.Json polymorphic (de)serialization. The discriminator property itself is omitted from the generated class/interface on every model in the hierarchy — System.Text.Json rejects a declared property whose JSON name collides with the type discriminator. See [Model Generation](docs/models.md#discriminator).
+- POST validators for discriminated base models now emit `SetInheritanceValidator` to dispatch validation to derived-type validators at runtime. Previously, child-class properties were never validated because the controller payload is typed as the base class and FluentValidation only resolved the base validator. See [Validators — Polymorphic dispatch](docs/validators.md#polymorphic-dispatch).
 
 ### Fixed
 

@@ -249,6 +249,16 @@ interface ReferencedValidator {
   paramName: string;
 }
 
+/** A derived type validator for polymorphic dispatch via SetInheritanceValidator. */
+interface DerivedTypeValidator {
+  /** Simple C# type name of the derived type (e.g. "Cat"). */
+  typeName: string;
+  /** Fully-qualified C# type name (e.g. "MyApp.Models.Cat"). */
+  qualifiedTypeName: string;
+  /** Constructor parameter name (e.g. "catValidator"). */
+  paramName: string;
+}
+
 /** Data passed to the Handlebars POST / PATCH validator template. */
 interface ValidatorTemplateData {
   namespace?: string;
@@ -263,6 +273,8 @@ interface ValidatorTemplateData {
   isMergePatchBody?: boolean;
   properties: PropertyData[];
   referencedValidators?: ReferencedValidator[];
+  /** Derived type validators for polymorphic dispatch (SetInheritanceValidator). */
+  derivedTypeValidators?: DerivedTypeValidator[];
 }
 
 /** A group of properties added in a specific API version. */
@@ -288,6 +300,8 @@ interface VersionAwareValidatorTemplateData {
   baseProperties: PropertyData[];
   versionGroups: VersionGroup[];
   referencedValidators?: ReferencedValidator[];
+  /** Derived type validators for polymorphic dispatch (SetInheritanceValidator). */
+  derivedTypeValidators?: DerivedTypeValidator[];
 }
 
 /** One entry in the generated `ValidatorsInitializer`. */
@@ -957,6 +971,39 @@ function deriveReferencedValidators(
 }
 
 /**
+ * Builds the {@link DerivedTypeValidator} array for a model that carries
+ * `@discriminator`. Uses {@link getDiscriminatedUnionFromInheritance} to find
+ * all concrete derived types and returns them sorted by type name.
+ *
+ * Returns `undefined` when the model has no discriminator.
+ */
+function buildDerivedTypeValidators(
+  program: Program,
+  model: Model,
+  options: ResolvedOptions,
+): DerivedTypeValidator[] | undefined {
+  const discriminator = getDiscriminator(program, model);
+  if (!discriminator) return undefined;
+
+  const [union] = getDiscriminatedUnionFromInheritance(model, discriminator);
+  const derived: DerivedTypeValidator[] = [];
+  for (const [, derivedModel] of union.variants) {
+    const typeName =
+      getServerName(program, derivedModel) ?? pascalCase(derivedModel.name);
+    const qualifiedTypeName = computeModelFqName(
+      program,
+      derivedModel,
+      options,
+    );
+    const paramName =
+      typeName.charAt(0).toLowerCase() + typeName.slice(1) + "Validator";
+    derived.push({ typeName, qualifiedTypeName, paramName });
+  }
+  derived.sort((a, b) => a.typeName.localeCompare(b.typeName));
+  return derived.length > 0 ? derived : undefined;
+}
+
+/**
  * BFS from `initialModels` following model-typed properties, returning the full
  * transitive closure of reachable user-defined models.
  */
@@ -1162,12 +1209,18 @@ async function emitValidatorModels(
         versionFilter,
       );
       const postRefs = deriveReferencedValidators(program, options, postProps);
+      const derivedTypeValidators = buildDerivedTypeValidators(
+        program,
+        model,
+        options,
+      );
       const data: ValidatorTemplateData = {
         namespace,
         modelName,
         qualifiedModelName,
         properties: postProps,
         referencedValidators: postRefs.length > 0 ? postRefs : undefined,
+        derivedTypeValidators,
       };
       await emitFile(program, {
         path: resolvePath(
@@ -1277,6 +1330,11 @@ async function emitVersionAwareValidatorModels(
         baseProperties,
         ...versionGroups.map((g) => g.properties),
       );
+      const derivedTypeValidators = buildDerivedTypeValidators(
+        program,
+        model,
+        options,
+      );
       const data: VersionAwareValidatorTemplateData = {
         namespace,
         modelName,
@@ -1286,6 +1344,7 @@ async function emitVersionAwareValidatorModels(
         baseProperties,
         versionGroups,
         referencedValidators: postRefs.length > 0 ? postRefs : undefined,
+        derivedTypeValidators,
       };
       await emitFile(program, {
         path: resolvePath(

@@ -1344,6 +1344,94 @@ describe("csharp emitter", () => {
         `expected regular properties to still be validated:\n${petValidator}`,
       );
     });
+
+    it("emits SetInheritanceValidator for discriminated base-class validators", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        @discriminator("kind")
+        model Pet { kind: string; name: string; }
+        model Dog extends Pet { kind: "dog"; bark: boolean; }
+        model Cat extends Pet { kind: "cat"; purr: boolean; }
+
+        @route("/pets")
+        interface Pets {
+          @post create(@body body: Pet): Pet;
+        }
+      `,
+        {
+          "emit-validators": true,
+          validators: "post",
+          "emit-controllers": false,
+          "emit-services": false,
+        },
+      );
+
+      const petValidator = results["Validators/PetValidator.g.cs"];
+      ok(petValidator, "expected Validators/PetValidator.g.cs");
+      ok(
+        petValidator.includes("SetInheritanceValidator"),
+        `expected SetInheritanceValidator in base validator:\n${petValidator}`,
+      );
+      ok(
+        petValidator.includes("v.Add<Demo.Models.Cat>(catValidator)"),
+        `expected Cat dispatch in base validator:\n${petValidator}`,
+      );
+      ok(
+        petValidator.includes("v.Add<Demo.Models.Dog>(dogValidator)"),
+        `expected Dog dispatch in base validator:\n${petValidator}`,
+      );
+      // Constructor should accept derived-type validators
+      ok(
+        petValidator.includes(
+          "AbstractValidator<Demo.Models.Cat> catValidator",
+        ),
+        `expected Cat validator parameter:\n${petValidator}`,
+      );
+      ok(
+        petValidator.includes(
+          "AbstractValidator<Demo.Models.Dog> dogValidator",
+        ),
+        `expected Dog validator parameter:\n${petValidator}`,
+      );
+    });
+
+    it("does not emit SetInheritanceValidator for non-discriminated models", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        model Widget { name: string; }
+
+        @route("/widgets")
+        interface Widgets {
+          @post create(@body body: Widget): Widget;
+        }
+      `,
+        {
+          "emit-validators": true,
+          validators: "post",
+          "emit-controllers": false,
+          "emit-services": false,
+        },
+      );
+
+      const widgetValidator = results["Validators/WidgetValidator.g.cs"];
+      ok(widgetValidator, "expected Validators/WidgetValidator.g.cs");
+      ok(
+        !widgetValidator.includes("SetInheritanceValidator"),
+        `SetInheritanceValidator should not appear for non-discriminated models:\n${widgetValidator}`,
+      );
+    });
   });
 
   describe("templates option", () => {

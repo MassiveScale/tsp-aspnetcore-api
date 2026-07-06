@@ -82,3 +82,20 @@ Version-aware validators accept `IHttpContextAccessor` to resolve the API versio
 | `validators-output-dir`       | `"Validators"`  | Output directory for validator and initializer files.            |
 | `validators-root-namespace`   | _(global root)_ | Root namespace for validator files.                              |
 | `validators-version-strategy` | _(auto)_        | Version strategy. Auto-detected from spec; see table above.      |
+
+## Polymorphic dispatch
+
+When a model carries `@discriminator`, the base-class POST validator automatically includes a `SetInheritanceValidator` block that dispatches to derived-type validators based on the runtime type. This ensures properties defined only on child models (e.g. `Cat.isPurrer`, `Dog.isBarker`) are validated even though the controller payload is typed as the base class.
+
+```csharp
+// Generated in PetValidator (base)
+RuleFor(x => x).SetInheritanceValidator(v =>
+{
+    v.Add<MyApp.Models.Cat>(catValidator);
+    v.Add<MyApp.Models.Dog>(dogValidator);
+});
+```
+
+The derived-type validators are injected as `AbstractValidator<TDerived>` constructor parameters and resolved from DI via the registrations in `ValidatorsInitializer.g.cs`.
+
+> **Note:** Polymorphic dispatch is emitted only for POST validators. MergePatch-based PATCH validators operate on a generic `MergePatch<T>` wrapper that is not polymorphic, so inheritance dispatch does not apply there.
