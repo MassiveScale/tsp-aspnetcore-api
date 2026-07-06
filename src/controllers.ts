@@ -3,10 +3,12 @@
  *
  * Collects HTTP service operations from a compiled TypeSpec program and
  * organises them into {@link ControllerGroup} records, each of which describes
- * one controller / service pair ready for template rendering.
+ * one controller / service pair ready for template rendering, and emits the
+ * generated ASP.NET Core controller base class for each group.
  *
- * The main export is {@link collectControllers}, called by the emitter after
- * all models and enums have been processed.
+ * The main exports are {@link collectControllers}, called by the emitter after
+ * all models and enums have been processed, and {@link emitController}, called
+ * once per collected group.
  */
 
 import {
@@ -15,11 +17,13 @@ import {
   Namespace,
   Program,
   Type,
+  emitFile,
   getDoc,
   getFormat,
   isArrayModelType,
   isErrorModel,
   isRecordModelType,
+  resolvePath,
 } from "@typespec/compiler";
 import {
   HttpOperation,
@@ -42,11 +46,21 @@ import {
   ControllerView,
   OperationParamView,
   OperationView,
+  Renderer,
   ServiceView,
   renderDocComment,
 } from "./renderer.js";
 import { getServerName } from "./decorators.js";
+import { ResolvedOptions, sortUsings } from "./emitter.js";
 import { SCALAR_MAP, FORMAT_MAP, pascalCase, camelCase } from "./utils.js";
+
+/** `using` directives included in every controller file. */
+const CONTROLLER_USINGS = [
+  "System",
+  "System.Collections.Generic",
+  "System.Threading.Tasks",
+  "Microsoft.AspNetCore.Mvc",
+];
 
 /**
  * Options forwarded from the emitter to the controller collection phase.
@@ -490,4 +504,47 @@ function typeRef(
     default:
       return "object";
   }
+}
+
+/**
+ * Writes the controller file for one {@link ControllerGroup}.
+ *
+ * @param program - The compiled TypeSpec program (needed by `emitFile`).
+ * @param group - The controller group to emit.
+ * @param renderer - Pre-compiled renderer instance.
+ * @param options - Resolved emitter options (for output paths and extension).
+ */
+export async function emitController(
+  program: Program,
+  group: ControllerGroup,
+  renderer: Renderer,
+  options: ResolvedOptions,
+): Promise<void> {
+  const controllerFileName = `${group.controllerView.controllerName}${options.fileExtension}`;
+  await emitFile(program, {
+    path: resolvePath(options.controllersOutputDir, controllerFileName),
+    content: renderer.renderFile({
+      fileName: controllerFileName,
+      namespace: options.controllersNamespace,
+      usings: buildControllerUsings(options),
+      body: renderer.renderController(group.controllerView),
+    }),
+  });
+}
+
+/**
+ * Builds the sorted list of `using` namespaces for a generated controller file.
+ *
+ * Model, enum, and helper (`MergePatch<T>`) references are always emitted as
+ * fully-qualified type names, so this only needs {@link CONTROLLER_USINGS}
+ * plus any `additional-usings` from options.
+ *
+ * @param options - Resolved emitter options (additional usings).
+ * @returns Sorted, deduplicated array of `using` namespace strings.
+ */
+function buildControllerUsings(options: ResolvedOptions): string[] {
+  const usings = new Set<string>(CONTROLLER_USINGS);
+  if (options.cancellationToken) usings.add("System.Threading");
+  for (const u of options.additionalUsings) usings.add(u);
+  return sortUsings(usings);
 }
