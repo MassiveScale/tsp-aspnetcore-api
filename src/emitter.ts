@@ -814,7 +814,13 @@ function buildValidatorProperties(
   versionFilter?: (prop: ModelProperty) => boolean,
 ): PropertyData[] {
   const result: PropertyData[] = [];
+  const discriminatorPropertyName = discriminatorPropertyNameInHierarchy(
+    program,
+    model,
+  );
   for (const [, prop] of model.properties) {
+    if (prop.name === discriminatorPropertyName) continue;
+
     const isWritable =
       writeMembers.size === 0 ||
       isVisible(program, prop, { any: writeMembers });
@@ -852,8 +858,14 @@ function buildVersionAwareValidatorProperties(
 ): { baseProperties: PropertyData[]; versionGroups: VersionGroup[] } {
   const baseProperties: PropertyData[] = [];
   const groupMap = new Map<string, PropertyData[]>();
+  const discriminatorPropertyName = discriminatorPropertyNameInHierarchy(
+    program,
+    model,
+  );
 
   for (const [, prop] of model.properties) {
+    if (prop.name === discriminatorPropertyName) continue;
+
     const isWritable =
       writeMembers.size === 0 ||
       isVisible(program, prop, { any: writeMembers });
