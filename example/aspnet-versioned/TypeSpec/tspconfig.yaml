@@ -1,0 +1,8 @@
+emit:
+  - "@massivescale/tsp-aspnetcore-api"
+options:
+  "@massivescale/tsp-aspnetcore-api":
+    root-namespace: "MarketOnce.Community.Campaign.Api"
+    emitter-output-dir: "{project-root}/../MassiveScale.Petshop.Api"
+    emit-helpers: true
+    emit-validators: true
