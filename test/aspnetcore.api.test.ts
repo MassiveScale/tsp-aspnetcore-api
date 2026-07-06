@@ -1306,6 +1306,44 @@ describe("csharp emitter", () => {
       );
       ok(iface.includes("Name"), `expected Name property in:\n${iface}`);
     });
+
+    it("omits discriminator properties from generated validators", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        @discriminator("kind")
+        model Pet { kind: string; name: string; }
+        model Dog extends Pet { kind: "dog"; }
+
+        @route("/pets")
+        interface Pets {
+          @post create(@body body: Pet): Pet;
+        }
+      `,
+        {
+          "emit-validators": true,
+          validators: "post",
+          "emit-controllers": false,
+          "emit-services": false,
+        },
+      );
+
+      const petValidator = results["Validators/PetValidator.g.cs"];
+      ok(petValidator, "expected Validators/PetValidator.g.cs");
+      ok(
+        !petValidator.includes("RuleFor(x => x.Kind)"),
+        `discriminator property should not be validated:\n${petValidator}`,
+      );
+      ok(
+        petValidator.includes("RuleFor(x => x.Name)"),
+        `expected regular properties to still be validated:\n${petValidator}`,
+      );
+    });
   });
 
   describe("templates option", () => {

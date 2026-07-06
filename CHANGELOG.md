@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - All emitted code now references other emitted types (models, enums, interfaces, and `MergePatch<T>`) by fully-qualified name instead of a short name paired with a computed `using` directive. This applies uniformly — including base classes, property types, companion-interface implementations, discriminator `[JsonDerivedType(typeof(...))]` attributes, enum default-value initializers, and controller/service/validator signatures — even when the reference is within the same namespace. Closes a class of "type or namespace not found" / ambiguous-reference compile errors that could occur when `models-namespace`, `controllers-namespace`, `services-namespace`, `validators-namespace`, or `helpers-namespace` differ, most notably a genuine bug where PATCH validators emitted `TryGetValue<{EnumType}?>(...)` for an enum property without qualifying `{EnumType}` or adding a `using` for the models namespace. See [Cross-namespace references](docs/models.md#cross-namespace-references).
+- Validator generation now skips discriminator properties for `@discriminator` hierarchies. Previously those properties were emitted as normal rules, which could generate uncompilable validator code and incorrectly fail validation for required discriminator wire values.
 
 ## [0.11.2] - 2026-07-04
 

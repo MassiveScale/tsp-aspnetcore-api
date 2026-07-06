@@ -44,6 +44,8 @@ The emitter reads TypeSpec constraint decorators and translates them to FluentVa
 
 Properties marked `@visibility(Lifecycle.Read)` (read-only) generate rejection rules rather than validation rules. In PATCH validators they emit a "must not be present" rule so clients cannot supply the field at all. In POST validators, nullable read-only properties emit a `Null()` rule; non-nullable read-only properties produce no rule (the field is simply ignored on creation).
 
+For discriminated hierarchies (`@discriminator("...")`), the discriminator property itself is excluded from generated validators for both base and derived models. This avoids invalid rules against a wire-level polymorphism marker and prevents false validation failures for discriminator values supplied by polymorphic serialization.
+
 ## Custom rules
 
 Every generated validator is a `partial class` that exposes a virtual `ExtendRules()` method. Override it in a hand-written partial to add custom rules without editing the generated file:
