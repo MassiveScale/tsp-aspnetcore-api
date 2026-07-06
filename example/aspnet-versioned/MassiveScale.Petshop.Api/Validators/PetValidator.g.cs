@@ -25,7 +25,7 @@ public partial class PetValidator : AbstractValidator<MarketOnce.Community.Campa
     /// <summary>
     /// Initializes a new instance of <see cref="PetValidator"/> with version-aware auto-generated rules.
     /// </summary>
-    public PetValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Tag> tagValidator)
+    public PetValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Tag> tagValidator, AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Cat> catValidator, AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Dog> dogValidator)
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
@@ -44,6 +44,13 @@ public partial class PetValidator : AbstractValidator<MarketOnce.Community.Campa
             // Tags items are validated recursively
             RuleForEach(x => x.Tags).SetValidator(tagValidator);
 
+        });
+
+        // Polymorphic validation — dispatch to derived type validators
+        RuleFor(x => x).SetInheritanceValidator(v =>
+        {
+            v.Add<MarketOnce.Community.Campaign.Api.Models.Cat>(catValidator);
+            v.Add<MarketOnce.Community.Campaign.Api.Models.Dog>(dogValidator);
         });
 
         ExtendRules();

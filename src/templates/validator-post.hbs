@@ -22,7 +22,7 @@ public partial class {{{modelName}}}Validator : AbstractValidator<{{{qualifiedMo
     /// <summary>
     /// Initializes a new instance of <see cref="{{{modelName}}}Validator"/> with the auto-generated rules.
     /// </summary>
-    public {{{modelName}}}Validator({{#each referencedValidators}}{{#unless @first}}, {{/unless}}AbstractValidator<{{{qualifiedModelName}}}> {{{paramName}}}{{/each}})
+    public {{{modelName}}}Validator({{#each referencedValidators}}{{#unless @first}}, {{/unless}}AbstractValidator<{{{qualifiedModelName}}}> {{{paramName}}}{{/each}}{{#if derivedTypeValidators}}{{#if referencedValidators}}, {{/if}}{{#each derivedTypeValidators}}{{#unless @first}}, {{/unless}}AbstractValidator<{{{qualifiedTypeName}}}> {{{paramName}}}{{/each}}{{/if}})
     {
 {{#each properties}}
 {{#if isReadOnly}}
@@ -85,6 +85,16 @@ public partial class {{{modelName}}}Validator : AbstractValidator<{{{qualifiedMo
 {{/if}}
 {{/if}}
 {{/each}}
+{{#if derivedTypeValidators}}
+        // Polymorphic validation — dispatch to derived type validators
+        RuleFor(x => x).SetInheritanceValidator(v =>
+        {
+{{#each derivedTypeValidators}}
+            v.Add<{{{qualifiedTypeName}}}>({{{paramName}}});
+{{/each}}
+        });
+
+{{/if}}
         ExtendRules();
     }
 

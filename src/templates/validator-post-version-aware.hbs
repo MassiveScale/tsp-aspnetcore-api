@@ -27,7 +27,7 @@ public partial class {{{modelName}}}Validator : AbstractValidator<{{{qualifiedMo
     /// <summary>
     /// Initializes a new instance of <see cref="{{{modelName}}}Validator"/> with version-aware auto-generated rules.
     /// </summary>
-    public {{{modelName}}}Validator(IHttpContextAccessor httpContextAccessor{{#each referencedValidators}}, AbstractValidator<{{{qualifiedModelName}}}> {{{paramName}}}{{/each}})
+    public {{{modelName}}}Validator(IHttpContextAccessor httpContextAccessor{{#each referencedValidators}}, AbstractValidator<{{{qualifiedModelName}}}> {{{paramName}}}{{/each}}{{#each derivedTypeValidators}}, AbstractValidator<{{{qualifiedTypeName}}}> {{{paramName}}}{{/each}})
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "{{{defaultVersion}}}");
 
@@ -160,6 +160,16 @@ public partial class {{{modelName}}}Validator : AbstractValidator<{{{qualifiedMo
         });
 
 {{/each}}
+{{#if derivedTypeValidators}}
+        // Polymorphic validation — dispatch to derived type validators
+        RuleFor(x => x).SetInheritanceValidator(v =>
+        {
+{{#each derivedTypeValidators}}
+            v.Add<{{{qualifiedTypeName}}}>({{{paramName}}});
+{{/each}}
+        });
+
+{{/if}}
         ExtendRules();
     }
 
