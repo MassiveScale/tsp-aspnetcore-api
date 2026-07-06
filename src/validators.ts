@@ -660,15 +660,31 @@ function collectValidatorTransitiveDeps(
   return all;
 }
 
-/** Adds the given model and all its direct descendants to the target set. */
+/** Returns all models that transitively derive from `model` (children, grandchildren, ...). */
+function getAllDescendants(allModels: Model[], model: Model): Model[] {
+  const result: Model[] = [];
+  const queue = [model];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const candidate of allModels) {
+      if (candidate.baseModel === current) {
+        result.push(candidate);
+        queue.push(candidate);
+      }
+    }
+  }
+  return result;
+}
+
+/** Adds the given model and all its transitive descendants to the target set. */
 function addModelWithDescendants(
   allModels: Model[],
   model: Model,
   target: Set<Model>,
 ): void {
   target.add(model);
-  for (const candidate of allModels) {
-    if (candidate.baseModel === model) target.add(candidate);
+  for (const descendant of getAllDescendants(allModels, model)) {
+    target.add(descendant);
   }
 }
 
@@ -714,16 +730,14 @@ export function collectValidatorModelsFromRoutes(
             ? `MergePatch<${sourceName}>`
             : sourceName;
           patchModels.set(sourceModel, bodyTypeName);
-          // Also register direct descendants, deriving their patch body type name.
-          for (const candidate of allModels) {
-            if (candidate.baseModel === sourceModel) {
-              const candidateName =
-                getServerName(program, candidate) ?? pascalCase(candidate.name);
-              const descBodyTypeName = isMergePatchBody
-                ? `MergePatch<${candidateName}>`
-                : candidateName;
-              patchModels.set(candidate, descBodyTypeName);
-            }
+          // Also register transitive descendants, deriving their patch body type name.
+          for (const candidate of getAllDescendants(allModels, sourceModel)) {
+            const candidateName =
+              getServerName(program, candidate) ?? pascalCase(candidate.name);
+            const descBodyTypeName = isMergePatchBody
+              ? `MergePatch<${candidateName}>`
+              : candidateName;
+            patchModels.set(candidate, descBodyTypeName);
           }
         }
       }

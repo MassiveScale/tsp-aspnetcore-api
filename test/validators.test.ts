@@ -108,6 +108,57 @@ describe("csharp emitter - validators", () => {
       );
     });
 
+    it("emits a validator for a grandchild in a multi-level discriminated hierarchy", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        @discriminator("kind")
+        model Pet { kind: string; name: string; }
+        model Dog extends Pet { bark: boolean; }
+        model Labrador extends Dog { kind: "labrador"; }
+        model Poodle extends Dog { kind: "poodle"; }
+
+        @route("/pets")
+        interface Pets {
+          @post create(@body body: Pet): Pet;
+        }
+      `,
+        {
+          "emit-validators": true,
+          validators: "post",
+          "emit-controllers": false,
+          "emit-services": false,
+        },
+      );
+
+      const petValidator = results["Validators/PetValidator.g.cs"];
+      ok(petValidator, "expected Validators/PetValidator.g.cs");
+      ok(
+        petValidator.includes(
+          "AbstractValidator<Demo.Models.Labrador> labradorValidator",
+        ),
+        `expected Labrador validator parameter:\n${petValidator}`,
+      );
+
+      // The grandchildren must have their own validators emitted, otherwise nothing
+      // registers AbstractValidator<Labrador>/<Poodle> in DI and the constructor above fails to resolve.
+      const labradorValidator = results["Validators/LabradorValidator.g.cs"];
+      ok(
+        labradorValidator,
+        "expected Validators/LabradorValidator.g.cs to be emitted",
+      );
+      const poodleValidator = results["Validators/PoodleValidator.g.cs"];
+      ok(
+        poodleValidator,
+        "expected Validators/PoodleValidator.g.cs to be emitted",
+      );
+    });
+
     it("does not emit SetInheritanceValidator for non-discriminated models", async () => {
       const results = await emit(
         `
