@@ -1,4 +1,4 @@
-Set-Location -Path "./TypeSpec"
+Set-Location -Path (Join-Path $PSScriptRoot "TypeSpec")
 
 npm update
 tsp compile .
