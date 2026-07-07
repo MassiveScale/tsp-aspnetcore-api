@@ -130,11 +130,7 @@ export interface ResolvedOptions {
    * "earliest" otherwise.
    */
   validatorsVersionStrategy:
-    | "earliest"
-    | "latest"
-    | "per-version"
-    | "version-aware"
-    | undefined;
+    "earliest" | "latest" | "per-version" | "version-aware" | undefined;
   /** Whether to emit a shared generic helper or per-entity typed classes for MergePatch support. */
   mergePatchStyle: "generic" | "typed";
 }

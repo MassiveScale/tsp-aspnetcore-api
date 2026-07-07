@@ -65,14 +65,11 @@ const TEMPLATES_DIR = resolve(
 let _compiledValidatorPostTemplate: Handlebars.TemplateDelegate | undefined;
 let _compiledValidatorPatchTemplate: Handlebars.TemplateDelegate | undefined;
 let _compiledValidatorPostVersionAwareTemplate:
-  | Handlebars.TemplateDelegate
-  | undefined;
+  Handlebars.TemplateDelegate | undefined;
 let _compiledValidatorPatchVersionAwareTemplate:
-  | Handlebars.TemplateDelegate
-  | undefined;
+  Handlebars.TemplateDelegate | undefined;
 let _compiledValidatorInitializerTemplate:
-  | Handlebars.TemplateDelegate
-  | undefined;
+  Handlebars.TemplateDelegate | undefined;
 
 function loadValidatorTemplate(path: string): Handlebars.TemplateDelegate {
   return Handlebars.compile(readFileSync(path, "utf-8"));
@@ -813,8 +810,7 @@ async function emitValidatorModels(
   program: Program,
   allModels: Model[],
   routeModels:
-    | { postModels: Set<Model>; patchModels: Map<Model, string> }
-    | undefined,
+    { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined,
   createMember: EnumMember | undefined,
   updateMember: EnumMember | undefined,
   options: ResolvedOptions,
@@ -929,8 +925,7 @@ async function emitVersionAwareValidatorModels(
   program: Program,
   allModels: Model[],
   routeModels:
-    | { postModels: Set<Model>; patchModels: Map<Model, string> }
-    | undefined,
+    { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined,
   createMember: EnumMember | undefined,
   updateMember: EnumMember | undefined,
   options: ResolvedOptions,
@@ -1064,8 +1059,7 @@ async function emitValidatorsInitializer(
   program: Program,
   allModels: Model[],
   routeModels:
-    | { postModels: Set<Model>; patchModels: Map<Model, string> }
-    | undefined,
+    { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined,
   options: ResolvedOptions,
   emitPost: boolean,
   emitPatch: boolean,

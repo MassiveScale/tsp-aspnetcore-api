@@ -63,6 +63,11 @@
       .className      —     PascalCase class name of the derived type
       .discriminatorValue —  wire value identifying the derived type, e.g. "dog"
 
+  {{isAbstract}}      — true when the class should be declared `abstract`; set
+                        for models carrying `@discriminator`, since the base
+                        type has no discriminator value of its own and should
+                        never be instantiated directly.
+
   ── Built-in helpers ────────────────────────────────────────────────────────
 
   {{indent <text>}}        — prefixes every non-empty line of <text> with
@@ -109,7 +114,7 @@
 {{/if}}{{#if discriminator}}[JsonPolymorphic(TypeDiscriminatorPropertyName = "{{discriminator.propertyName}}")]
 {{#each discriminator.derivedTypes}}[JsonDerivedType(typeof({{className}}), "{{discriminatorValue}}")]
 {{/each}}{{/if}}[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial class {{className}}{{#if bases}} : {{bases}}{{/if}}
+public {{#if isAbstract}}abstract {{/if}}partial class {{className}}{{#if bases}} : {{bases}}{{/if}}
 {
 {{#each properties}}{{#if doc}}{{indent doc}}
 {{/if}}    [JsonPropertyName("{{jsonName}}")]

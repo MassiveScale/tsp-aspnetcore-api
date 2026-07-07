@@ -265,10 +265,7 @@ export interface EmitterOptions {
    * When unset, auto-detected: `"version-aware"` if `@versioned` is present, `"earliest"` otherwise.
    */
   "validators-version-strategy"?:
-    | "earliest"
-    | "latest"
-    | "per-version"
-    | "version-aware";
+    "earliest" | "latest" | "per-version" | "version-aware";
 }
 
 /** JSON Schema used by the TypeSpec compiler to validate emitter options. */

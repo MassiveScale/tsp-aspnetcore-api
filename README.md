@@ -2,7 +2,7 @@
 
 A TypeSpec emitter that generates C# model classes, interfaces, enums, ASP.NET Core controllers, service interfaces, and FluentValidation validators from TypeSpec definitions.
 
-For each TypeSpec `model` the emitter produces a `public partial class <Name>`. An optional companion `public partial interface I<Name>` can be enabled with `emit-interfaces: true`.
+For each TypeSpec `model` the emitter produces a `public partial class <Name>` — except a base model carrying `@discriminator`, which is emitted `abstract` since it has no discriminator value of its own (see [Model Generation](docs/models.md#discriminator)). An optional companion `public partial interface I<Name>` can be enabled with `emit-interfaces: true`.
 
 TypeSpec `enum` declarations and named string-literal `union` types become C# enums with `[JsonConverter(typeof(EnumMemberConverterFactory))]` and optional `[EnumMember(Value = "...")]` attributes.
 
