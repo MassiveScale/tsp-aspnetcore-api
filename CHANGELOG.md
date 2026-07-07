@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-07
+
+### Changed
+
+- Base models carrying `@discriminator` are now emitted as `abstract` classes. The base type never has a valid discriminator value of its own — only its derived types do — so it should never be instantiated directly; derived classes are unaffected and remain concrete. This is transparent to polymorphic JSON (de)serialization and FluentValidation's `SetInheritanceValidator` dispatch, since neither needs to construct the base type directly. See [Model Generation](docs/models.md#discriminator). **Potentially breaking**: any hand-written code that directly instantiates a `@discriminator` base model (e.g. `new Pet()`) will no longer compile.
+
 ## [0.11.3] - 2026-07-06
 
 ### Added
