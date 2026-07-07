@@ -21,7 +21,7 @@ namespace MarketOnce.Community.Campaign.Api.Models
     [JsonDerivedType(typeof(MarketOnce.Community.Campaign.Api.Models.Cat), "cat")]
     [JsonDerivedType(typeof(MarketOnce.Community.Campaign.Api.Models.Dog), "dog")]
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-    public partial class Pet
+    public abstract partial class Pet
     {
         /// <summary>
         /// Unique identifier of the entity.

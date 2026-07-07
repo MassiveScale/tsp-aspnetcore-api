@@ -125,6 +125,13 @@ export interface ClassView {
   patchMethod?: PatchMethodView;
   /** Present only on models carrying `@discriminator`; drives polymorphic JSON attributes. */
   discriminator?: DiscriminatorView;
+  /**
+   * True when this class should be declared `abstract`. Set for models
+   * carrying `@discriminator`, since the base type never has a valid
+   * discriminator value of its own and should never be instantiated directly
+   * — only its derived types are.
+   */
+  isAbstract?: boolean;
 }
 
 /** View model for a C# interface (`public partial interface`). */

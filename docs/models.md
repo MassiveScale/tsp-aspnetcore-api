@@ -102,7 +102,7 @@ model Cat extends Pet {
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(Cat), "cat")]
 [JsonDerivedType(typeof(Dog), "dog")]
-public partial class Pet
+public abstract partial class Pet
 {
     [JsonPropertyName("name")]
     public string? Name { get; set; }
@@ -114,6 +114,8 @@ public partial class Dog : Pet
 ```
 
 `[JsonDerivedType]` attributes are sorted by discriminator value for stable output, and intermediate models with no discriminator value of their own are skipped in favor of their nearest descendant that has one.
+
+The base class itself (`Pet` above) is always emitted `abstract`. It has no discriminator value of its own — only its derived types do — so instantiating it directly would produce an object with no valid wire representation. Derived classes are unaffected and remain concrete. This works transparently with polymorphic (de)serialization and FluentValidation's `SetInheritanceValidator` dispatch (see [FluentValidation validators](validators.md)), since neither needs to construct the base type directly.
 
 The discriminator property may be typed as `string`, a string-literal union, or an `enum` whose members carry string values (or no value, in which case the member name is used) — TypeSpec resolves the wire value the same way for all three. Enum members with a **numeric** value are rejected by the TypeSpec compiler itself with an `invalid-discriminator-value` diagnostic, since the discriminator must resolve to a string.
 

@@ -1222,6 +1222,26 @@ describe("csharp emitter - models", () => {
       ok(antIndex < zebraIndex, `expected Ant before Zebra in:\n${pet}`);
     });
 
+    it("declares the base class abstract", async () => {
+      const results = await emit(`
+        namespace Demo;
+        @discriminator("kind")
+        model Pet { kind: string; name: string; }
+        model Dog extends Pet { kind: "dog"; }
+      `);
+      const pet = results["Pet.g.cs"];
+      const dog = results["Dog.g.cs"];
+      ok(
+        pet.includes("public abstract partial class Pet"),
+        `expected Pet to be abstract:\n${pet}`,
+      );
+      ok(
+        dog.includes("public partial class Dog : Demo.Models.Pet") &&
+          !dog.includes("abstract"),
+        `expected Dog to stay concrete:\n${dog}`,
+      );
+    });
+
     it("omits the discriminator property from the companion interface", async () => {
       const results = await emit(
         `

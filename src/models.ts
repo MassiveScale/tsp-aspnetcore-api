@@ -313,6 +313,8 @@ function buildClassView(
     ? className.slice(1)
     : className;
 
+  const discriminator = buildDiscriminatorView(program, model, options);
+
   return {
     doc: docFor(program, model),
     className,
@@ -323,7 +325,8 @@ function buildClassView(
       ? typeReference(model.baseModel, options, program)
       : undefined,
     properties: buildPropertyViews(program, model, options),
-    discriminator: buildDiscriminatorView(program, model, options),
+    discriminator,
+    isAbstract: discriminator !== undefined,
   };
 }
 
