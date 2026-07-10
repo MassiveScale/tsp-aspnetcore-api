@@ -23,7 +23,7 @@
     "@typespec/http": "^1.13.0",
     "@typespec/versioning": "^0.83.0",
     "eslint": "^9.39.4",
-    "prettier": "^3.3.3",
+    "prettier": "^3.9.5",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.4"
   },
