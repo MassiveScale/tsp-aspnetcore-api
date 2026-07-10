@@ -18,7 +18,7 @@
     "@typespec/emitter-framework": "^0.17.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.1.1",
     "@typespec/compiler": "^1.13.0",
     "@typespec/http": "^1.13.0",
     "@typespec/versioning": "^0.83.0",
