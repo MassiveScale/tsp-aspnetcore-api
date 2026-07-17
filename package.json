@@ -14,14 +14,14 @@
   "peerDependencies": {
     "@typespec/compiler": "^1.13.0",
     "@typespec/http": "^1.13.0",
-    "@typespec/versioning": "^0.83.0",
+    "@typespec/versioning": "^0.84.0",
     "@typespec/emitter-framework": "^0.17.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
     "@typespec/compiler": "^1.13.0",
     "@typespec/http": "^1.13.0",
-    "@typespec/versioning": "^0.83.0",
+    "@typespec/versioning": "^0.84.0",
     "eslint": "^9.39.4",
     "prettier": "^3.3.3",
     "typescript": "^6.0.3",
