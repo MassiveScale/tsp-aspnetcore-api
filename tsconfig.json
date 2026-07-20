@@ -11,7 +11,8 @@
     "declaration": true,
     "skipLibCheck": true,
     /* Linting */
-    "strict": true
+    "strict": true,
+    "types": ["node"]
   },
   "include": ["src"]
 }

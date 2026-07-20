@@ -31,6 +31,9 @@
     .jsonName         —   camelCase JSON key for [JsonPropertyName], e.g. "firstName"
     .nullable         —   true when the type is nullable (ends with "?");
                           controls whether [JsonIgnore] is emitted
+    .attributes       —   extra serialization attributes (complete "[...]"
+                          strings) from `@encode`, e.g. [JsonNumberHandling(...)]
+                          or [JsonConverter(...)]; emitted after [JsonPropertyName]
 
                         Note: the `@discriminator` property (see {{discriminator}}
                         below) is omitted from this list on every class in the
@@ -118,7 +121,8 @@ public {{#if isAbstract}}abstract {{/if}}partial class {{className}}{{#if bases}
 {
 {{#each properties}}{{#if doc}}{{indent doc}}
 {{/if}}    [JsonPropertyName("{{jsonName}}")]
-{{#if nullable}}    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+{{#each attributes}}    {{this}}
+{{/each}}{{#if nullable}}    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 {{/if}}    public {{type}} {{name}} { get; set; }{{#if initializer}} = {{initializer}};{{/if}}
 {{#unless @last}}
 

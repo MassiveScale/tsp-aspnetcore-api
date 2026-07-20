@@ -67,7 +67,8 @@
 {
 {{#each properties}}{{#if doc}}{{indent doc}}
 {{/if}}    [JsonPropertyName("{{jsonName}}")]
-{{#if nullable}}    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+{{#each attributes}}    {{this}}
+{{/each}}{{#if nullable}}    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 {{/if}}    {{type}} {{name}} { get; set; }
 {{#unless @last}}
 

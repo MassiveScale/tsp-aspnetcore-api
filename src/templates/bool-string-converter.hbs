@@ -1,0 +1,67 @@
+{{!--
+  bool-string-converter.hbs — static helper emitted into the helpers output
+  directory (default: `Helpers/`) whenever a model property uses
+  `@encode(string)` on a boolean (supported since TypeSpec 1.14.0).
+
+  Provides `BooleanStringJsonConverter`, a `System.Text.Json` converter that
+  serializes a `bool` as the JSON string `"true"` / `"false"` and reads it back
+  case-insensitively (also tolerating native JSON `true` / `false`).
+
+  Properties encoded this way are annotated with
+    [JsonConverter(typeof(<HelpersNamespace>.BooleanStringJsonConverter))]
+  so this helper must be present in the same compilation unit.  The converter
+  targets `bool`; System.Text.Json applies it to `bool?` properties too.
+
+  Override via tspconfig.yaml:
+    options:
+      "@massivescale/tsp-aspnetcore-api":
+        templates:
+          bool-string-converter: "./templates/bool-string-converter.hbs"
+
+  ── Template variables ──────────────────────────────────────────────────────
+
+  (none — this template renders a fully static class body)
+
+  ── Example customisations ──────────────────────────────────────────────────
+
+  • Emit "True"/"False" (capitalised) instead of lowercase:
+      writer.WriteStringValue(value ? "True" : "False");
+
+  • Make the class internal for single-assembly projects:
+      internal sealed class BooleanStringJsonConverter : JsonConverter<bool>
+--}}
+/// <summary>
+/// Serializes a <see cref="bool"/> as the JSON string <c>"true"</c> or
+/// <c>"false"</c> and reads it back case-insensitively. Native JSON boolean
+/// tokens are also accepted when reading.
+/// </summary>
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+public sealed class BooleanStringJsonConverter : JsonConverter<bool>
+{
+    /// <inheritdoc />
+    public override bool Read(
+        ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.True:
+                return true;
+            case JsonTokenType.False:
+                return false;
+            case JsonTokenType.String:
+                var s = reader.GetString();
+                if (bool.TryParse(s, out var result)) return result;
+                throw new JsonException($"Unable to convert \"{s}\" to a boolean.");
+            default:
+                throw new JsonException(
+                    $"Unexpected token {reader.TokenType} when reading a boolean.");
+        }
+    }
+
+    /// <inheritdoc />
+    public override void Write(
+        Utf8JsonWriter writer, bool value, JsonSerializerOptions options)
+    {
+        writer.WriteStringValue(value ? "true" : "false");
+    }
+}
