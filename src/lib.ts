@@ -35,6 +35,8 @@ export interface TemplateOverrides {
   "entity-merge-patch"?: string;
   /** Custom template for the EnumMemberConverter helper class. */
   "enum-member-converter"?: string;
+  /** Custom template for the BooleanStringJsonConverter helper class (used for `@encode(string)` on booleans). */
+  "bool-string-converter"?: string;
   /** Custom template for the standard POST validator class. */
   "validator-post"?: string;
   /** Custom template for the standard PATCH validator class. */
@@ -315,6 +317,7 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
         "merge-patch": { type: "string", nullable: true },
         "entity-merge-patch": { type: "string", nullable: true },
         "enum-member-converter": { type: "string", nullable: true },
+        "bool-string-converter": { type: "string", nullable: true },
         "validator-post": { type: "string", nullable: true },
         "validator-patch": { type: "string", nullable: true },
         "validator-post-version-aware": { type: "string", nullable: true },

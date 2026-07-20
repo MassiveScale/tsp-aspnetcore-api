@@ -20,6 +20,7 @@ import {
   sortUsings,
 } from "./emitter.js";
 import { Renderer } from "./renderer.js";
+import { modelUsesBooleanStringEncoding } from "./models.js";
 import { pascalCase } from "./utils.js";
 import { collectValidatorModelsFromRoutes } from "./validators.js";
 
@@ -40,6 +41,13 @@ const ENUM_CONVERTER_HELPER_USINGS = [
   "System.Collections.Generic",
   "System.Reflection",
   "System.Runtime.Serialization",
+  "System.Text.Json",
+  "System.Text.Json.Serialization",
+];
+
+/** `using` directives included in the BooleanStringJsonConverter helper file. */
+const BOOL_CONVERTER_HELPER_USINGS = [
+  "System",
   "System.Text.Json",
   "System.Text.Json.Serialization",
 ];
@@ -78,6 +86,18 @@ export async function emitHelpers(
   // Emit EnumMemberConverter helper only when emit-helpers is true (optional).
   if (options.emitHelpers) {
     await emitEnumMemberConverter(program, renderer, options);
+  }
+
+  // Emit the BooleanStringJsonConverter helper whenever a model relies on it
+  // (i.e. any property uses `@encode(string)` on a boolean). Unlike the
+  // EnumMemberConverter this is not gated on `emit-helpers`, because generated
+  // model code references the converter by name and would not compile without it.
+  if (
+    models.some((model) =>
+      modelUsesBooleanStringEncoding(program, model, options),
+    )
+  ) {
+    await emitBooleanStringConverter(program, renderer, options);
   }
 }
 
@@ -170,6 +190,32 @@ async function emitEnumMemberConverter(
       namespace: options.helpersNamespace,
       usings: sortUsings(new Set(ENUM_CONVERTER_HELPER_USINGS)),
       body: renderer.renderEnumMemberConverter(),
+    }),
+  });
+}
+
+/**
+ * Writes the `BooleanStringJsonConverter` helper class to the helpers output
+ * directory. Emitted whenever a model property uses `@encode(string)` on a
+ * boolean, since generated model code references the converter by name.
+ *
+ * @param program - The compiled TypeSpec program (needed by `emitFile`).
+ * @param renderer - Pre-compiled renderer instance.
+ * @param options - Resolved emitter options.
+ */
+async function emitBooleanStringConverter(
+  program: Program,
+  renderer: Renderer,
+  options: ResolvedOptions,
+): Promise<void> {
+  const fileName = `BooleanStringJsonConverter${options.fileExtension}`;
+  await emitFile(program, {
+    path: resolvePath(options.helpersOutputDir, fileName),
+    content: renderer.renderFile({
+      fileName,
+      namespace: options.helpersNamespace,
+      usings: sortUsings(new Set(BOOL_CONVERTER_HELPER_USINGS)),
+      body: renderer.renderBooleanStringConverter(),
     }),
   });
 }

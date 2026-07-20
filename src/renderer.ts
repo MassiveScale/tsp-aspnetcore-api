@@ -33,6 +33,7 @@ export type TemplateName =
   | "service-interface"
   | "merge-patch"
   | "enum-member-converter"
+  | "bool-string-converter"
   | "validator-post"
   | "validator-patch"
   | "validator-post-version-aware"
@@ -63,6 +64,12 @@ export interface PropertyView {
   jsonName: string;
   /** `true` when the type is nullable (ends with `?`); drives `[JsonIgnore]`. */
   nullable: boolean;
+  /**
+   * Extra serialization attributes emitted verbatim on the property (each a
+   * complete `[...]` string), e.g. an `@encode`-driven `[JsonNumberHandling]`
+   * or `[JsonConverter]`.  Rendered after `[JsonPropertyName]`.
+   */
+  attributes?: string[];
   /** Optional C# expression used to initialize the property. */
   initializer?: string;
 }
@@ -305,6 +312,8 @@ export interface Renderer {
   renderEntityMergePatch(view: EntityMergePatchView): string;
   /** Renders the `EnumMemberConverterFactory` and `EnumMemberConverter<T>` helper class body. */
   renderEnumMemberConverter(): string;
+  /** Renders the `BooleanStringJsonConverter` helper class body (for `@encode(string)` on booleans). */
+  renderBooleanStringConverter(): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -477,6 +486,7 @@ function classPropertyText(prop: PropertyView): string {
   const parts: string[] = [];
   if (prop.doc) parts.push(prop.doc);
   parts.push(`[JsonPropertyName("${prop.jsonName}")]`);
+  for (const attr of prop.attributes ?? []) parts.push(attr);
   if (prop.nullable)
     parts.push(`[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`);
   parts.push(`public ${prop.type} ${prop.name} { get; set; }`);
@@ -494,6 +504,7 @@ function interfacePropertyText(prop: PropertyView): string {
   const parts: string[] = [];
   if (prop.doc) parts.push(prop.doc);
   parts.push(`[JsonPropertyName("${prop.jsonName}")]`);
+  for (const attr of prop.attributes ?? []) parts.push(attr);
   if (prop.nullable)
     parts.push(`[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`);
   parts.push(`${prop.type} ${prop.name} { get; set; }`);
@@ -635,6 +646,11 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
     "enum-member-converter",
     overrides["enum-member-converter"],
   );
+  const booleanStringConverterTemplate = loadTemplate(
+    env,
+    "bool-string-converter",
+    overrides["bool-string-converter"],
+  );
 
   return {
     renderFile(view) {
@@ -693,6 +709,9 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
     },
     renderEnumMemberConverter() {
       return enumMemberConverterTemplate({});
+    },
+    renderBooleanStringConverter() {
+      return booleanStringConverterTemplate({});
     },
   };
 }

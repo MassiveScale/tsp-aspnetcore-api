@@ -20,6 +20,7 @@ import {
   getDiscriminatedUnionFromInheritance,
   getDiscriminator,
   getDoc,
+  getEncode,
   getFormat,
   isArrayModelType,
   isRecordModelType,
@@ -505,7 +506,14 @@ function buildPropertyViews(
   return [...model.properties.values()]
     .filter((prop) => prop.name !== discriminatorPropertyName)
     .map((prop) => {
-      const type = propertyTypeName(program, model, prop, options);
+      const encoding = resolvePropertyEncoding(program, prop, options);
+      const type = propertyTypeName(
+        program,
+        model,
+        prop,
+        options,
+        encoding.typeOverride,
+      );
       const inferredEnumType = inferredEnumTypeNameForProperty(model, prop);
       const qualifiedInferredEnumType = inferredEnumType
         ? `${options.modelsNamespace}.${inferredEnumType}`
@@ -516,6 +524,7 @@ function buildPropertyViews(
         name: getServerName(program, prop) ?? pascalCase(prop.name),
         jsonName: camelCase(prop.name),
         nullable: type.endsWith("?"),
+        attributes: encoding.attributes,
         initializer: resolveInitializer(
           prop.defaultValue,
           qualifiedInferredEnumType,
@@ -564,15 +573,195 @@ function docFor(
 }
 
 /**
+ * TypeSpec scalar names (walking the base-scalar chain) that represent a
+ * date/time instant.  `@encode("unixTimestamp", <int>)` on one of these maps
+ * the property to the integer wire type instead of `DateTimeOffset`.
+ */
+const DATETIME_SCALARS = new Set(["utcDateTime", "offsetDateTime"]);
+
+/** TypeSpec scalar names representing a whole-number type. */
+const INTEGER_SCALARS = new Set([
+  "int8",
+  "int16",
+  "int32",
+  "int64",
+  "uint8",
+  "uint16",
+  "uint32",
+  "uint64",
+  "safeint",
+  "integer",
+]);
+
+/** TypeSpec scalar names representing any numeric type (integer or real). */
+const NUMERIC_SCALARS = new Set([
+  ...INTEGER_SCALARS,
+  "float",
+  "float32",
+  "float64",
+  "decimal",
+  "decimal128",
+  "numeric",
+]);
+
+/**
+ * Result of resolving an `@encode` decorator on a model property.
+ */
+interface EncodeResolution {
+  /**
+   * C# type that overrides the default scalar/format mapping (non-nullable),
+   * or `undefined` to keep the default type.  Used when the encoding changes
+   * the wire type itself (e.g. a unix-timestamp `utcDateTime` becomes `long`).
+   */
+  typeOverride?: string;
+  /**
+   * Serialization attributes to emit on the property, e.g.
+   * `[JsonNumberHandling(...)]` or a `[JsonConverter(...)]` reference.
+   */
+  attributes: string[];
+  /**
+   * `true` when the property depends on the emitted `BooleanStringJsonConverter`
+   * helper, so the helper file must also be emitted.
+   */
+  usesBooleanStringConverter: boolean;
+}
+
+/** An {@link EncodeResolution} that applies no changes. */
+const NO_ENCODING: EncodeResolution = {
+  attributes: [],
+  usesBooleanStringConverter: false,
+};
+
+/**
+ * Returns the first scalar name in `type`'s base-scalar chain that is known to
+ * {@link SCALAR_MAP} (falling back to the declared name), or `undefined` when
+ * `type` is not a scalar.  This canonicalises custom scalars
+ * (`scalar epoch extends utcDateTime`) to their built-in ancestor.
+ */
+function knownScalarName(type: Type): string | undefined {
+  if (type.kind !== "Scalar") return undefined;
+  let current: typeof type | undefined = type;
+  while (current) {
+    if (SCALAR_MAP[current.name]) return current.name;
+    current = current.baseScalar;
+  }
+  return type.name;
+}
+
+/**
+ * Resolves the effect of an `@encode` decorator on a model property.
+ *
+ * Supported encodings (all others are ignored, leaving the default mapping):
+ * - **date/time → unix timestamp** (`@encode("unixTimestamp", int32|int64)`):
+ *   the property becomes the integer wire type. No converter required.
+ * - **duration → seconds** (`@encode("seconds", int32|float64|…)`): the
+ *   property becomes the numeric wire type. No converter required.
+ * - **numeric → string** (`@encode(string)`): the numeric C# type is kept and
+ *   `[JsonNumberHandling]` is added so `System.Text.Json` reads/writes the
+ *   number as a JSON string (useful for `int64`/`decimal` precision).
+ * - **boolean → string** (`@encode(string)`, new in TypeSpec 1.14.0): a
+ *   `[JsonConverter]` referencing the emitted `BooleanStringJsonConverter`
+ *   helper serializes the `bool` as `"true"`/`"false"`.
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param prop - The model property to inspect.
+ * @param options - Resolved options (helpers namespace for the converter ref).
+ * @returns The resolved encoding effect; {@link NO_ENCODING} when nothing applies.
+ */
+function resolvePropertyEncoding(
+  program: Program,
+  prop: ModelProperty,
+  options: ResolvedOptions,
+): EncodeResolution {
+  const encode =
+    getEncode(program, prop) ??
+    (prop.type.kind === "Scalar" ? getEncode(program, prop.type) : undefined);
+  if (!encode) return NO_ENCODING;
+
+  const source = knownScalarName(prop.type);
+  if (!source) return NO_ENCODING;
+
+  const target = knownScalarName(encode.type);
+  const encodeAsString = target === "string" || encode.encoding === "string";
+
+  // date/time → integer (unix timestamp).
+  if (DATETIME_SCALARS.has(source) && target && INTEGER_SCALARS.has(target)) {
+    return {
+      typeOverride: typeReference(encode.type, options, program),
+      attributes: [],
+      usesBooleanStringConverter: false,
+    };
+  }
+
+  // duration → numeric (seconds and similar).
+  if (source === "duration" && target && NUMERIC_SCALARS.has(target)) {
+    return {
+      typeOverride: typeReference(encode.type, options, program),
+      attributes: [],
+      usesBooleanStringConverter: false,
+    };
+  }
+
+  // numeric → string.
+  if (NUMERIC_SCALARS.has(source) && encodeAsString) {
+    return {
+      attributes: [
+        "[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString)]",
+      ],
+      usesBooleanStringConverter: false,
+    };
+  }
+
+  // boolean → string (TypeSpec 1.14.0).
+  if (source === "boolean" && encodeAsString) {
+    return {
+      attributes: [
+        `[JsonConverter(typeof(${options.helpersNamespace}.BooleanStringJsonConverter))]`,
+      ],
+      usesBooleanStringConverter: true,
+    };
+  }
+
+  return NO_ENCODING;
+}
+
+/**
+ * Returns `true` when any property of `model` uses `@encode(string)` on a
+ * boolean, meaning the `BooleanStringJsonConverter` helper must be emitted.
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param model - The model to scan.
+ * @param options - Resolved emitter options.
+ */
+export function modelUsesBooleanStringEncoding(
+  program: Program,
+  model: Model,
+  options: ResolvedOptions,
+): boolean {
+  for (const prop of model.properties.values()) {
+    if (
+      resolvePropertyEncoding(program, prop, options).usesBooleanStringConverter
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Resolves the C# type string for a model property, including nullability.
  *
- * Checks `@format` annotations (on the property and its scalar type) before
- * falling through to {@link typeReference}.  Appends `?` when the property is
- * optional or when `nullable-properties` is enabled.
+ * An `@encode` type override (from {@link resolvePropertyEncoding}) takes
+ * precedence over `@format` and the default scalar mapping.  Otherwise checks
+ * `@format` annotations (on the property and its scalar type) before falling
+ * through to {@link typeReference}.  Appends `?` when the property is optional
+ * or when `nullable-properties` is enabled.
  *
  * @param program - The compiled TypeSpec program.
  * @param prop - The model property to resolve.
  * @param options - Resolved options for nullability and format mapping.
+ * @param typeOverride - Optional C# type from an `@encode` decorator that
+ *   overrides the default mapping.
  * @returns C# type string, possibly suffixed with `?`.
  */
 function propertyTypeName(
@@ -580,19 +769,24 @@ function propertyTypeName(
   model: Model,
   prop: ModelProperty,
   options: ResolvedOptions,
+  typeOverride?: string,
 ): string {
-  const propFormat = getFormat(program, prop);
-  const scalarFormat =
-    prop.type.kind === "Scalar" ? getFormat(program, prop.type) : undefined;
-  const format = propFormat ?? scalarFormat;
   let type: string;
-  if (format && FORMAT_MAP[format.toLowerCase()]) {
-    type = FORMAT_MAP[format.toLowerCase()];
+  if (typeOverride) {
+    type = typeOverride;
   } else {
-    const inferredEnumType = inferredEnumTypeNameForProperty(model, prop);
-    type = inferredEnumType
-      ? `${options.modelsNamespace}.${inferredEnumType}`
-      : typeReference(prop.type, options, program);
+    const propFormat = getFormat(program, prop);
+    const scalarFormat =
+      prop.type.kind === "Scalar" ? getFormat(program, prop.type) : undefined;
+    const format = propFormat ?? scalarFormat;
+    if (format && FORMAT_MAP[format.toLowerCase()]) {
+      type = FORMAT_MAP[format.toLowerCase()];
+    } else {
+      const inferredEnumType = inferredEnumTypeNameForProperty(model, prop);
+      type = inferredEnumType
+        ? `${options.modelsNamespace}.${inferredEnumType}`
+        : typeReference(prop.type, options, program);
+    }
   }
   const nullable = prop.optional || options.nullableProperties;
   return nullable && !type.endsWith("?") ? `${type}?` : type;

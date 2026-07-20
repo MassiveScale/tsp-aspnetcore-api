@@ -454,6 +454,7 @@ function resolveTemplatePaths(
     "merge-patch",
     "entity-merge-patch",
     "enum-member-converter",
+    "bool-string-converter",
     "validator-post",
     "validator-patch",
     "validator-post-version-aware",

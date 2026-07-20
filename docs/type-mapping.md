@@ -38,3 +38,25 @@ When a property or scalar carries `@format(...)`, the format takes precedence ov
 | `time`          | `TimeOnly`       |
 
 Unknown format strings fall through to the underlying type mapping.
+
+## `@encode` encodings
+
+The built-in TypeSpec `@encode` decorator changes how a value is represented on the wire. When it is present on a property (or its scalar type), the emitter adjusts the C# type and/or adds `System.Text.Json` serialization attributes:
+
+| TypeSpec                                                            | Emitted C#                                                                          | Notes                                               |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `@encode("unixTimestamp", int32)` on `utcDateTime`/`offsetDateTime` | `int`                                                                               | Epoch seconds; use `int64` for `long`.              |
+| `@encode("seconds", int32)` on `duration`                           | `int`                                                                               | Use `float64` for `double`, etc.                    |
+| `@encode(string)` on a numeric (`int64`, `decimal`, …)              | same numeric type + `[JsonNumberHandling(AllowReadingFromString \| WriteAsString)]` | Reads/writes the number as a JSON string.           |
+| `@encode(string)` on `boolean`                                      | `bool` + `[JsonConverter(typeof(<Helpers>.BooleanStringJsonConverter))]`            | Serializes as `"true"`/`"false"` (TypeSpec 1.14.0). |
+
+An `@encode` type override takes precedence over `@format` and the default scalar mapping; nullability is applied as usual. Custom scalars are canonicalized to their nearest built-in base before matching. The `BooleanStringJsonConverter` helper is emitted automatically into the helpers directory when needed (overridable via the [`bool-string-converter` template](custom-templates.md)). Encodings other than those listed above leave the default type mapping unchanged.
+
+```typespec
+model Event {
+  @encode("unixTimestamp", int64) occurredAt: utcDateTime; // long
+  @encode("seconds", int32) ttl: duration;                 // int
+  @encode(string) balance: int64;                          // long + [JsonNumberHandling]
+  @encode(string) active: boolean;                         // bool + [JsonConverter]
+}
+```

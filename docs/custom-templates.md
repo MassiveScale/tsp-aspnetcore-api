@@ -25,10 +25,11 @@ Templates are compiled with `noEscape: true` (so `<`, `>`, and `&` pass through 
 | `merge-patch`           | _(no variables — static `MergePatch<T>` generic helper class, used when `merge-patch-style` is `"generic"`)_                                                                                                                                                           |
 | `entity-merge-patch`    | `{ modelName: string, qualifiedModelName: string }` — per-entity typed merge patch class, used when `merge-patch-style` is `"typed"`. `modelName` is the short C# class name (e.g. `"Widget"`); `qualifiedModelName` is fully qualified (e.g. `"Demo.Models.Widget"`). |
 | `enum-member-converter` | _(no variables — static helper class)_                                                                                                                                                                                                                                 |
+| `bool-string-converter` | _(no variables — static `BooleanStringJsonConverter` helper class, emitted when a property uses `@encode(string)` on a boolean)_                                                                                                                                       |
 
 ## Shared sub-types
 
-- `Property` — `{ doc?: string, type: string, name: string }`
+- `Property` — `{ doc?: string, type: string, name: string, attributes?: string[] }` — `attributes` are extra serialization attributes (complete `[...]` strings) from `@encode`, emitted after `[JsonPropertyName]`.
 - `Member` — `{ doc?: string, name: string, memberValue: string, value?: number }`
 - `Operation` — `{ doc?: string, name: string, httpVerb: string, routeSuffix?: string, params: Param[], returnType: string }`
 - `Param` — `{ name: string, type: string, binding: string, optional: boolean }`
@@ -48,6 +49,7 @@ Templates are compiled with `noEscape: true` (so `<`, `>`, and `&` pass through 
 | `merge-patch`                   | `MergePatch<T>` generic helper class (used when `merge-patch-style` is `"generic"`). |
 | `entity-merge-patch`            | Per-entity `{Model}MergePatch` class (used when `merge-patch-style` is `"typed"`).   |
 | `enum-member-converter`         | `EnumMemberConverterFactory` and `EnumMemberConverter<T>` helper classes.            |
+| `bool-string-converter`         | `BooleanStringJsonConverter` helper class (for `@encode(string)` on booleans).       |
 | `validator-post`                | Standard POST validator (`AbstractValidator<{Model}>`).                              |
 | `validator-patch`               | Standard PATCH validator with conditional patch-aware rules.                         |
 | `validator-post-version-aware`  | Version-aware POST validator with `When(() => IsAtLeast(...))` guards.               |

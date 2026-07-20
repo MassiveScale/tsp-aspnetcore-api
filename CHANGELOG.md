@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-20
+
+### Added
+
+- `@encode` support for model properties. The built-in TypeSpec `@encode` decorator now influences the generated C# type and serialization attributes:
+  - **Date/time as Unix timestamp** — `@encode("unixTimestamp", int32 | int64)` on `utcDateTime` / `offsetDateTime` emits the integer wire type (`int` / `long`) instead of `DateTimeOffset`.
+  - **Duration as seconds** — `@encode("seconds", int32 | float64 | …)` on `duration` emits the numeric wire type instead of `TimeSpan`.
+  - **Numeric as string** — `@encode(string)` on any numeric type keeps the numeric C# type and adds `[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString)]`, so System.Text.Json reads and writes the value as a JSON string (useful for preserving `int64` / `decimal` precision).
+  - **Boolean as string** (new in TypeSpec 1.14.0) — `@encode(string)` on a `boolean` emits `[JsonConverter(typeof(<Helpers>.BooleanStringJsonConverter))]`, serializing the value as `"true"` / `"false"` and reading it back case-insensitively.
+
+  An `@encode` type override takes precedence over `@format` and the default scalar mapping. Encodings other than those listed leave the default mapping unchanged. See [Type Mapping — `@encode` encodings](docs/type-mapping.md#encode-encodings).
+
+- `BooleanStringJsonConverter` helper class, emitted automatically into the helpers directory whenever a property uses `@encode(string)` on a boolean. Because generated model code references it by name, it is emitted independent of the `emit-helpers` option. Overridable via the new `bool-string-converter` template key. See [Custom Templates](docs/custom-templates.md).
+
+### Changed
+
+- Upgraded the supported TypeSpec toolchain to the 1.14.0 release train: `@typespec/compiler` and `@typespec/http` to `^1.14.0`, and `@typespec/versioning` to `^0.84.0`.
+- Removed the unused `@typespec/emitter-framework` peer dependency; it was declared but never imported by the emitter.
+
 ## [0.12.0] - 2026-07-07
 
 ### Changed
