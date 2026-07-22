@@ -53,6 +53,7 @@ import {
 } from "./models.js";
 import { emitHelpers } from "./helpers.js";
 import { emitValidators } from "./validators.js";
+import { cleanOutputDirectories } from "./clean.js";
 
 /** Default C# namespace used for top-level TypeSpec models with no namespace. */
 const DEFAULT_NAMESPACE = "Models";
@@ -110,6 +111,8 @@ export interface ResolvedOptions {
   abstractSuffix: string;
   /** Whether to add a CancellationToken parameter to operations. */
   cancellationToken: boolean;
+  /** Whether to remove previously-generated files from the output directories before emitting. */
+  cleanOutputDirs: boolean;
   /** Resolved template override paths (absolute). */
   templates: TemplateOverrides;
   /** Whether to emit helper files (`MergePatchValue`, `EnumMemberConverter`). */
@@ -162,6 +165,12 @@ export async function $onEmit(
 
   const renderer = buildRenderer(program, options);
   if (!renderer) return;
+
+  // Remove stale generated files before writing new ones so that renamed or
+  // deleted TypeSpec types do not leave orphaned output behind.
+  if (options.cleanOutputDirs) {
+    await cleanOutputDirectories(program, options);
+  }
 
   const models: Model[] = [];
   const enums: Enum[] = [];
@@ -423,6 +432,7 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     nullableProperties: raw["nullable-properties"] ?? true,
     abstractSuffix: raw["abstract-suffix"] ?? "Base",
     cancellationToken: raw["cancellation-token"] ?? true,
+    cleanOutputDirs: raw["clean-output-dirs"] ?? true,
     templates: resolveTemplatePaths(raw.templates),
     emitValidators: raw["emit-validators"] ?? false,
     validatorsOutputDir: resolvePath(baseDir, validatorsDir),
