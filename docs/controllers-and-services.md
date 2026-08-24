@@ -11,7 +11,7 @@ For each HTTP `interface` (or `namespace`) that carries routes, the emitter writ
 
 **Routes** — one `[Http<Verb>("...")]` attribute is emitted per available API version of each operation. Without versioning a single attribute is emitted using the resolved operation path.
 
-**Parameter binding** — path parameters get `[FromRoute]`, query parameters get `[FromQuery]`, headers get `[FromHeader]`, and request bodies get `[FromBody]`.
+**Parameter binding** — path parameters get `[FromRoute]`, query parameters get `[FromQuery]`, headers get `[FromHeader]`, and request bodies get `[FromBody]`. When [`@serverName`](./decorators.md) renames a parameter's emitted C# identifier, the binding attribute gets an explicit `Name = "..."` pointing at the original wire name (e.g. `[FromQuery(Name = "custId")] string customerId`), so the HTTP contract is unaffected by the rename.
 
 ## Example
 

@@ -308,6 +308,10 @@ function buildOperationView(
  * @param body - Optional request body descriptor.
  * @param options - Nullability options.
  * @returns Ordered array of parameter view models (body always last if present).
+ *   When `@serverName` renames a parameter's emitted C# identifier, the view's
+ *   `bindingName` is set to the original HTTP wire name so the generated
+ *   `[FromRoute]`/`[FromQuery]`/`[FromHeader]` attribute keeps binding the
+ *   actual request data instead of the renamed identifier.
  */
 function buildParams(
   program: Program,
@@ -321,11 +325,18 @@ function buildParams(
     const binding = httpParamBinding(param.type);
     if (!binding) continue;
     const prop = param.param;
+    const name = getServerName(program, prop) ?? camelCase(prop.name);
+    // The resolved HTTP wire name (accounts for explicit @query/@path/@header
+    // name overrides), independent of @serverName. When @serverName renames
+    // the emitted C# identifier away from this, the binding attribute must
+    // still target the wire name or ASP.NET Core model binding breaks.
+    const wireName = param.name;
     result.push({
-      name: camelCase(prop.name),
+      name,
       type: propTypeRef(program, prop, options),
       binding,
       optional: prop.optional,
+      bindingName: wireName !== name ? wireName : undefined,
     });
   }
 

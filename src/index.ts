@@ -12,3 +12,4 @@
 export { $onEmit } from "./emitter.js";
 export { $lib } from "./lib.js";
 export { $decorators, getServerName } from "./decorators.js";
+export { $linter } from "./linter.js";
