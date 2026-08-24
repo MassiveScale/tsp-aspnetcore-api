@@ -2,13 +2,16 @@ import { Diagnostic, resolvePath } from "@typespec/compiler";
 import { expectDiagnosticEmpty } from "@typespec/compiler/testing";
 import { createTester } from "@typespec/compiler/testing";
 
-const baseTester = createTester(resolvePath(import.meta.dirname, "../.."), {
-  libraries: [
-    "@massivescale/tsp-aspnetcore-api",
-    "@typespec/http",
-    "@typespec/versioning",
-  ],
-});
+export const baseTester = createTester(
+  resolvePath(import.meta.dirname, "../.."),
+  {
+    libraries: [
+      "@massivescale/tsp-aspnetcore-api",
+      "@typespec/http",
+      "@typespec/versioning",
+    ],
+  },
+);
 
 export const Tester = baseTester.emit("@massivescale/tsp-aspnetcore-api");
 

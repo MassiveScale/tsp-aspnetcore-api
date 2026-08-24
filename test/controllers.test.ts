@@ -897,5 +897,35 @@ describe("csharp emitter - controllers", () => {
         "expected controller not to use raw TypeSpec model name in body parameter",
       );
     });
+
+    it("uses @serverName to override an HTTP operation parameter's emitted name", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        import "@typespec/http";
+        using MassiveScale.AspNetCoreApi;
+        using TypeSpec.Http;
+
+        @service(#{title: "Customers" })
+        namespace Demo;
+
+        model Customer { id: string; }
+
+        @route("/customers")
+        interface Customers {
+          @get read(@query @serverName("customerId") custId: string): Customer;
+        }
+      `);
+
+      const ctrl = results["Controllers/CustomersControllerBase.g.cs"];
+      ok(ctrl, "expected controller file to be emitted");
+      ok(
+        ctrl.includes("string customerId"),
+        `expected @serverName override to be used for the query parameter in:\n${ctrl}`,
+      );
+      ok(
+        !ctrl.includes("string custId"),
+        `expected raw TypeSpec parameter name not to be used in:\n${ctrl}`,
+      );
+    });
   });
 });

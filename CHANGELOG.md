@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- First lint rule: `reserved-parameter-name`, warning when an HTTP operation parameter's name is a reserved C# keyword.
+
+### Changed
+
+- Upgraded the supported TypeSpec toolchain to the 1.15.0 release train: `@typespec/compiler` and `@typespec/http` to `^1.15.0`, and `@typespec/versioning` to `^0.85.0`.
+
+### Fixed
+
+- `@serverName` is now honored for operation parameters (previously only honored for models/properties).
+
 ## [0.13.1] - 2026-07-22
 
 ### Added

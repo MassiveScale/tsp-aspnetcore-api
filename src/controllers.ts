@@ -322,7 +322,7 @@ function buildParams(
     if (!binding) continue;
     const prop = param.param;
     result.push({
-      name: camelCase(prop.name),
+      name: getServerName(program, prop) ?? camelCase(prop.name),
       type: propTypeRef(program, prop, options),
       binding,
       optional: prop.optional,
