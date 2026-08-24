@@ -35,10 +35,17 @@
                                return, but available for typed result patterns:
                                `Task<ActionResult<{{returnType}}>>`
     .params                —   array of parameter objects.  Each has:
-      .name                —     camelCase parameter name
+      .name                —     camelCase parameter name (emitted C# identifier;
+                                 honors @serverName)
       .type                —     C# type string (non-nullable), e.g. "string"
       .binding             —     "FromRoute" | "FromQuery" | "FromBody" | "FromHeader"
       .optional            —     boolean; true → render type as `{{type}}?`
+      .bindingName         —     wire-level name to bind against, e.g. "custId";
+                                 only set when it differs from .name (i.e.
+                                 @serverName renamed the C# identifier). Render
+                                 as `(Name = "...")` on the binding attribute so
+                                 the HTTP contract keeps working. Never set for
+                                 FromBody.
 
   {{actionsBlock}}         — shortcut: all operations pre-rendered (4-space
                              indented, with binding attributes and `abstract`
@@ -60,10 +67,10 @@
   ── Param rendering quick reference ─────────────────────────────────────────
 
   Full parameter with binding attribute:
-    [{{binding}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}
+    [{{binding}}{{#if bindingName}}(Name = "{{bindingName}}"){{/if}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}
 
   Comma-separated parameter list:
-    {{#each params}}[{{binding}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}}
+    {{#each params}}[{{binding}}{{#if bindingName}}(Name = "{{bindingName}}"){{/if}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}}
 
   ── Example customisations ────────────────────────────────────────────────────
 
@@ -107,7 +114,7 @@ public abstract class {{controllerName}} : ControllerBase
 {
 {{#each operations}}{{#if doc}}{{indent doc}}
 {{/if}}{{#each routes}}    [Http{{../httpVerb}}("{{this}}")]
-{{/each}}    public abstract Task<IActionResult> {{name}}({{#each params}}[{{binding}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}}{{#if cancellationToken}}{{#if params}}, {{/if}}CancellationToken cancellationToken{{/if}});
+{{/each}}    public abstract Task<IActionResult> {{name}}({{#each params}}[{{binding}}{{#if bindingName}}(Name = "{{bindingName}}"){{/if}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}}{{#if cancellationToken}}{{#if params}}, {{/if}}CancellationToken cancellationToken{{/if}});
 {{#unless @last}}
 
 {{/unless}}{{/each}}

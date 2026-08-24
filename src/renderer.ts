@@ -208,7 +208,7 @@ export interface FileView {
 
 /** View model for a single action-method parameter. */
 export interface OperationParamView {
-  /** camelCase parameter name. */
+  /** camelCase parameter name — the emitted C# identifier, honoring `@serverName`. */
   name: string;
   /** C# type string (non-nullable; optional marker is added by the renderer). */
   type: string;
@@ -216,6 +216,15 @@ export interface OperationParamView {
   binding: "FromRoute" | "FromQuery" | "FromBody" | "FromHeader";
   /** Whether the parameter is optional in the TypeSpec definition. */
   optional: boolean;
+  /**
+   * Wire-level name ASP.NET Core should bind against (the resolved HTTP
+   * parameter/route-token name), rendered as an explicit `Name = "..."` on
+   * the binding attribute. Only set when it differs from `name` — i.e. when
+   * `@serverName` renamed the emitted C# identifier away from the wire name
+   * — so the HTTP contract keeps working regardless of the C# identifier.
+   * Never set for `FromBody`, which has no `Name` property.
+   */
+  bindingName?: string;
 }
 
 /** View model for a single controller action / service method. */
@@ -541,10 +550,14 @@ function enumMemberText(member: EnumMemberView, isLast: boolean): string {
  * ASP.NET Core binding attribute.
  *
  * @param p - Parameter view model.
- * @returns Inline C# parameter declaration string, e.g. `[FromRoute] string id`.
+ * @returns Inline C# parameter declaration string, e.g. `[FromRoute] string id`
+ *   or, when `@serverName` renamed the identifier, `[FromRoute(Name = "custId")] string customerId`.
  */
 function operationParamDecl(p: OperationParamView): string {
-  return `[${p.binding}] ${p.optional ? `${p.type}?` : p.type} ${p.name}`;
+  const attr = p.bindingName
+    ? `${p.binding}(Name = "${p.bindingName}")`
+    : p.binding;
+  return `[${attr}] ${p.optional ? `${p.type}?` : p.type} ${p.name}`;
 }
 
 /**

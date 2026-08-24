@@ -15,6 +15,9 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - `@serverName` is now honored for operation parameters (previously only honored for models/properties).
+- Fixed a runtime regression where `@serverName` on an operation parameter renamed the generated `[FromQuery]`/`[FromRoute]`/`[FromHeader]` binding along with the C# identifier, causing ASP.NET Core model binding to look for the wrong request parameter or route token. The binding attribute now carries an explicit `Name = "..."` set to the original TypeSpec wire name whenever it differs from the `@serverName`-renamed identifier, so `@serverName` only affects the emitted C# parameter name.
+- The `reserved-parameter-name` lint rule now resolves its candidate identifier the same way the emitter does (`@serverName` override, falling back to the camelCased TypeSpec name), fixing false positives/negatives when `@serverName` is applied to a path/query/header parameter.
+- Removed the `reserved-parameter-name` rule's `url` field, which pointed at a nonexistent docs page.
 
 ## [0.13.1] - 2026-07-22
 
