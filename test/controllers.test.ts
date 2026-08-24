@@ -897,5 +897,103 @@ describe("csharp emitter - controllers", () => {
         "expected controller not to use raw TypeSpec model name in body parameter",
       );
     });
+
+    it("uses @serverName to override an HTTP operation parameter's emitted name, while preserving the wire name for query binding", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        import "@typespec/http";
+        using MassiveScale.AspNetCoreApi;
+        using TypeSpec.Http;
+
+        @service(#{title: "Customers" })
+        namespace Demo;
+
+        model Customer { id: string; }
+
+        @route("/customers")
+        interface Customers {
+          @get read(@query @serverName("customerId") custId: string): Customer;
+        }
+      `);
+
+      const ctrl = results["Controllers/CustomersControllerBase.g.cs"];
+      ok(ctrl, "expected controller file to be emitted");
+      ok(
+        ctrl.includes("string customerId"),
+        `expected @serverName override to be used for the query parameter in:\n${ctrl}`,
+      );
+      ok(
+        !ctrl.includes("string custId"),
+        `expected raw TypeSpec parameter name not to be used in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes('[FromQuery(Name = "custId")] string customerId'),
+        `expected [FromQuery] to explicitly bind the original wire name "custId" despite the @serverName-renamed identifier in:\n${ctrl}`,
+      );
+    });
+
+    it("uses @serverName to override an HTTP operation route parameter's emitted name, while preserving the wire name for route binding", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        import "@typespec/http";
+        using MassiveScale.AspNetCoreApi;
+        using TypeSpec.Http;
+
+        @service(#{title: "Customers" })
+        namespace Demo;
+
+        model Customer { id: string; }
+
+        @route("/customers/{custId}")
+        interface Customers {
+          @get read(@path @serverName("customerId") custId: string): Customer;
+        }
+      `);
+
+      const ctrl = results["Controllers/CustomersControllerBase.g.cs"];
+      ok(ctrl, "expected controller file to be emitted");
+      ok(
+        ctrl.includes("/customers/{custId}"),
+        `expected route template to keep the original path token "{custId}" in:\n${ctrl}`,
+      );
+      ok(
+        ctrl.includes('[FromRoute(Name = "custId")] string customerId'),
+        `expected [FromRoute] to explicitly bind the original wire name "custId" despite the @serverName-renamed identifier in:\n${ctrl}`,
+      );
+      ok(
+        !ctrl.includes("string custId"),
+        `expected raw TypeSpec parameter name not to be used as the C# identifier in:\n${ctrl}`,
+      );
+    });
+
+    it("omits the explicit Name override when @serverName is not applied to a parameter", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        import "@typespec/http";
+        using MassiveScale.AspNetCoreApi;
+        using TypeSpec.Http;
+
+        @service(#{title: "Customers" })
+        namespace Demo;
+
+        model Customer { id: string; }
+
+        @route("/customers")
+        interface Customers {
+          @get read(@query custId: string): Customer;
+        }
+      `);
+
+      const ctrl = results["Controllers/CustomersControllerBase.g.cs"];
+      ok(ctrl, "expected controller file to be emitted");
+      ok(
+        ctrl.includes("[FromQuery] string custId"),
+        `expected plain [FromQuery] with no Name override when @serverName is absent in:\n${ctrl}`,
+      );
+      ok(
+        !ctrl.includes("Name ="),
+        `expected no explicit Name override when the identifier already matches the wire name in:\n${ctrl}`,
+      );
+    });
   });
 });

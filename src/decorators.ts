@@ -30,7 +30,7 @@ const VALID_CSHARP_IDENTIFIER = /^@?[a-zA-Z_][a-zA-Z0-9_]*$/;
  * A bare reserved word is not a valid C# identifier; the caller must
  * prefix it with `@` to form a verbatim identifier (e.g. `@class`).
  */
-const CSHARP_RESERVED_KEYWORDS = new Set([
+export const CSHARP_RESERVED_KEYWORDS = new Set([
   "abstract",
   "as",
   "base",
