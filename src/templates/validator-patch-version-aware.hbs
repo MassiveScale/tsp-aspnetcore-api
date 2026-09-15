@@ -108,13 +108,13 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
 {{#unless ../isMergePatchBody}}{{#if referencedModelName}}
 {{#if isCollectionReference}}
         // {{{name}}} items are validated recursively when provided
-        RuleForEach(x => x.{{{name}}})
+        RuleForEach(x => x.{{{name}}}{{#if nullable}}!{{/if}})
             .SetValidator({{{referencedParamName}}})
             .When(x => x.IsDefined("{{{name}}}"));
 
 {{else}}
         // {{{name}}} is validated recursively when provided
-        RuleFor(x => x.{{{name}}})
+        RuleFor(x => x.{{{name}}}{{#if nullable}}!{{/if}})
             .SetValidator({{{referencedParamName}}})
             .When(x => x.IsDefined("{{{name}}}"));
 
@@ -202,13 +202,13 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
 {{#unless ../../isMergePatchBody}}{{#if referencedModelName}}
 {{#if isCollectionReference}}
             // {{{name}}} items are validated recursively when provided
-            RuleForEach(x => x.{{{name}}})
+            RuleForEach(x => x.{{{name}}}{{#if nullable}}!{{/if}})
                 .SetValidator({{{referencedParamName}}})
                 .When(x => x.IsDefined("{{{name}}}"));
 
 {{else}}
             // {{{name}}} is validated recursively when provided
-            RuleFor(x => x.{{{name}}})
+            RuleFor(x => x.{{{name}}}{{#if nullable}}!{{/if}})
                 .SetValidator({{{referencedParamName}}})
                 .When(x => x.IsDefined("{{{name}}}"));
 

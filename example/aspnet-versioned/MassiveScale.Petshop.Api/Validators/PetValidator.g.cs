@@ -41,8 +41,8 @@ public partial class PetValidator : AbstractValidator<MarketOnce.Community.Campa
         // Rules added in v2.0
         When(_ => IsAtLeast("v2.0", _apiVersion, _versions), () =>
         {
-            // Tags items are validated recursively
-            RuleForEach(x => x.Tags).SetValidator(tagValidator);
+            // Tags items are validated recursively when not null
+            RuleForEach(x => x.Tags!).SetValidator(tagValidator).When(x => x.Tags is not null);
 
         });
 

@@ -1,6 +1,6 @@
 {
   "name": "@massivescale/tsp-aspnetcore-api",
-  "version": "0.13.1",
+  "version": "0.14.0",
   "type": "module",
   "main": "dist/src/index.js",
   "tspMain": "lib/main.tsp",
@@ -22,9 +22,9 @@
     "@typespec/http": "^1.15.0",
     "@typespec/versioning": "^0.85.0",
     "eslint": "^9.39.4",
-    "prettier": "^3.3.3",
+    "prettier": "^3.9.6",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.4"
+    "typescript-eslint": "^8.70.0"
   },
   "scripts": {
     "prepare": "tsc && tsc -p tsconfig.test.json && node scripts/copy-templates.mjs",

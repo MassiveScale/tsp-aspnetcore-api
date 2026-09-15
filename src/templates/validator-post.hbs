@@ -74,12 +74,12 @@ public partial class {{{modelName}}}Validator : AbstractValidator<{{{qualifiedMo
 {{/if}}
 {{#if referencedModelName}}
 {{#if isCollectionReference}}
-        // {{{name}}} items are validated recursively
-        RuleForEach(x => x.{{{name}}}).SetValidator({{{referencedParamName}}});
+        // {{{name}}} items are validated recursively{{#if nullable}} when not null{{/if}}
+        RuleForEach(x => x.{{{name}}}{{#if nullable}}!{{/if}}).SetValidator({{{referencedParamName}}}){{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}};
 
 {{else}}
-        // {{{name}}} is validated recursively
-        RuleFor(x => x.{{{name}}}).SetValidator({{{referencedParamName}}});
+        // {{{name}}} is validated recursively{{#if nullable}} when not null{{/if}}
+        RuleFor(x => x.{{{name}}}{{#if nullable}}!{{/if}}).SetValidator({{{referencedParamName}}}){{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}};
 
 {{/if}}
 {{/if}}
