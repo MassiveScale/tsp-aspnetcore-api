@@ -356,4 +356,209 @@ describe("csharp emitter - validators", () => {
       );
     });
   });
+
+  describe("nullable nested-model references", () => {
+    const NESTED_MODEL_SOURCE = `
+      import "@typespec/http";
+      using TypeSpec.Http;
+
+      @service
+      namespace Demo;
+
+      model Author { name: string; }
+      model Tag { name: string; }
+
+      model Book {
+        id: string;
+        author: Author;
+        tags: Tag[];
+      }
+
+      interface Books {
+        @route("/books")
+        @post create(@body body: Book): Book;
+
+        @route("/books/{id}")
+        @patch update(@path id: string, @body body: Book): Book;
+      }
+    `;
+
+    it("emits the null-forgiving operator and a .When guard for nullable scalar and collection references (POST + PATCH)", async () => {
+      const results = await emit(NESTED_MODEL_SOURCE, {
+        "emit-validators": true,
+        "emit-controllers": false,
+        "emit-services": false,
+        "emit-interfaces": false,
+      });
+
+      const postValidator = results["Validators/BookValidator.g.cs"];
+      ok(
+        postValidator,
+        `expected Validators/BookValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        postValidator.includes(
+          "RuleFor(x => x.Author!).SetValidator(authorValidator).When(x => x.Author is not null);",
+        ),
+        `expected nullable scalar reference rule in:\n${postValidator}`,
+      );
+      ok(
+        postValidator.includes(
+          "RuleForEach(x => x.Tags!).SetValidator(tagValidator).When(x => x.Tags is not null);",
+        ),
+        `expected nullable collection reference rule in:\n${postValidator}`,
+      );
+
+      const patchValidator = results["Validators/BookPatchValidator.g.cs"];
+      ok(
+        patchValidator,
+        `expected Validators/BookPatchValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        patchValidator.includes("RuleFor(x => x.Author!)") &&
+          patchValidator.includes('.When(x => x.IsDefined("Author"));'),
+        `expected nullable scalar reference rule with IsDefined guard in:\n${patchValidator}`,
+      );
+      ok(
+        patchValidator.includes("RuleForEach(x => x.Tags!)") &&
+          patchValidator.includes('.When(x => x.IsDefined("Tags"));'),
+        `expected nullable collection reference rule with IsDefined guard in:\n${patchValidator}`,
+      );
+    });
+
+    // Model/array-typed properties are always treated as nullable by the validator
+    // emitter (see isNullableForValidator in src/validators.ts): a reference type can
+    // hold null at runtime even when TypeSpec marks it required, so `nullable-properties:
+    // false` must NOT suppress the `!`/`.When` guard for a nested-model reference.
+    it("still emits the null-forgiving operator and .When guard for nested references when nullable-properties is disabled (POST + PATCH)", async () => {
+      const results = await emit(NESTED_MODEL_SOURCE, {
+        "emit-validators": true,
+        "emit-controllers": false,
+        "emit-services": false,
+        "emit-interfaces": false,
+        "nullable-properties": false,
+      });
+
+      const postValidator = results["Validators/BookValidator.g.cs"];
+      ok(
+        postValidator,
+        `expected Validators/BookValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        postValidator.includes(
+          "RuleFor(x => x.Author!).SetValidator(authorValidator).When(x => x.Author is not null);",
+        ),
+        `expected the nullable scalar reference rule to survive nullable-properties: false in:\n${postValidator}`,
+      );
+      ok(
+        postValidator.includes(
+          "RuleForEach(x => x.Tags!).SetValidator(tagValidator).When(x => x.Tags is not null);",
+        ),
+        `expected the nullable collection reference rule to survive nullable-properties: false in:\n${postValidator}`,
+      );
+
+      const patchValidator = results["Validators/BookPatchValidator.g.cs"];
+      ok(
+        patchValidator,
+        `expected Validators/BookPatchValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        patchValidator.includes("RuleFor(x => x.Author!)") &&
+          patchValidator.includes('.When(x => x.IsDefined("Author"));'),
+        `expected the nullable scalar reference rule to survive nullable-properties: false in:\n${patchValidator}`,
+      );
+      ok(
+        patchValidator.includes("RuleForEach(x => x.Tags!)") &&
+          patchValidator.includes('.When(x => x.IsDefined("Tags"));'),
+        `expected the nullable collection reference rule to survive nullable-properties: false in:\n${patchValidator}`,
+      );
+    });
+
+    it("emits the null-forgiving operator and .When guards in version-aware POST and PATCH validators, for both base and per-version properties", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+
+        @versioned(Versions)
+        @service(#{ title: "Demo" })
+        namespace Demo;
+
+        enum Versions {
+          v1_0: "v1.0",
+          v2_0: "v2.0",
+        }
+
+        model Author { name: string; }
+        model Tag { name: string; }
+
+        model Book {
+          id: string;
+          author: Author;
+
+          @added(Versions.v2_0)
+          tags?: Tag[];
+        }
+
+        interface Books {
+          @route("/books")
+          @post create(@body body: Book): Book;
+
+          @route("/books/{id}")
+          @patch update(@path id: string, @body body: Book): Book;
+        }
+        `,
+        {
+          "emit-validators": true,
+          "emit-controllers": false,
+          "emit-services": false,
+          "emit-interfaces": false,
+        },
+      );
+
+      const postValidator = results["Validators/BookValidator.g.cs"];
+      ok(
+        postValidator,
+        `expected Validators/BookValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        postValidator.includes("Rules added in v2.0"),
+        `expected the version-aware POST template to be used:\n${postValidator}`,
+      );
+      ok(
+        postValidator.includes(
+          "RuleFor(x => x.Author!).SetValidator(authorValidator).When(x => x.Author is not null);",
+        ),
+        `expected nullable scalar reference rule among base properties in:\n${postValidator}`,
+      );
+      ok(
+        postValidator.includes(
+          "RuleForEach(x => x.Tags!).SetValidator(tagValidator).When(x => x.Tags is not null);",
+        ),
+        `expected nullable collection reference rule in the v2.0 property group in:\n${postValidator}`,
+      );
+
+      const patchValidator = results["Validators/BookPatchValidator.g.cs"];
+      ok(
+        patchValidator,
+        `expected Validators/BookPatchValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        patchValidator.includes("Rules added in v2.0"),
+        `expected the version-aware PATCH template to be used:\n${patchValidator}`,
+      );
+      ok(
+        patchValidator.includes("RuleFor(x => x.Author!)") &&
+          patchValidator.includes('.When(x => x.IsDefined("Author"));'),
+        `expected nullable scalar reference rule among base properties in:\n${patchValidator}`,
+      );
+      ok(
+        patchValidator.includes("RuleForEach(x => x.Tags!)") &&
+          patchValidator.includes('.When(x => x.IsDefined("Tags"));'),
+        `expected nullable collection reference rule in the v2.0 property group in:\n${patchValidator}`,
+      );
+    });
+  });
 });
