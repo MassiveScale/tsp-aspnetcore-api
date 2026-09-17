@@ -549,4 +549,292 @@ describe("csharp emitter - validators", () => {
       );
     });
   });
+
+  describe("plain (non-MergePatch) PATCH bodies", () => {
+    // `IsDefined`/`GetString`/`IsNull`/`TryGetValue` are members of MergePatch<T> only.
+    // A plain model used as a PATCH body is an ordinary POCO, so rules must use typed
+    // property access guarded on null instead, or the generated C# does not compile.
+    const MERGE_PATCH_ONLY_APIS = [
+      "GetString(",
+      "IsDefined(",
+      "IsNull(",
+      "TryGetValue<",
+    ];
+
+    const PLAIN_PATCH_SOURCE = `
+      import "@typespec/http";
+      using TypeSpec.Http;
+
+      @service
+      namespace Demo;
+
+      enum Channel { Web: "web", App: "app" }
+
+      model Targeting { region: string; }
+      model Segment { code: string; }
+
+      model QuotaGroup { id: string; }
+
+      model QuotaGroupUpdate {
+        @minValue(0)
+        target: int32;
+
+        @maxValue(100)
+        ceiling: int32;
+
+        @minLength(2)
+        @maxLength(50)
+        name?: string;
+
+        @pattern("^[a-z]+$")
+        slug?: string;
+
+        @format("email")
+        owner?: string;
+
+        channel?: Channel;
+
+        targeting: Targeting;
+        segments: Segment[];
+
+        @visibility(Lifecycle.Read)
+        createdAt?: utcDateTime;
+      }
+
+      @route("/quota-groups/{id}")
+      interface QuotaGroups {
+        @patch update(@path id: string, @body body: QuotaGroupUpdate): QuotaGroup;
+      }
+    `;
+
+    it("emits typed, null-guarded rules instead of MergePatch-only APIs", async () => {
+      const results = await emit(PLAIN_PATCH_SOURCE, {
+        "emit-validators": true,
+        "emit-controllers": false,
+        "emit-services": false,
+        "emit-interfaces": false,
+      });
+
+      const validator =
+        results["Validators/QuotaGroupUpdatePatchValidator.g.cs"];
+      ok(
+        validator,
+        `expected Validators/QuotaGroupUpdatePatchValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+
+      const leaked = MERGE_PATCH_ONLY_APIS.filter((api) =>
+        validator.includes(api),
+      );
+      strictEqual(
+        leaked.join(", "),
+        "",
+        `MergePatch-only APIs emitted against a plain POCO body:\n${validator}`,
+      );
+
+      for (const expected of [
+        "RuleFor(x => x.Target).GreaterThanOrEqualTo(0).When(x => x.Target is not null);",
+        "RuleFor(x => x.Ceiling).LessThanOrEqualTo(100).When(x => x.Ceiling is not null);",
+        "RuleFor(x => x.Name).MinimumLength(2).When(x => x.Name is not null);",
+        "RuleFor(x => x.Name).MaximumLength(50).When(x => x.Name is not null);",
+        'RuleFor(x => x.Slug).Matches(@"^[a-z]+$").When(x => x.Slug is not null);',
+        "RuleFor(x => x.Owner).EmailAddress().When(x => x.Owner is not null);",
+        "RuleFor(x => x.Channel).IsInEnum().When(x => x.Channel is not null);",
+      ]) {
+        ok(
+          validator.includes(expected),
+          `expected typed rule ${expected} in:\n${validator}`,
+        );
+      }
+    });
+
+    it("emits typed nested-model rules for scalar and collection references", async () => {
+      const results = await emit(PLAIN_PATCH_SOURCE, {
+        "emit-validators": true,
+        "emit-controllers": false,
+        "emit-services": false,
+        "emit-interfaces": false,
+      });
+
+      const validator =
+        results["Validators/QuotaGroupUpdatePatchValidator.g.cs"];
+      ok(validator, "expected QuotaGroupUpdatePatchValidator.g.cs");
+      ok(
+        validator.includes(
+          "RuleFor(x => x.Targeting!).SetValidator(targetingValidator).When(x => x.Targeting is not null);",
+        ),
+        `expected typed nested scalar reference rule in:\n${validator}`,
+      );
+      ok(
+        validator.includes(
+          "RuleForEach(x => x.Segments!).SetValidator(segmentValidator).When(x => x.Segments is not null);",
+        ),
+        `expected typed nested collection reference rule in:\n${validator}`,
+      );
+      ok(
+        validator.includes(
+          "AbstractValidator<Demo.Models.Targeting> targetingValidator",
+        ) &&
+          validator.includes(
+            "AbstractValidator<Demo.Models.Segment> segmentValidator",
+          ),
+        `expected child validators to be injected in:\n${validator}`,
+      );
+    });
+
+    it("rejects a supplied value for read-only properties", async () => {
+      const results = await emit(PLAIN_PATCH_SOURCE, {
+        "emit-validators": true,
+        "emit-controllers": false,
+        "emit-services": false,
+        "emit-interfaces": false,
+      });
+
+      const validator =
+        results["Validators/QuotaGroupUpdatePatchValidator.g.cs"];
+      ok(validator, "expected QuotaGroupUpdatePatchValidator.g.cs");
+      ok(
+        validator.includes("RuleFor(x => x.CreatedAt).Null();"),
+        `expected a Null() rule for the read-only property in:\n${validator}`,
+      );
+    });
+
+    it("emits typed rules in both the base and per-version blocks of the version-aware template", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+
+        @versioned(Versions)
+        @service(#{ title: "Demo" })
+        namespace Demo;
+
+        enum Versions { v1_0: "v1.0", v2_0: "v2.0" }
+
+        model Targeting { region: string; }
+
+        model WidgetUpdate {
+          @minValue(0)
+          target: int32;
+
+          targeting: Targeting;
+
+          @added(Versions.v2_0)
+          @maxValue(100)
+          ceiling?: int32;
+
+          @added(Versions.v2_0)
+          extra?: Targeting;
+        }
+
+        @route("/widgets/{id}")
+        interface Widgets {
+          @patch update(@path id: string, @body body: WidgetUpdate): WidgetUpdate;
+        }
+        `,
+        {
+          "emit-validators": true,
+          "emit-controllers": false,
+          "emit-services": false,
+          "emit-interfaces": false,
+        },
+      );
+
+      const validator = results["Validators/WidgetUpdatePatchValidator.g.cs"];
+      ok(
+        validator,
+        `expected Validators/WidgetUpdatePatchValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        validator.includes("Rules added in v2.0"),
+        `expected the version-aware PATCH template to be used:\n${validator}`,
+      );
+
+      const leaked = MERGE_PATCH_ONLY_APIS.filter((api) =>
+        validator.includes(api),
+      );
+      strictEqual(
+        leaked.join(", "),
+        "",
+        `MergePatch-only APIs emitted against a plain POCO body:\n${validator}`,
+      );
+
+      // Base block.
+      ok(
+        validator.includes(
+          "RuleFor(x => x.Target).GreaterThanOrEqualTo(0).When(x => x.Target is not null);",
+        ) &&
+          validator.includes(
+            "RuleFor(x => x.Targeting!).SetValidator(targetingValidator).When(x => x.Targeting is not null);",
+          ),
+        `expected typed base-property rules in:\n${validator}`,
+      );
+      // Per-version block.
+      ok(
+        validator.includes(
+          "RuleFor(x => x.Ceiling).LessThanOrEqualTo(100).When(x => x.Ceiling is not null);",
+        ) &&
+          validator.includes(
+            "RuleFor(x => x.Extra!).SetValidator(targetingValidator).When(x => x.Extra is not null);",
+          ),
+        `expected typed per-version rules in:\n${validator}`,
+      );
+    });
+
+    it("leaves MergePatch bodies on the string-keyed rule shape", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        model Widget {
+          @minValue(0)
+          target: int32;
+
+          @minLength(2)
+          name: string;
+        }
+
+        model WidgetPatch is MergePatchUpdate<Widget>;
+
+        @route("/widgets/{id}")
+        interface Widgets {
+          @patch update(@path id: string, @body body: WidgetPatch): Widget;
+        }
+        `,
+        {
+          "emit-validators": true,
+          "emit-controllers": false,
+          "emit-services": false,
+          "emit-interfaces": false,
+        },
+      );
+
+      const validator = results["Validators/WidgetPatchValidator.g.cs"];
+      ok(
+        validator,
+        `expected Validators/WidgetPatchValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        validator.includes(
+          "AbstractValidator<Demo.Helpers.MergePatch<Demo.Models.Widget>>",
+        ),
+        `expected the validator to target the MergePatch body in:\n${validator}`,
+      );
+      ok(
+        validator.includes(
+          '.When(x => x.IsDefined("Target") && !x.IsNull("Target"))',
+        ) && validator.includes('x.GetString("Name")'),
+        `expected MergePatch bodies to keep the string-keyed rule shape in:\n${validator}`,
+      );
+      ok(
+        !validator.includes("RuleFor(x => x.Target)"),
+        `did not expect typed property access against a MergePatch body in:\n${validator}`,
+      );
+    });
+  });
 });

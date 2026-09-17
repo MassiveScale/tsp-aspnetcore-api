@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- PATCH validators no longer emit uncompilable code when the `@patch` operation takes a plain model as its body instead of a `MergePatchUpdate<T>`. Every rule was emitted in the `MergePatch<T>` shape — `x.GetString("Prop")`, `x.IsDefined("Prop")`, `x.IsNull("Prop")`, `x.TryGetValue<T>("Prop", out _)` — against an ordinary POCO that defines none of those members, producing errors such as `'QuotaGroupUpdate' does not contain a definition for 'GetString'`. This affected every constraint (`@minValue`, `@maxValue`, `@minLength`, `@maxLength`, `@pattern`, `@format("email")`, required strings, enum properties) as well as nested-model rules, in both the standard and version-aware PATCH templates. Plain bodies now emit typed, null-guarded rules — `RuleFor(x => x.Target).GreaterThanOrEqualTo(0).When(x => x.Target is not null)` — while `MergePatchUpdate<T>` bodies keep the existing property-name-keyed shape. Because a plain POCO cannot distinguish an omitted field from an explicit `null`, a `null` value is treated as "not supplied" and the rule is skipped; the guard is omitted entirely for non-nullable value types. See [Validators — PATCH body shapes](docs/validators.md#patch-body-shapes).
+
 ## [0.14.0] - 2026-09-15
 
 ### Added

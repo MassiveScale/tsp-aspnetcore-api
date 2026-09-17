@@ -42,13 +42,36 @@ The emitter reads TypeSpec constraint decorators and translates them to FluentVa
 | Enum property                  | `IsInEnum()`                                     |
 | Nested model property          | `SetValidator(childValidator)` (injected via DI) |
 
-Properties marked `@visibility(Lifecycle.Read)` (read-only) generate rejection rules rather than validation rules. In PATCH validators they emit a "must not be present" rule so clients cannot supply the field at all. In POST validators, nullable read-only properties emit a `Null()` rule; non-nullable read-only properties produce no rule (the field is simply ignored on creation).
+Properties marked `@visibility(Lifecycle.Read)` (read-only) generate rejection rules rather than validation rules. In PATCH validators over a `MergePatchUpdate<T>` body they emit a "must not be present" rule so clients cannot supply the field at all. In POST validators — and in PATCH validators over a plain body — nullable read-only properties emit a `Null()` rule; non-nullable read-only properties produce no rule (the field is simply ignored).
+
+### PATCH body shapes
+
+PATCH validators emit one of two rule shapes, chosen by the body type of the `@patch` operation.
+
+**`MergePatchUpdate<T>` body.** The body is a `MergePatch<T>` container that captures raw JSON, so rules are keyed by property name and can tell "field absent" apart from "field explicitly null":
+
+```csharp
+this.RuleFor(x => x)
+    .Must(x => decimal.TryParse(x.GetString("Target"), /* ... */, out decimal n) && n >= 0m)
+    .When(x => x.IsDefined("Target") && !x.IsNull("Target"))
+    .WithName("Target");
+```
+
+**Plain model body.** When the `@patch` operation takes an ordinary model instead, the body is a plain POCO with no `IsDefined`/`GetString`/`IsNull` members, so rules use typed property access guarded on null:
+
+```csharp
+RuleFor(x => x.Target).GreaterThanOrEqualTo(0).When(x => x.Target is not null);
+```
+
+A plain POCO cannot distinguish an omitted field from one explicitly set to `null`, so a `null` value is treated as "not supplied" and the rule is skipped. Required-ness therefore degrades to a non-null check. If you need true absent-vs-null semantics, use a `MergePatchUpdate<T>` body.
+
+The null guard is emitted only when the property can actually hold `null`; a non-nullable value-type property (for example a required `int32` under `nullable-properties: false`) gets the rule with no `.When` clause.
 
 Nested-model rules account for property nullability so the generated code compiles cleanly and doesn't hand a `null` instance to a child validator. When the nested property (or collection) is nullable:
 
 - The property access uses the null-forgiving operator (`x.Prop!`) so the emitted `IValidator<T>` type argument matches, avoiding a nullable-reference-type build warning.
-- POST validators additionally add `.When(x => x.Prop is not null)` so the rule is skipped at runtime when the property is `null`.
-- PATCH validators keep their existing `.When(x => x.IsDefined("Prop"))` guard unchanged.
+- The rule adds `.When(x => x.Prop is not null)` so it is skipped at runtime when the property is `null`. This applies to POST validators and to PATCH validators over a plain body.
+- PATCH validators over a `MergePatchUpdate<T>` body emit no nested-model rules at all, because the container holds raw JSON rather than a typed child instance.
 
 For discriminated hierarchies (`@discriminator("...")`), the discriminator property itself is excluded from generated validators for both base and derived models. This avoids invalid rules against a wire-level polymorphism marker and prevents false validation failures for discriminator values supplied by polymorphic serialization.
 
