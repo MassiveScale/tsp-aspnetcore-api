@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-15
+
 ### Added
 
 - First lint rule: `reserved-parameter-name`, warning when an HTTP operation parameter's name is a reserved C# keyword.
@@ -18,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - Fixed a runtime regression where `@serverName` on an operation parameter renamed the generated `[FromQuery]`/`[FromRoute]`/`[FromHeader]` binding along with the C# identifier, causing ASP.NET Core model binding to look for the wrong request parameter or route token. The binding attribute now carries an explicit `Name = "..."` set to the original TypeSpec wire name whenever it differs from the `@serverName`-renamed identifier, so `@serverName` only affects the emitted C# parameter name.
 - The `reserved-parameter-name` lint rule now resolves its candidate identifier the same way the emitter does (`@serverName` override, falling back to the camelCased TypeSpec name), fixing false positives/negatives when `@serverName` is applied to a path/query/header parameter.
 - Removed the `reserved-parameter-name` rule's `url` field, which pointed at a nonexistent docs page.
+- Generated validators no longer emit a nullable-mismatch build warning for nested-model properties. When a referenced model property is nullable, `RuleFor`/`RuleForEach` now use the null-forgiving operator (`!`) so the property's static type matches the child `IValidator<T>`; POST validators additionally skip the rule with `.When(x => x.Prop is not null)` so a null value isn't passed to the child validator at runtime.
 
 ## [0.13.1] - 2026-07-22
 

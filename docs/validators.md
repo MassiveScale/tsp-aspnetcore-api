@@ -44,6 +44,12 @@ The emitter reads TypeSpec constraint decorators and translates them to FluentVa
 
 Properties marked `@visibility(Lifecycle.Read)` (read-only) generate rejection rules rather than validation rules. In PATCH validators they emit a "must not be present" rule so clients cannot supply the field at all. In POST validators, nullable read-only properties emit a `Null()` rule; non-nullable read-only properties produce no rule (the field is simply ignored on creation).
 
+Nested-model rules account for property nullability so the generated code compiles cleanly and doesn't hand a `null` instance to a child validator. When the nested property (or collection) is nullable:
+
+- The property access uses the null-forgiving operator (`x.Prop!`) so the emitted `IValidator<T>` type argument matches, avoiding a nullable-reference-type build warning.
+- POST validators additionally add `.When(x => x.Prop is not null)` so the rule is skipped at runtime when the property is `null`.
+- PATCH validators keep their existing `.When(x => x.IsDefined("Prop"))` guard unchanged.
+
 For discriminated hierarchies (`@discriminator("...")`), the discriminator property itself is excluded from generated validators for both base and derived models. This avoids invalid rules against a wire-level polymorphism marker and prevents false validation failures for discriminator values supplied by polymorphic serialization.
 
 ## Custom rules
