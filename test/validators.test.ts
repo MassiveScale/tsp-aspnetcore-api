@@ -374,16 +374,18 @@ describe("csharp emitter - validators", () => {
         tags: Tag[];
       }
 
+      model BookPatch is MergePatchUpdate<Book>;
+
       interface Books {
         @route("/books")
         @post create(@body body: Book): Book;
 
         @route("/books/{id}")
-        @patch update(@path id: string, @body body: Book): Book;
+        @patch update(@path id: string, @body body: BookPatch): Book;
       }
     `;
 
-    it("emits the null-forgiving operator and a .When guard for nullable scalar and collection references (POST + PATCH)", async () => {
+    it("emits the null-forgiving operator and a .When guard for nullable scalar and collection references in POST validators", async () => {
       const results = await emit(NESTED_MODEL_SOURCE, {
         "emit-validators": true,
         "emit-controllers": false,
@@ -409,20 +411,24 @@ describe("csharp emitter - validators", () => {
         `expected nullable collection reference rule in:\n${postValidator}`,
       );
 
+      // A MergePatch body carries no strongly-typed Author/Tags members — only the
+      // raw JsonElement bag — so nested-model rules are suppressed there entirely.
       const patchValidator = results["Validators/BookPatchValidator.g.cs"];
       ok(
         patchValidator,
         `expected Validators/BookPatchValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
       );
       ok(
-        patchValidator.includes("RuleFor(x => x.Author!)") &&
-          patchValidator.includes('.When(x => x.IsDefined("Author"));'),
-        `expected nullable scalar reference rule with IsDefined guard in:\n${patchValidator}`,
+        patchValidator.includes(
+          "AbstractValidator<Demo.Helpers.MergePatch<Demo.Models.Book>>",
+        ),
+        `expected the patch validator to target the MergePatch body in:\n${patchValidator}`,
       );
       ok(
-        patchValidator.includes("RuleForEach(x => x.Tags!)") &&
-          patchValidator.includes('.When(x => x.IsDefined("Tags"));'),
-        `expected nullable collection reference rule with IsDefined guard in:\n${patchValidator}`,
+        !patchValidator.includes("SetValidator") &&
+          !patchValidator.includes("authorValidator") &&
+          !patchValidator.includes("tagValidator"),
+        `expected nested-model rules to be suppressed for a MergePatch body in:\n${patchValidator}`,
       );
     });
 
@@ -430,7 +436,7 @@ describe("csharp emitter - validators", () => {
     // emitter (see isNullableForValidator in src/validators.ts): a reference type can
     // hold null at runtime even when TypeSpec marks it required, so `nullable-properties:
     // false` must NOT suppress the `!`/`.When` guard for a nested-model reference.
-    it("still emits the null-forgiving operator and .When guard for nested references when nullable-properties is disabled (POST + PATCH)", async () => {
+    it("still emits the null-forgiving operator and .When guard for nested references when nullable-properties is disabled", async () => {
       const results = await emit(NESTED_MODEL_SOURCE, {
         "emit-validators": true,
         "emit-controllers": false,
@@ -456,25 +462,9 @@ describe("csharp emitter - validators", () => {
         ),
         `expected the nullable collection reference rule to survive nullable-properties: false in:\n${postValidator}`,
       );
-
-      const patchValidator = results["Validators/BookPatchValidator.g.cs"];
-      ok(
-        patchValidator,
-        `expected Validators/BookPatchValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
-      );
-      ok(
-        patchValidator.includes("RuleFor(x => x.Author!)") &&
-          patchValidator.includes('.When(x => x.IsDefined("Author"));'),
-        `expected the nullable scalar reference rule to survive nullable-properties: false in:\n${patchValidator}`,
-      );
-      ok(
-        patchValidator.includes("RuleForEach(x => x.Tags!)") &&
-          patchValidator.includes('.When(x => x.IsDefined("Tags"));'),
-        `expected the nullable collection reference rule to survive nullable-properties: false in:\n${patchValidator}`,
-      );
     });
 
-    it("emits the null-forgiving operator and .When guards in version-aware POST and PATCH validators, for both base and per-version properties", async () => {
+    it("emits the null-forgiving operator and .When guards in version-aware POST validators, for both base and per-version properties", async () => {
       const results = await emit(
         `
         import "@typespec/http";
@@ -502,12 +492,14 @@ describe("csharp emitter - validators", () => {
           tags?: Tag[];
         }
 
+        model BookPatch is MergePatchUpdate<Book>;
+
         interface Books {
           @route("/books")
           @post create(@body body: Book): Book;
 
           @route("/books/{id}")
-          @patch update(@path id: string, @body body: Book): Book;
+          @patch update(@path id: string, @body body: BookPatch): Book;
         }
         `,
         {
@@ -550,14 +542,10 @@ describe("csharp emitter - validators", () => {
         `expected the version-aware PATCH template to be used:\n${patchValidator}`,
       );
       ok(
-        patchValidator.includes("RuleFor(x => x.Author!)") &&
-          patchValidator.includes('.When(x => x.IsDefined("Author"));'),
-        `expected nullable scalar reference rule among base properties in:\n${patchValidator}`,
-      );
-      ok(
-        patchValidator.includes("RuleForEach(x => x.Tags!)") &&
-          patchValidator.includes('.When(x => x.IsDefined("Tags"));'),
-        `expected nullable collection reference rule in the v2.0 property group in:\n${patchValidator}`,
+        !patchValidator.includes("SetValidator") &&
+          !patchValidator.includes("authorValidator") &&
+          !patchValidator.includes("tagValidator"),
+        `expected nested-model rules to be suppressed for a MergePatch body in both the base and per-version blocks of:\n${patchValidator}`,
       );
     });
   });
