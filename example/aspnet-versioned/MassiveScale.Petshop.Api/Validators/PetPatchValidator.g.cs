@@ -48,13 +48,9 @@ public partial class PetPatchValidator : AbstractValidator<MarketOnce.Community.
             .WithName("LastModifiedDateTime")
             .WithMessage("'LastModifiedDateTime' is read-only and cannot be modified.");
 
-
-
-
         // Rules added in v2.0
         When(_ => IsAtLeast("v2.0", _apiVersion, _versions), () =>
         {
-
         });
 
         ExtendRules();

@@ -11,7 +11,6 @@
  */
 
 import { Model, Program, emitFile, resolvePath } from "@typespec/compiler";
-import { getServerName } from "./decorators.js";
 import {
   computeModelFqName,
   csharpNamespaceFor,
@@ -21,7 +20,7 @@ import {
 } from "./emitter.js";
 import { Renderer } from "./renderer.js";
 import { modelUsesBooleanStringEncoding } from "./models.js";
-import { pascalCase } from "./utils.js";
+import { csharpModelName } from "./naming.js";
 import { collectValidatorModelsFromRoutes } from "./validators.js";
 
 /** `using` directives included in the MergePatch helper file. */
@@ -143,7 +142,7 @@ async function emitEntityMergePatches(
 ): Promise<void> {
   for (const [model, rawTypeName] of patchModels) {
     if (!rawTypeName.startsWith("MergePatch<")) continue;
-    const modelName = getServerName(program, model) ?? pascalCase(model.name);
+    const modelName = csharpModelName(program, model);
     const qualifiedModelName = computeModelFqName(program, model, options);
     const fileName = `${modelName}MergePatchUpdate${options.fileExtension}`;
     const typespecNs = csharpNamespaceFor(

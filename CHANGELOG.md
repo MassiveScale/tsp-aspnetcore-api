@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** model classes are now emitted only for HTTP payload data, decided by `@typespec/http` instead of by walking every model in the program. See [Model Generation — Which models get a class](docs/models.md#which-models-get-a-class). Classes that previously appeared and no longer do:
+  - **Metadata-only models**, whose properties are all `@statusCode`, `@header`, `@cookie`, `@query` or `@path` (e.g. `model ETagHeader { @header("ETag") etag: string; }`, `model UpdatedResponse { ...NoContentResponse; ...ETagHeader; }`, spread parameter models such as `IfMatchHeader`). They previously produced classes with properties like `double? StatusCode` and `string? Etag` that nothing referenced.
+  - **Response models with an explicit `@body` / `@bodyRoot`** (e.g. `model EntityResponse<T> { ...OkResponse; ...ETagHeader; @body body: T; }`, `@error model NotFoundError { ...NotFoundResponse; @body body: Problem; }`). The body type (`Widget`, `Problem`) is emitted instead, as before.
+  - **Models no operation reaches**, when the program has HTTP operations. This includes non-discriminated derived models that are never used directly. A program with no HTTP operations still emits every model except the two kinds above.
+  - **Collapsed template classes.** A templated payload such as `PagedResult<Store>` used to produce one non-generic `PagedResult` class whose property types came from whichever instantiation was emitted last. Each instantiation now gets its own class (`PagedResultStore`, `PagedResultWidget`; `@friendlyName` is honored), and service return types reference it. Code that referenced the old `PagedResult` class must switch to the instantiation name. `model WidgetList is PagedResult<Widget>` is unaffected.
+  - Inferred enums for string-literal-union properties on template instances are named after the instance (`BoxShadeValue`, not `BoxValue`), so instantiations no longer share one enum.
+  - Validators follow the same rule and are only emitted for models that get a class.
+- Response models with an implicit body (metadata mixed with plain properties, no `@body`) are emitted without their metadata properties, and the service method now returns that class (previously `object`).
+
 ### Fixed
 
 - PATCH validators no longer emit uncompilable code when the `@patch` operation takes a plain model as its body instead of a `MergePatchUpdate<T>`. Every rule was emitted in the `MergePatch<T>` shape — `x.GetString("Prop")`, `x.IsDefined("Prop")`, `x.IsNull("Prop")`, `x.TryGetValue<T>("Prop", out _)` — against an ordinary POCO that defines none of those members, producing errors such as `'QuotaGroupUpdate' does not contain a definition for 'GetString'`. This affected every constraint (`@minValue`, `@maxValue`, `@minLength`, `@maxLength`, `@pattern`, `@format("email")`, required strings, enum properties) as well as nested-model rules, in both the standard and version-aware PATCH templates. Plain bodies now emit typed, null-guarded rules — `RuleFor(x => x.Target).GreaterThanOrEqualTo(0).When(x => x.Target is not null)` — while `MergePatchUpdate<T>` bodies keep the existing property-name-keyed shape. Because a plain POCO cannot distinguish an omitted field from an explicit `null`, a `null` value is treated as "not supplied" and the rule is skipped; the guard is omitted entirely for non-nullable value types. See [Validators — PATCH body shapes](docs/validators.md#patch-body-shapes).

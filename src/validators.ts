@@ -53,6 +53,7 @@ import { fileURLToPath } from "node:url";
 import { getServerName } from "./decorators.js";
 import { computeModelFqName, ResolvedOptions } from "./emitter.js";
 import { reportDiagnostic } from "./lib.js";
+import { csharpModelName } from "./naming.js";
 import { pascalCase } from "./utils.js";
 
 /** Absolute path to the bundled templates directory (shared with renderer). */
@@ -399,8 +400,7 @@ function buildSinglePropertyData(
 
   const modelRef = getValidatorModelReference(prop.type);
   const referencedModelName = modelRef
-    ? (getServerName(program, modelRef.model) ??
-      pascalCase(modelRef.model.name))
+    ? csharpModelName(program, modelRef.model)
     : undefined;
   const referencedParamName = referencedModelName
     ? referencedModelName.charAt(0).toLowerCase() +
@@ -617,8 +617,7 @@ function buildDerivedTypeValidators(
   const [union] = getDiscriminatedUnionFromInheritance(model, discriminator);
   const derived: DerivedTypeValidator[] = [];
   for (const [, derivedModel] of union.variants) {
-    const typeName =
-      getServerName(program, derivedModel) ?? pascalCase(derivedModel.name);
+    const typeName = csharpModelName(program, derivedModel);
     const qualifiedTypeName = computeModelFqName(
       program,
       derivedModel,
@@ -721,16 +720,14 @@ export function collectValidatorModelsFromRoutes(
           ? getMergePatchSource(program, bodyModel)
           : bodyModel;
         if (sourceModel) {
-          const sourceName =
-            getServerName(program, sourceModel) ?? pascalCase(sourceModel.name);
+          const sourceName = csharpModelName(program, sourceModel);
           const bodyTypeName = isMergePatchBody
             ? `MergePatch<${sourceName}>`
             : sourceName;
           patchModels.set(sourceModel, bodyTypeName);
           // Also register transitive descendants, deriving their patch body type name.
           for (const candidate of getAllDescendants(allModels, sourceModel)) {
-            const candidateName =
-              getServerName(program, candidate) ?? pascalCase(candidate.name);
+            const candidateName = csharpModelName(program, candidate);
             const descBodyTypeName = isMergePatchBody
               ? `MergePatch<${candidateName}>`
               : candidateName;
@@ -837,7 +834,7 @@ async function emitValidatorModels(
       (routeModels === undefined || routeModels.patchModels.has(model));
 
     const qualifiedModelName = computeModelFqName(program, model, options);
-    const modelName = getServerName(program, model) ?? pascalCase(model.name);
+    const modelName = csharpModelName(program, model);
 
     if (doPost) {
       const postProps = buildValidatorProperties(
@@ -951,7 +948,7 @@ async function emitVersionAwareValidatorModels(
       (routeModels === undefined || routeModels.patchModels.has(model));
 
     const qualifiedModelName = computeModelFqName(program, model, options);
-    const modelName = getServerName(program, model) ?? pascalCase(model.name);
+    const modelName = csharpModelName(program, model);
 
     if (doPost) {
       const { baseProperties, versionGroups } =
@@ -1071,7 +1068,7 @@ async function emitValidatorsInitializer(
   const registrations: ValidatorRegistration[] = [];
   for (const model of allModels) {
     const qualifiedModelName = computeModelFqName(program, model, options);
-    const modelName = getServerName(program, model) ?? pascalCase(model.name);
+    const modelName = csharpModelName(program, model);
 
     if (
       emitPost &&
@@ -1150,21 +1147,31 @@ function discriminatorPropertyNameInHierarchy(
 /**
  * Entry point for validator emission. Called from `$onEmit` when
  * `emit-validators` is `true`.
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param options - Resolved emitter options.
+ * @param emittedModels - Models that get a C# class; when set, validators are
+ *   emitted only for these models.
  */
 export async function emitValidators(
   program: Program,
   options: ResolvedOptions,
+  emittedModels?: Set<Model>,
 ): Promise<void> {
   const emitPost =
     options.validatorsTypes === "post" || options.validatorsTypes === "both";
   const emitPatch =
     options.validatorsTypes === "patch" || options.validatorsTypes === "both";
 
-  // Collect all user-defined, non-template models.
+  // Collect user-defined, non-template models that also get a C# class, so a
+  // validator never targets a response model, metadata-only model, or a model
+  // that is unreachable from any payload.
   const allModels: Model[] = [];
   navigateProgram(program, {
     model(model) {
-      if (!shouldSkipValidatorModel(model)) allModels.push(model);
+      if (shouldSkipValidatorModel(model)) return;
+      if (emittedModels && !emittedModels.has(model)) return;
+      allModels.push(model);
     },
   });
 

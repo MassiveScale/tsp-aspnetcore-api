@@ -13,6 +13,35 @@ For each HTTP `interface` (or `namespace`) that carries routes, the emitter writ
 
 **Parameter binding** — path parameters get `[FromRoute]`, query parameters get `[FromQuery]`, headers get `[FromHeader]`, and request bodies get `[FromBody]`. When [`@serverName`](./decorators.md) renames a parameter's emitted C# identifier, the binding attribute gets an explicit `Name = "..."` pointing at the original wire name (e.g. `[FromQuery(Name = "custId")] string customerId`), so the HTTP contract is unaffected by the rename.
 
+## Return types and response models
+
+The service method's return type comes from the first non-`@error` 2xx response **body**, as resolved by `@typespec/http`. It is never the response model itself. (A _response model_ describes the HTTP response: status code, headers and body. See [Which models get a class](./models.md#which-models-get-a-class).)
+
+| Response declared as                                                       | Service return type                                                                                                          |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `Widget`                                                                   | `Task<Widget?>`                                                                                                              |
+| `model EntityResponse<T> { ...OkResponse; ...ETagHeader; @body body: T; }` | `Task<Widget?>` for `EntityResponse<Widget>`. The `@body` type is returned, and no `EntityResponse` class is emitted.        |
+| `model R { @statusCode code: 201; @bodyRoot widget: Widget; }`             | `Task<Widget?>`                                                                                                              |
+| `model UpdatedResponse { ...NoContentResponse; ...ETagHeader; }`           | `Task` (a _metadata-only model_ has no body)                                                                                 |
+| `model R { @header("ETag") etag: string; name: string; }`                  | `Task<R?>`. This is an _implicit body_: class `R` is emitted with only `Name`, so the return type matches the emitted class. |
+| `PagedResult<Widget>` (a template instance used directly)                  | `Task<PagedResultWidget?>`                                                                                                   |
+
+Response headers and status codes are not part of the return type. Set them in your controller implementation, e.g. `Response.Headers.ETag = ...`.
+
+Spread parameter models such as `...IfMatchHeader`, or models of `@path` / `@query` parameters, are flattened into individual action and service parameters. They don't produce a class:
+
+```typespec
+model IfMatchHeader { @header("If-Match") ifMatch?: string; }
+
+@patch update(...IfMatchHeader, @body body: Widget): UpdatedResponse;
+```
+
+```csharp
+public abstract Task<IActionResult> Update([FromHeader(Name = "If-Match")] string? ifMatch, [FromBody] Widget body, CancellationToken cancellationToken);
+```
+
+An implicit _request_ body (plain parameters next to metadata, e.g. `create(@header h: string, name: string)`) has no named model. It is still bound as `[FromBody] object body`.
+
 ## Example
 
 ```typespec

@@ -2,7 +2,7 @@
 
 A TypeSpec emitter that generates C# model classes, interfaces, enums, ASP.NET Core controllers, service interfaces, and FluentValidation validators from TypeSpec definitions.
 
-For each TypeSpec `model` the emitter produces a `public partial class <Name>` — except a base model carrying `@discriminator`, which is emitted `abstract` since it has no discriminator value of its own (see [Model Generation](docs/models.md#discriminator)). An optional companion `public partial interface I<Name>` can be enabled with `emit-interfaces: true`.
+For each TypeSpec `model` that is an HTTP payload (a request or response body, or reachable from one), the emitter produces a `public partial class <Name>`. A base model carrying `@discriminator` is emitted `abstract`, since it has no discriminator value of its own (see [Model Generation](docs/models.md#discriminator)). _Response models_ (`OkResponse`-style models with an `@body`) and _metadata-only models_ (all `@header` / `@query` / `@path` / `@statusCode`) describe the HTTP envelope rather than data, so no class is emitted for them. Each templated payload instantiation gets its own class (`PagedResult<Widget>` → `PagedResultWidget`). See [Which models get a class](docs/models.md#which-models-get-a-class). An optional companion `public partial interface I<Name>` can be enabled with `emit-interfaces: true`.
 
 TypeSpec `enum` declarations and named string-literal `union` types become C# enums with `[JsonConverter(typeof(EnumMemberConverterFactory))]` and optional `[EnumMember(Value = "...")]` attributes.
 
@@ -113,7 +113,7 @@ namespace MyCompany.Api.Users
 
 - [Type Mapping](docs/type-mapping.md) — TypeSpec-to-C# scalar and collection mappings, `@format` overrides, `@encode` encodings
 - [Decorators](docs/decorators.md) — Emitter-specific decorators such as `@serverName`
-- [Model Generation](docs/models.md) — Default property values, enums, `@discriminator` polymorphism, cross-namespace references
+- [Model Generation](docs/models.md) — Which models get a class (response and metadata-only models, template instances), default property values, enums, `@discriminator` polymorphism, cross-namespace references
 - [Namespace Resolution](docs/namespace-resolution.md) — How C# namespaces are derived from output paths and TypeSpec namespaces
 - [Controllers and Services](docs/controllers-and-services.md) — ASP.NET Core controller and service interface generation
 - [RFC 7396 Merge Patch](docs/merge-patch.md) — `MergePatch<T>` generic container, PATCH body generation, and validator integration
