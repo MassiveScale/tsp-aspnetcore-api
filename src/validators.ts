@@ -140,8 +140,10 @@ interface PropertyData {
    */
   notNull: boolean;
   /**
-   * True for every required property (any type): MergePatch PATCH validators
-   * reject an explicit `null`, which would remove the value.
+   * True for every required property (any type) whose declared type does not
+   * include `null`: MergePatch PATCH validators reject an explicit `null`,
+   * which would remove the value. `notNull` is likewise suppressed for
+   * explicitly nullable types such as `string | null`.
    */
   rejectNull: boolean;
   /** True when the property is read-only (not writable for the target lifecycle). */
@@ -260,6 +262,22 @@ function isStringLiteralUnion(type: Type): boolean {
     if (variant.type.kind !== "String") return false;
   }
   return union.variants.size > 0;
+}
+
+/**
+ * Returns `true` when the declared type explicitly allows `null`
+ * (`string | null`, `int32 | null`, `Widget | null`, `"a" | "b" | null`).
+ * Such a property may be required, meaning it must be present, but `null` is
+ * still a valid value, so no non-null rule applies.
+ */
+function typeAllowsNull(type: Type): boolean {
+  if (type.kind !== "Union") return false;
+  for (const [, variant] of (type as Union).variants) {
+    if (variant.type.kind === "Intrinsic" && variant.type.name === "null") {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Returns true if the given Type is a string scalar or derives from one. */
@@ -404,7 +422,8 @@ function buildSinglePropertyData(
   const notEmpty =
     isRequired &&
     (isStringScalar(prop.type) || isStringLiteralUnion(prop.type));
-  const notNull = isRequired && !notEmpty && nullable;
+  const rejectNull = isRequired && !typeAllowsNull(prop.type);
+  const notNull = rejectNull && !notEmpty && nullable;
   const minLength =
     getMinLength(program, prop) ?? getMinLength(program, prop.type);
   const maxLength =
@@ -457,7 +476,7 @@ function buildSinglePropertyData(
     hasRules,
     notEmpty,
     notNull,
-    rejectNull: isRequired,
+    rejectNull,
     isReadOnly: isReadOnly || undefined,
     isImmutable: (isReadOnly && isImmutable) || undefined,
     nullable,

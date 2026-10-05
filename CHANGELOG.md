@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
   - **Required properties in `MergePatchUpdate<T>` PATCH validators** reject an explicit `null`, which would remove the value. This applies to strings too, which previously accepted `null`. Omitting the property is still allowed.
   - **Immutable (create-only) properties** (`@visibility(Lifecycle.Create, Lifecycle.Read)`) are rejected by PATCH validators with "cannot be changed after creation". Previously they were silently skipped, for every type.
   - **Update-only properties** (`@visibility(Lifecycle.Update, Lifecycle.Read)`) are rejected by POST validators with "can only be set by an update". Previously they were silently skipped.
+  - Properties whose declared type explicitly allows `null` (`string | null`, `int32 | null`) still accept `null` even when required: they get no `NotNull()` or reject-null rule.
   - Rules that can't be checked are still skipped: a non-nullable value type under `nullable-properties: false` can't be told apart from "not supplied", and neither can a `null` in a plain (non-MergePatch) PATCH body.
 
 ## [0.15.0] - 2026-10-05

@@ -43,7 +43,7 @@ The emitter reads TypeSpec constraint decorators and translates them to FluentVa
 | Enum property                                                                                  | `IsInEnum()`                                     |
 | Nested model property                                                                          | `SetValidator(childValidator)` (injected via DI) |
 
-A property is **required** when it is not optional (`?`) and has no default value. Required rules apply to every type, not just strings:
+A property is **required** when it is not optional (`?`) and has no default value. Required rules apply to every type, not just strings. If the declared type explicitly allows `null` (`note: string | null`, `count: int32 | null`), the property must be present, but `null` is a valid value, so it gets no `NotNull()` or reject-null rule.
 
 | Validator                     | Required string                                                                                                     | Required non-string                             |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
@@ -64,6 +64,8 @@ A property that is not writable for the operation's lifecycle phase gets a **rej
 | `@visibility(Lifecycle.Update, Lifecycle.Read)` (update-only) | Rejected: "can only be set by an update" | Validated normally                           |
 
 In PATCH validators over a `MergePatchUpdate<T>` body, a rejected property gets a "must not be present" rule, so clients can't supply the field at all. In POST validators, and in PATCH validators over a plain body, a nullable rejected property gets a `Null()` rule. A non-nullable one gets no rule, because it can't be told apart from "not supplied", so the field is simply ignored. This applies to properties of every type.
+
+Rejection rules are emitted for every API version, including versions where the property doesn't exist yet. With the `earliest` and `per-version` strategies, an update-only property `@added` in v2 is still rejected by the v1 POST validator. TypeSpec can't change a property's visibility between versions, so there's no version in which that property is writable in that phase. The single model class declares it, so the rule compiles, and an older-version client can't slip the value through.
 
 ### PATCH body shapes
 

@@ -816,6 +816,106 @@ describe("csharp emitter - validators", () => {
       );
     });
 
+    it("does not reject null for required properties whose type explicitly allows it", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        model Part { label: string; }
+
+        model Widget {
+          note: string | null;
+          count: int32 | null;
+          part: Part | null;
+          mode: "fast" | "slow" | null;
+          name: string;
+        }
+
+        interface Widgets {
+          @route("/widgets") @post create(@body body: Widget): Widget;
+          @route("/widgets") @patch update(@body body: MergePatchUpdate<Widget>): Widget;
+        }
+        `,
+        VALIDATOR_OPTIONS,
+      );
+      const post = results["Validators/WidgetValidator.g.cs"];
+      const patch = results["Validators/WidgetPatchValidator.g.cs"];
+      assertLines(post, "WidgetValidator", [
+        "RuleFor(x => x.Name).NotEmpty();",
+      ]);
+      assertLines(patch, "WidgetPatchValidator", [
+        '.Must(x => !x.IsNull("Name"))',
+      ]);
+      for (const name of ["Note", "Count", "Part", "Mode"]) {
+        ok(
+          !post.includes(`x.${name}).NotNull()`) &&
+            !post.includes(`x.${name}).NotEmpty()`),
+          `expected no non-null rule for ${name} in:\n${post}`,
+        );
+        ok(
+          !patch.includes(`IsNull("${name}"))\n`) &&
+            !patch.includes(`.Must(x => !x.IsNull("${name}"))`),
+          `expected no reject-null rule for ${name} in:\n${patch}`,
+        );
+      }
+    });
+
+    // TypeSpec cannot version a property's visibility, so a lifecycle-restricted
+    // property added in v2 is never writable in this phase in any version.
+    // The single model class still declares it, so the rejection compiles, and
+    // keeping it stops an older-version client from slipping the value through.
+    for (const strategy of ["earliest", "per-version"] as const) {
+      it(`keeps lifecycle rejections for properties added in later versions (${strategy})`, async () => {
+        const results = await emit(
+          `
+          import "@typespec/http";
+          import "@typespec/versioning";
+          using TypeSpec.Http;
+          using TypeSpec.Versioning;
+
+          @versioned(Versions)
+          @service(#{ title: "Demo" })
+          namespace Demo;
+
+          enum Versions { v1, v2 }
+
+          model Widget {
+            name: string;
+            @added(Versions.v2) @visibility(Lifecycle.Update, Lifecycle.Read) revision?: int32;
+            @added(Versions.v2) @visibility(Lifecycle.Create, Lifecycle.Read) slot?: int32;
+          }
+
+          interface Widgets {
+            @route("/widgets") @post create(@body body: Widget): Widget;
+            @route("/widgets") @patch update(@body body: MergePatchUpdate<Widget>): Widget;
+          }
+          `,
+          { ...VALIDATOR_OPTIONS, "validators-version-strategy": strategy },
+        );
+        const dir = strategy === "per-version" ? "Validators/v1" : "Validators";
+        assertLines(
+          results[`${dir}/WidgetValidator.g.cs`],
+          `${dir}/WidgetValidator`,
+          [
+            "// Revision can only be set by an update and must not be set on creation",
+            "RuleFor(x => x.Revision).Null();",
+          ],
+        );
+        assertLines(
+          results[`${dir}/WidgetPatchValidator.g.cs`],
+          `${dir}/WidgetPatchValidator`,
+          [
+            '.Must(x => !x.IsDefined("Slot"))',
+            `.WithMessage("'Slot' cannot be changed after creation.");`,
+          ],
+        );
+      });
+    }
+
     it("applies the same rules in version-aware validators, in base and per-version blocks", async () => {
       const results = await emit(
         `
