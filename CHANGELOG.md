@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** the validator custom-rule hook `ExtendRules()` is now a C# partial method (`partial void ExtendRules();`) instead of `protected virtual void ExtendRules() { }`. Implement it in your hand-written partial as `partial void ExtendRules() { ... }`. The old documented approach, `protected override void ExtendRules()` in a second part of the same partial class, never compiled: C# reports a duplicate member (CS0111) because both parts are the same class, and a class can't override its own method. Code that subclassed a generated validator to override `ExtendRules()` must move those rules into a partial implementation. See [Validators — Custom rules](docs/validators.md#custom-rules).
+
 ### Fixed
 
 - PATCH validators no longer emit uncompilable code when the `@patch` operation takes a plain model as its body instead of a `MergePatchUpdate<T>`. Every rule was emitted in the `MergePatch<T>` shape — `x.GetString("Prop")`, `x.IsDefined("Prop")`, `x.IsNull("Prop")`, `x.TryGetValue<T>("Prop", out _)` — against an ordinary POCO that defines none of those members, producing errors such as `'QuotaGroupUpdate' does not contain a definition for 'GetString'`. This affected every constraint (`@minValue`, `@maxValue`, `@minLength`, `@maxLength`, `@pattern`, `@format("email")`, required strings, enum properties) as well as nested-model rules, in both the standard and version-aware PATCH templates. Plain bodies now emit typed, null-guarded rules — `RuleFor(x => x.Target).GreaterThanOrEqualTo(0).When(x => x.Target is not null)` — while `MergePatchUpdate<T>` bodies keep the existing property-name-keyed shape. Because a plain POCO cannot distinguish an omitted field from an explicit `null`, a `null` value is treated as "not supplied" and the rule is skipped; the guard is omitted entirely for non-nullable value types. See [Validators — PATCH body shapes](docs/validators.md#patch-body-shapes).
