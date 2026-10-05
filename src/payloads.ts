@@ -1,9 +1,10 @@
 /**
  * @module payloads
  *
- * Decides which TypeSpec models are *data* (and therefore get a C# class) by
- * asking `@typespec/http` how each operation's request and response bodies
- * resolve, rather than emitting every model in the type graph.
+ * Decides which TypeSpec models are *data* (and therefore get a C# class), and
+ * which of their properties become class properties, by asking
+ * `@typespec/http` how each operation's request and response bodies resolve
+ * rather than emitting every model in the type graph.
  *
  * Terminology (see https://typespec.io/docs/libraries/http/operations/):
  * - A **metadata** property is one marked `@statusCode`, `@header`, `@cookie`,
@@ -15,7 +16,11 @@
  *   has an explicit `@body` / `@bodyRoot`, only the body type is data and the
  *   response model itself is never emitted. When it mixes metadata with plain
  *   properties and has no explicit body, the plain properties form an
- *   *implicit body*: the model is emitted with only those properties.
+ *   *implicit body* and the model is emitted without its envelope properties.
+ *
+ * Metadata-only and explicit-body models are collectively *envelope models*.
+ * Header, cookie and status-code properties are *envelope properties*: they
+ * never travel as JSON in a response, so no class ever declares them.
  */
 
 import {
@@ -24,6 +29,7 @@ import {
   type ModelProperty,
   type Type,
   getDiscriminator,
+  getTypeName,
   isArrayModelType,
   isRecordModelType,
   walkPropertiesInherited,
@@ -32,25 +38,19 @@ import {
   getAllHttpServices,
   isBody,
   isBodyRoot,
+  isCookieParam,
+  isHeader,
   isMetadata,
   isMultipartBodyProperty,
+  isStatusCode,
 } from "@typespec/http";
 import {
   getMergePatchSource,
   isMergePatch,
 } from "@typespec/http/experimental/merge-patch";
+import { reportDiagnostic } from "./lib.js";
 import { shouldEmitModel } from "./models.js";
-
-/** Result of {@link analyzePayloadModels}. */
-export interface PayloadModels {
-  /** Models that get a C# class, in declaration order. */
-  models: Model[];
-  /**
-   * Implicit-body response models mapped to the names of the properties that
-   * form the body. Models absent from this map emit every property.
-   */
-  bodyProperties: Map<Model, Set<string>>;
-}
+import { csharpModelName } from "./naming.js";
 
 /**
  * Returns `true` when every property of `model` (including inherited ones) is
@@ -89,13 +89,126 @@ export function hasExplicitBody(program: Program, model: Model): boolean {
 
 /**
  * Returns `true` for models that describe an HTTP envelope rather than data:
- * metadata-only models and response models with an explicit body.
+ * metadata-only models and response models with an explicit body. Envelope
+ * models never get a class.
  *
  * @param program - The compiled TypeSpec program.
  * @param model - The model to inspect.
  */
 export function isHttpEnvelopeModel(program: Program, model: Model): boolean {
   return isMetadataOnlyModel(program, model) || hasExplicitBody(program, model);
+}
+
+/**
+ * Returns `true` for `@header`, `@cookie` and `@statusCode` properties. These
+ * describe the HTTP envelope and never appear in a JSON body, so they are
+ * never emitted as class properties. `@path` and `@query` properties are not
+ * envelope properties: on a returned resource they are ordinary body data.
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param property - The property to inspect.
+ */
+export function isEnvelopeProperty(
+  program: Program,
+  property: ModelProperty,
+): boolean {
+  return (
+    isHeader(program, property) ||
+    isCookieParam(program, property) ||
+    isStatusCode(program, property)
+  );
+}
+
+/**
+ * Returns `true` when `type` refers to an envelope model, directly or through
+ * an array, record, union or tuple. Such a type has no emitted class to
+ * reference.
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param type - The property type to inspect.
+ */
+function referencesEnvelopeModel(program: Program, type: Type): boolean {
+  switch (type.kind) {
+    case "Model":
+      if (isArrayModelType(type) || isRecordModelType(type)) {
+        return referencesEnvelopeModel(program, type.indexer.value);
+      }
+      return Boolean(type.name) && isHttpEnvelopeModel(program, type);
+    case "Union":
+      return [...type.variants.values()].some((variant) =>
+        referencesEnvelopeModel(program, variant.type),
+      );
+    case "UnionVariant":
+      return referencesEnvelopeModel(program, type.type);
+    case "Tuple":
+      return type.values.some((value) =>
+        referencesEnvelopeModel(program, value),
+      );
+    default:
+      return false;
+  }
+}
+
+/**
+ * Returns `true` when `property` becomes a property of the emitted C# class:
+ * it is not an envelope property and its type does not reference an envelope
+ * model (which has no class to point at).
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param property - The property to inspect.
+ */
+export function isClassProperty(
+  program: Program,
+  property: ModelProperty,
+): boolean {
+  return (
+    !isEnvelopeProperty(program, property) &&
+    !referencesEnvelopeModel(program, property.type)
+  );
+}
+
+/**
+ * Returns the nearest base model that gets a class, skipping envelope models.
+ * The C# class derives from this model; properties of the skipped envelope
+ * ancestors are flattened into the class by {@link classProperties}.
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param model - The model whose base chain to walk.
+ */
+export function emittedBaseModel(
+  program: Program,
+  model: Model,
+): Model | undefined {
+  let base = model.baseModel;
+  while (base && isHttpEnvelopeModel(program, base)) base = base.baseModel;
+  return base;
+}
+
+/**
+ * Returns the properties declared on `model`'s C# class, in order: properties
+ * flattened from skipped envelope base models (furthest ancestor first),
+ * then the model's own properties. Every returned property satisfies
+ * {@link isClassProperty}.
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param model - The model to list properties for.
+ */
+export function classProperties(
+  program: Program,
+  model: Model,
+): ModelProperty[] {
+  const skippedBases: Model[] = [];
+  const emittedBase = emittedBaseModel(program, model);
+  for (
+    let base = model.baseModel;
+    base && base !== emittedBase;
+    base = base.baseModel
+  ) {
+    skippedBases.unshift(base);
+  }
+  return [...skippedBases, model]
+    .flatMap((owner) => [...owner.properties.values()])
+    .filter((property) => isClassProperty(program, property));
 }
 
 /**
@@ -141,40 +254,37 @@ export function resolvePayloadType(
  *
  * When the program has HTTP operations, a model is emitted only if it is
  * reachable from an operation payload: a request body, a response body
- * (resolved by `@typespec/http`), a parameter type, or — transitively — a
- * property type, base model, discriminated derived model, array/record
+ * (resolved by `@typespec/http`, with implicit bodies mapped back to their
+ * response model), a parameter type, or — transitively — a class property
+ * type, emitted base model, discriminated derived model, array/record
  * element, union variant, or `MergePatchUpdate<T>` source of one of those.
  *
  * When the program has no HTTP operations (a models-only library), every
- * candidate is emitted except metadata-only and explicit-body response models.
+ * candidate is emitted except envelope models.
  *
- * Metadata-only models and explicit-body response models are never emitted.
+ * Envelope models are never emitted. Two models that map to the same C# class
+ * name are reported with a `duplicate-model-name` diagnostic and only the
+ * first is emitted.
  *
  * @param program - The compiled TypeSpec program.
  * @param candidates - Models that pass {@link shouldEmitModel}, in declaration order.
- * @returns The models to emit and the body-property filter for implicit bodies.
+ * @returns The models to emit, in declaration order.
  */
 export function analyzePayloadModels(
   program: Program,
   candidates: Model[],
-): PayloadModels {
+): Model[] {
   const [services] = getAllHttpServices(program);
   const operations = services.flatMap((service) => service.operations);
   if (operations.length === 0) {
-    return {
-      models: candidates.filter(
-        (model) => !isHttpEnvelopeModel(program, model),
-      ),
-      bodyProperties: new Map(),
-    };
+    return withUniqueClassNames(
+      program,
+      candidates.filter((model) => !isHttpEnvelopeModel(program, model)),
+    );
   }
 
-  const fullModels = new Set<Model>();
-  const implicitBodies = new Map<Model, Set<string>>();
+  const reached = new Set<Model>();
   const visited = new Set<Type>();
-
-  const isDataModel = (model: Model): boolean =>
-    shouldEmitModel(model) && !isHttpEnvelopeModel(program, model);
 
   const visitType = (type: Type): void => {
     switch (type.kind) {
@@ -192,13 +302,6 @@ export function analyzePayloadModels(
         return;
       default:
         return;
-    }
-  };
-
-  const visitRelatedModels = (model: Model): void => {
-    if (model.baseModel) visitModel(model.baseModel);
-    if (isInDiscriminatedHierarchy(program, model)) {
-      for (const derived of model.derivedModels) visitModel(derived);
     }
   };
 
@@ -221,24 +324,17 @@ export function analyzePayloadModels(
       }
       return;
     }
-    if (!isDataModel(model)) return;
+    if (!shouldEmitModel(model) || isHttpEnvelopeModel(program, model)) return;
 
-    fullModels.add(model);
-    for (const property of model.properties.values()) {
+    reached.add(model);
+    for (const property of classProperties(program, model)) {
       visitType(property.type);
     }
-    visitRelatedModels(model);
-  };
-
-  const visitImplicitBody = (model: Model, bodyType: Model): void => {
-    if (!isDataModel(model)) return;
-    const names = implicitBodies.get(model) ?? new Set<string>();
-    for (const name of bodyType.properties.keys()) names.add(name);
-    implicitBodies.set(model, names);
-    for (const property of bodyType.properties.values()) {
-      visitType(property.type);
+    const base = emittedBaseModel(program, model);
+    if (base) visitModel(base);
+    if (isInDiscriminatedHierarchy(program, model)) {
+      for (const derived of model.derivedModels) visitModel(derived);
     }
-    visitRelatedModels(model);
   };
 
   for (const operation of operations) {
@@ -253,30 +349,48 @@ export function analyzePayloadModels(
         const body = content.body;
         if (!body) continue;
         const bodyProperty = "property" in body ? body.property : undefined;
-        const payload = resolvePayloadType(
-          body.type,
-          bodyProperty,
-          response.type,
-        );
-        if (payload !== body.type && payload.kind === "Model") {
-          visitImplicitBody(payload, body.type as Model);
-        } else {
-          visitType(body.type);
-        }
+        visitType(resolvePayloadType(body.type, bodyProperty, response.type));
       }
     }
   }
 
-  const emitted = new Set<Model>([...fullModels, ...implicitBodies.keys()]);
-  const ordered = candidates.filter((model) => emitted.has(model));
-  const extras = [...emitted].filter((model) => !candidates.includes(model));
+  const ordered = candidates.filter((model) => reached.has(model));
+  const extras = [...reached].filter((model) => !candidates.includes(model));
+  return withUniqueClassNames(program, [...ordered, ...extras]);
+}
 
-  const bodyProperties = new Map<Model, Set<string>>();
-  for (const [model, names] of implicitBodies) {
-    if (!fullModels.has(model)) bodyProperties.set(model, names);
+/**
+ * Drops every model whose C# class name was already taken by an earlier model,
+ * reporting a `duplicate-model-name` diagnostic for each. Without this, the
+ * later model would silently overwrite the earlier one's file and every
+ * reference to either would point at the wrong shape.
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param models - Models to emit, in priority order.
+ * @returns The models whose class names are unique.
+ */
+function withUniqueClassNames(program: Program, models: Model[]): Model[] {
+  const byName = new Map<string, Model>();
+  const unique: Model[] = [];
+  for (const model of models) {
+    const className = csharpModelName(program, model).replace(/^@/, "");
+    const existing = byName.get(className);
+    if (existing) {
+      reportDiagnostic(program, {
+        code: "duplicate-model-name",
+        target: model,
+        format: {
+          model: getTypeName(model),
+          className,
+          existing: getTypeName(existing),
+        },
+      });
+      continue;
+    }
+    byName.set(className, model);
+    unique.push(model);
   }
-
-  return { models: [...ordered, ...extras], bodyProperties };
+  return unique;
 }
 
 /**

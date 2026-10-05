@@ -31,7 +31,36 @@ public partial class WidgetResult
 Task<WidgetResult?> ReadAsync(CancellationToken cancellationToken);
 ```
 
-If the same model is also used somewhere metadata doesn't apply (for example as a property type of another payload), every property is kept.
+### Which properties become class properties
+
+These rules apply to **every** emitted class, wherever the model is used. They match `@typespec/openapi3`, which strips metadata from body schemas even when the model is nested inside another payload.
+
+| Property                                                                                                                                        | Class property?                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `@header`, `@cookie`, `@statusCode`                                                                                                             | **No**. They are never JSON.                                                                        |
+| `@path`, `@query`                                                                                                                               | Yes. On a returned resource (`model Widget { @path id: string; ... }`) they are ordinary body data. |
+| Typed as a metadata-only or explicit-body model, directly or via an array, record, union or tuple (`headers: ETagHeader`, `list: ETagHeader[]`) | **No**. That model has no class to reference, so the property is dropped.                           |
+| Anything else                                                                                                                                   | Yes                                                                                                 |
+
+**Inheritance.** If a model extends a metadata-only base, the base has no class, so the C# class doesn't derive from it. The base's remaining properties (e.g. a `@path id`) are copied into the derived class instead. A base that mixes metadata and data _is_ emitted, without its `@header` / `@cookie` / `@statusCode` properties.
+
+```typespec
+model TraceBase { @header("x-trace") trace: string; }
+model KeyBase extends TraceBase { @path id: string; }
+model Widget extends KeyBase { name: string; }
+```
+
+```csharp
+public partial class Widget   // no ": KeyBase", since KeyBase is metadata-only
+{
+    public string? Id { get; set; }    // copied in from KeyBase
+    public string? Name { get; set; }
+}
+```
+
+Validators use the same property list, so a validator never references a property the class doesn't have.
+
+> Explicit request and response bodies whose models mix metadata and data aren't a supported shape. Use complete resources as bodies. Where that isn't possible, define dedicated request/response models.
 
 ### Reachability
 
@@ -58,12 +87,17 @@ A templated model that is itself a payload (e.g. `PagedResult<T>` used directly 
 | `PagedResult<Widget[]>`                                               | `PagedResultWidgetList`     |
 | `PagedResult<Record<Widget>>`                                         | `PagedResultWidgetMap`      |
 | `Box<string>` / `Box<Cat \| Dog>`                                     | `BoxString` / `BoxCatOrDog` |
+| `Box<{ id: string }>` / `Box<{}>`                                     | `BoxId` / `BoxObject`       |
 | `@friendlyName("{name}Page", T) model Page<T>` with `Page<Widget>`    | `WidgetPage`                |
 | `@serverName("Page") model PagedResult<T>` with `PagedResult<Widget>` | `PageWidget`                |
 
 Generic C# classes (`PagedResult<T>`) are not emitted, because a TypeSpec template can reshape properties per argument in ways a C# type parameter cannot express. Inferred enums on a template instance are named after the instance (`BoxShadeValue`), so instantiations never share an enum.
 
 `model WidgetList is PagedResult<Widget>` is a new named model, not a template instance, so it is emitted as `WidgetList`.
+
+### Class-name collisions
+
+Every model class shares the `models-namespace`, so two different models that map to the same C# name would overwrite each other's file. Examples: `Box<{ id: string }>` and `Box<{ id: int32 }>` (both `BoxId`), or `Demo.A.Widget` and `Demo.B.Widget`. Instead of overwriting silently, the emitter reports a **`duplicate-model-name`** error naming both models, and only emits the first. Rename one with `@friendlyName` or [`@serverName`](./decorators.md).
 
 ## Default property values
 

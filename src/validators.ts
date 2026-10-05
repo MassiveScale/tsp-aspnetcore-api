@@ -54,6 +54,7 @@ import { getServerName } from "./decorators.js";
 import { computeModelFqName, ResolvedOptions } from "./emitter.js";
 import { reportDiagnostic } from "./lib.js";
 import { csharpModelName } from "./naming.js";
+import { classProperties } from "./payloads.js";
 import { pascalCase } from "./utils.js";
 
 /** Absolute path to the bundled templates directory (shared with renderer). */
@@ -461,7 +462,7 @@ function buildValidatorProperties(
     program,
     model,
   );
-  for (const [, prop] of model.properties) {
+  for (const prop of classProperties(program, model)) {
     if (prop.name === discriminatorPropertyName) continue;
 
     const isWritable =
@@ -506,7 +507,7 @@ function buildVersionAwareValidatorProperties(
     model,
   );
 
-  for (const [, prop] of model.properties) {
+  for (const prop of classProperties(program, model)) {
     if (prop.name === discriminatorPropertyName) continue;
 
     const isWritable =
@@ -644,7 +645,7 @@ function collectValidatorTransitiveDeps(
   const queue = [...initialModels];
   while (queue.length > 0) {
     const model = queue.shift()!;
-    for (const [, prop] of model.properties) {
+    for (const prop of classProperties(program, model)) {
       if (versionFilter && !versionFilter(prop)) continue;
       const ref = getValidatorModelReference(prop.type);
       if (ref && !all.has(ref.model)) {

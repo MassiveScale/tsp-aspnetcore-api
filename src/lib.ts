@@ -389,6 +389,12 @@ export const $lib = createTypeSpecLibrary({
         default: paramMessage`@serverName value "${"name"}" is not a valid C# identifier. Use only letters, digits, and underscores, starting with a letter or underscore (optionally prefixed with @). Reserved keywords must be prefixed with @ (e.g. "@class").`,
       },
     },
+    "duplicate-model-name": {
+      severity: "error",
+      messages: {
+        default: paramMessage`"${"model"}" maps to the C# class "${"className"}", which is already emitted for "${"existing"}". Rename one of them with @friendlyName or @serverName.`,
+      },
+    },
     "output-file-left-behind": {
       severity: "warning",
       messages: {

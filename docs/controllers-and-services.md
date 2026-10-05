@@ -26,6 +26,8 @@ The service method's return type comes from the first non-`@error` 2xx response 
 | `model R { @header("ETag") etag: string; name: string; }`                  | `Task<R?>`. This is an _implicit body_: class `R` is emitted with only `Name`, so the return type matches the emitted class. |
 | `PagedResult<Widget>` (a template instance used directly)                  | `Task<PagedResultWidget?>`                                                                                                   |
 
+`@error` responses never become the return type. That covers an `@error` body, and also an `@error` envelope that declares a 2xx status with a non-error body (`@error model OddError { @statusCode code: 200; @body body: Problem; }`).
+
 Response headers and status codes are not part of the return type. Set them in your controller implementation, e.g. `Response.Headers.ETag = ...`.
 
 Spread parameter models such as `...IfMatchHeader`, or models of `@path` / `@query` parameters, are flattened into individual action and service parameters. They don't produce a class:

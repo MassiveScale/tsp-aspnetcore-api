@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Array default values (`buckets?: int32[] = #[1000, 2500, 5000];`) now emit a C# list initializer (`= new List<int> { 1000, 2500, 5000 };`) instead of being silently dropped. Empty arrays emit `new List<T>()`, and elements may be enum members, strings, numbers, booleans, `null`, or nested arrays. Arrays containing object values still produce no initializer. See [Model Generation — Default property values](docs/models.md#default-property-values).
+- `duplicate-model-name` error diagnostic, reported when two different models map to the same C# class name (e.g. `Demo.A.Widget` and `Demo.B.Widget`, or two anonymous template arguments with the same property names). Previously the later model silently overwrote the earlier one's file. Only the first model is emitted. See [Model Generation — Class-name collisions](docs/models.md#class-name-collisions).
+- Anonymous template arguments are named by their properties (`Box<{ id: string }>` → `BoxId`), so instantiations with different shapes get distinct classes.
 
 ### Changed
 
@@ -19,10 +21,13 @@ All notable changes to this project will be documented in this file.
   - **Collapsed template classes.** A templated payload such as `PagedResult<Store>` used to produce one non-generic `PagedResult` class whose property types came from whichever instantiation was emitted last. Each instantiation now gets its own class (`PagedResultStore`, `PagedResultWidget`; `@friendlyName` is honored), and service return types reference it. Code that referenced the old `PagedResult` class must switch to the instantiation name. `model WidgetList is PagedResult<Widget>` is unaffected.
   - Inferred enums for string-literal-union properties on template instances are named after the instance (`BoxShadeValue`, not `BoxValue`), so instantiations no longer share one enum.
   - Validators follow the same rule and are only emitted for models that get a class.
-- Response models with an implicit body (metadata mixed with plain properties, no `@body`) are emitted without their metadata properties, and the service method now returns that class (previously `object`).
+- **Breaking:** `@header`, `@cookie` and `@statusCode` properties are no longer emitted on **any** class, wherever the model is used, matching `@typespec/openapi3`'s body schemas. `@path` and `@query` properties are kept. Properties typed as a metadata-only or explicit-body model (directly or through an array, record, union or tuple) are dropped, because that model has no class. A class no longer derives from a metadata-only base; the base's remaining properties are copied into the derived class instead. Validators use the same property list. See [Model Generation — Which properties become class properties](docs/models.md#which-properties-become-class-properties).
+- Response models with an implicit body (metadata mixed with plain properties, no `@body`) are emitted, and the service method now returns that class (previously `object`).
 - **Breaking:** the validator custom-rule hook `ExtendRules()` is now a C# partial method (`partial void ExtendRules();`) instead of `protected virtual void ExtendRules() { }`. Implement it in your hand-written partial as `partial void ExtendRules() { ... }`. The old documented approach, `protected override void ExtendRules()` in a second part of the same partial class, never compiled: C# reports a duplicate member (CS0111) because both parts are the same class, and a class can't override its own method. Code that subclassed a generated validator to override `ExtendRules()` must move those rules into a partial implementation. See [Validators — Custom rules](docs/validators.md#custom-rules).
 
 ### Fixed
+
+- An `@error` response envelope that declares a 2xx status with a non-error body (`@error model OddError { @statusCode code: 200; @body body: Problem; }`) no longer becomes the service return type (`Task<Problem?>`). The envelope is now checked for `@error`, not just its body.
 
 - Numeric defaults on `decimal` and `float32` properties (including array elements) now carry the `m` / `f` literal suffix (`= 9.99m;`, `= 0.5f;`). Previously they were emitted as bare literals, which do not compile because C# has no implicit conversion from a `double` literal to `decimal` or `float`.
 

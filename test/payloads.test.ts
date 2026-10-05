@@ -1,6 +1,6 @@
 import { deepStrictEqual, ok } from "node:assert";
 import { describe, it } from "node:test";
-import { emit } from "./host.js";
+import { emit, emitWithDiagnostics } from "./host.js";
 
 /** Returns the sorted class/interface file names emitted under `Models/`. */
 function modelFiles(results: Record<string, string>): string[] {
@@ -293,7 +293,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       deepStrictEqual(modelFiles(results), ["Widget.g.cs"]);
     });
 
-    it("does not emit a metadata-only model used as a payload property type", async () => {
+    it("drops a property typed as a metadata-only model instead of referencing a missing class", async () => {
       const results = await emit(`
         ${HTTP_HEADER}
         @service namespace Demo;
@@ -304,6 +304,103 @@ describe("csharp emitter - response and metadata-only models", () => {
         @route("/w") interface Widgets { @get read(): Widget; }
       `);
       deepStrictEqual(modelFiles(results), ["Widget.g.cs"]);
+      const widget = results["Models/Widget.g.cs"];
+      assertContains(widget, " Name { get; set; }", "Widget");
+      ok(
+        !widget.includes("ETagHeader") && !widget.includes(" Headers {"),
+        `expected no reference to the unemitted ETagHeader in:\n${widget}`,
+      );
+    });
+
+    it("drops properties that reach an envelope model through arrays, records and unions", async () => {
+      const results = await emit(`
+        ${HTTP_HEADER}
+        @service namespace Demo;
+
+        model ETagHeader { @header("ETag") etag: string; }
+        union Choice { tag: ETagHeader, text: string }
+        model Widget {
+          name: string;
+          list: ETagHeader[];
+          map: Record<ETagHeader>;
+          either: ETagHeader | null;
+          variant: Choice.tag;
+          pair: [ETagHeader, string];
+        }
+
+        @route("/w") interface Widgets { @get read(): Widget; }
+      `);
+      deepStrictEqual(modelFiles(results), ["Widget.g.cs"]);
+      const widget = results["Models/Widget.g.cs"];
+      for (const dropped of ["List", "Map", "Either", "Variant", "Pair"]) {
+        ok(
+          !widget.includes(` ${dropped} {`),
+          `expected ${dropped} to be dropped from:\n${widget}`,
+        );
+      }
+    });
+  });
+
+  describe("inheritance from envelope models", () => {
+    it("drops the base class when the base is metadata-only and flattens its @path data", async () => {
+      const results = await emit(
+        `
+        ${HTTP_HEADER}
+        @service namespace Demo;
+
+        model TraceBase { @header("x-trace") trace: string; }
+        model KeyBase extends TraceBase { @path id: string; }
+        model Widget extends KeyBase { name: string; }
+
+        @route("/w") interface Widgets { @get read(): Widget; }
+        `,
+        { "emit-interfaces": true },
+      );
+      deepStrictEqual(modelFiles(results), ["IWidget.g.cs", "Widget.g.cs"]);
+      const widget = results["Models/Widget.g.cs"];
+      assertContains(
+        widget,
+        "public partial class Widget : Demo.Models.IWidget",
+        "Widget",
+      );
+      assertContains(widget, " Id { get; set; }", "Widget");
+      assertContains(widget, " Name { get; set; }", "Widget");
+      ok(
+        !widget.includes("TraceBase") &&
+          !widget.includes("KeyBase") &&
+          !widget.includes(" Trace {"),
+        `expected no envelope base or header property in:\n${widget}`,
+      );
+      const iface = results["Models/IWidget.g.cs"];
+      assertContains(iface, "public partial interface IWidget", "IWidget");
+      ok(
+        !/interface IWidget\s*:/.test(iface),
+        `expected IWidget to have no base interface:\n${iface}`,
+      );
+    });
+
+    it("strips header properties from a base that mixes metadata and data", async () => {
+      const results = await emit(`
+        ${HTTP_HEADER}
+        @service namespace Demo;
+
+        model MixedBase { @header("x-trace") trace: string; id: string; }
+        model Widget extends MixedBase { name: string; }
+
+        @route("/w") interface Widgets { @get read(): Widget; }
+      `);
+      deepStrictEqual(modelFiles(results), ["MixedBase.g.cs", "Widget.g.cs"]);
+      assertContains(
+        results["Models/Widget.g.cs"],
+        "public partial class Widget : Demo.Models.MixedBase",
+        "Widget",
+      );
+      const base = results["Models/MixedBase.g.cs"];
+      assertContains(base, " Id { get; set; }", "MixedBase");
+      ok(
+        !base.includes(" Trace {"),
+        `expected the header property to be stripped from:\n${base}`,
+      );
     });
   });
 
@@ -403,7 +500,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       );
     });
 
-    it("keeps every property when the model is also used outside an implicit body", async () => {
+    it("strips header properties even when the model is also nested in another payload", async () => {
       const results = await emit(`
         ${HTTP_HEADER}
         @service namespace Demo;
@@ -416,11 +513,46 @@ describe("csharp emitter - response and metadata-only models", () => {
           @get @route("batch") batch(): Batch;
         }
       `);
-      assertContains(
-        results["Models/WidgetResult.g.cs"],
-        " Etag { get; set; }",
-        "WidgetResult",
+      const result = results["Models/WidgetResult.g.cs"];
+      assertContains(result, " Name { get; set; }", "WidgetResult");
+      ok(
+        !result.includes(" Etag {"),
+        `expected the header to be stripped from:\n${result}`,
       );
+    });
+
+    it("strips header properties from a self-referencing implicit body", async () => {
+      const results = await emit(`
+        ${HTTP_HEADER}
+        @service namespace Demo;
+
+        model Node { @header h: string; value: string; next?: Node; }
+
+        @route("/n") interface Nodes { @get read(): Node; }
+      `);
+      const node = results["Models/Node.g.cs"];
+      assertContains(node, " Value { get; set; }", "Node");
+      assertContains(
+        node,
+        "public Demo.Models.Node? Next { get; set; }",
+        "Node",
+      );
+      ok(!node.includes(" H {"), `expected no H property in:\n${node}`);
+    });
+
+    it("keeps @path and @query properties on a returned resource", async () => {
+      const results = await emit(`
+        ${HTTP_HEADER}
+        @service namespace Demo;
+
+        model Widget { @path id: string; @query expand?: string; @header("x-v") ver: string; name: string; }
+
+        @route("/w") interface Widgets { @get @route("{id}") read(@path id: string): Widget; }
+      `);
+      const widget = results["Models/Widget.g.cs"];
+      assertContains(widget, " Id { get; set; }", "Widget");
+      assertContains(widget, " Expand { get; set; }", "Widget");
+      ok(!widget.includes(" Ver {"), `expected no Ver property in:\n${widget}`);
     });
 
     it("leaves an anonymous implicit request body as object", async () => {
@@ -575,6 +707,7 @@ describe("csharp emitter - response and metadata-only models", () => {
         model Holder {
           map: Box<Record<Widget>>;
           anon: Box<{ id: string }>;
+          empty: Box<{}>;
           literal: Box<"on-off">;
           number: Box<42>;
           flag: Box<true>;
@@ -590,6 +723,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       const names = modelFiles(results);
       for (const expected of [
         "BoxWidgetMap.g.cs",
+        "BoxId.g.cs",
         "BoxObject.g.cs",
         "BoxOnOff.g.cs",
         "Box42.g.cs",
@@ -659,7 +793,129 @@ describe("csharp emitter - response and metadata-only models", () => {
     });
   });
 
+  describe("class-name collisions", () => {
+    it("gives anonymous template arguments with different shapes distinct classes", async () => {
+      const results = await emit(`
+        ${HTTP_HEADER}
+        @service namespace Demo;
+
+        model Box<T> { value: T; }
+        model Holder { a: Box<{ id: string }>; b: Box<{ name: string }>; }
+
+        @route("/h") interface Holders { @get read(): Holder; }
+      `);
+      deepStrictEqual(modelFiles(results), [
+        "BoxId.g.cs",
+        "BoxName.g.cs",
+        "Holder.g.cs",
+      ]);
+      const holder = results["Models/Holder.g.cs"];
+      assertContains(
+        holder,
+        "public Demo.Models.BoxId? A { get; set; }",
+        "Holder",
+      );
+      assertContains(
+        holder,
+        "public Demo.Models.BoxName? B { get; set; }",
+        "Holder",
+      );
+    });
+
+    it("reports duplicate-model-name instead of overwriting a class", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(`
+        ${HTTP_HEADER}
+        @service namespace Demo;
+
+        model Box<T> { value: T; }
+        model Holder { a: Box<{ id: string }>; b: Box<{ id: int32 }>; }
+
+        @route("/h") interface Holders { @get read(): Holder; }
+      `);
+      const duplicates = diagnostics.filter(
+        (d) =>
+          d.code === "@massivescale/tsp-aspnetcore-api/duplicate-model-name",
+      );
+      deepStrictEqual(
+        duplicates.length,
+        1,
+        `got: ${diagnostics.map((d) => d.code).join(", ")}`,
+      );
+      ok(
+        String(duplicates[0].message).includes('"BoxId"'),
+        `expected the clashing class name in: ${duplicates[0].message}`,
+      );
+      deepStrictEqual(
+        Object.keys(results).filter((key) => key.startsWith("Models/BoxId")),
+        ["Models/BoxId.g.cs"],
+      );
+    });
+
+    it("reports duplicate-model-name in a program without operations", async () => {
+      const [, diagnostics] = await emitWithDiagnostics(`
+        namespace Demo.A { model Widget { name: string; } }
+        namespace Demo.B { model Widget { size: int32; } }
+      `);
+      ok(
+        diagnostics.some(
+          (d) =>
+            d.code === "@massivescale/tsp-aspnetcore-api/duplicate-model-name",
+        ),
+        `got: ${diagnostics.map((d) => d.code).join(", ")}`,
+      );
+    });
+  });
+
+  describe("@error response envelopes", () => {
+    it("does not return the body of an @error envelope that declares a 2xx status", async () => {
+      const results = await emit(`
+        ${HTTP_HEADER}
+        @service namespace Demo;
+
+        model Problem { title: string; }
+        @error model OddError { @statusCode code: 200; @body body: Problem; }
+        model Widget { name: string; }
+
+        @route("/w") interface Widgets {
+          @get read(): OddError;
+          @get @route("both") both(): OddError | Widget;
+        }
+      `);
+      const service = results["Services/IWidgetsService.g.cs"];
+      assertContains(
+        service,
+        "Task ReadAsync(CancellationToken cancellationToken);",
+        "IWidgetsService",
+      );
+      assertContains(
+        service,
+        "Task<Demo.Models.Widget?> BothAsync(CancellationToken cancellationToken);",
+        "IWidgetsService",
+      );
+    });
+  });
+
   describe("@error bodies and validators (requirement 6)", () => {
+    it("emits no validator rule for a header property of a request body", async () => {
+      const results = await emit(
+        `
+        ${HTTP_HEADER}
+        @service namespace Demo;
+
+        model Widget { @header("x-trace") @minLength(3) trace: string; @minLength(1) name: string; }
+
+        @route("/w") interface Widgets { @post create(@bodyRoot body: Widget): void; }
+        `,
+        { "emit-validators": true },
+      );
+      const validator = results["Validators/WidgetValidator.g.cs"];
+      assertContains(validator, "RuleFor(x => x.Name)", "WidgetValidator");
+      ok(
+        !validator.includes("x.Trace"),
+        `expected no rule for the header property in:\n${validator}`,
+      );
+    });
+
     it("emits @error body models and validators for request payloads only", async () => {
       const results = await emit(
         `

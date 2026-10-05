@@ -36,6 +36,7 @@ import {
 } from "@typespec/http/experimental/merge-patch";
 import { getServerName } from "./decorators.js";
 import { csharpModelName } from "./naming.js";
+import { classProperties, emittedBaseModel } from "./payloads.js";
 import {
   ResolvedOptions,
   csharpNamespaceFor,
@@ -90,9 +91,6 @@ interface InferredEnum {
  * @param enums - Enums collected by the emitter (already filtered).
  * @param renderer - Pre-compiled renderer instance.
  * @param options - Resolved emitter options.
- * @param bodyProperties - Implicit-body response models mapped to the
- *   property names that form the body; other properties of those models are
- *   HTTP metadata and are omitted. Models not in the map emit every property.
  */
 export async function emitModelsAndEnums(
   program: Program,
@@ -100,15 +98,8 @@ export async function emitModelsAndEnums(
   enums: Enum[],
   renderer: Renderer,
   options: ResolvedOptions,
-  bodyProperties: Map<Model, Set<string>> = new Map(),
 ): Promise<void> {
-  const inferredEnums = collectInferredEnums(
-    program,
-    models,
-    enums,
-    options,
-    bodyProperties,
-  );
+  const inferredEnums = collectInferredEnums(program, models, enums, options);
 
   for (const model of models) {
     // All models and interfaces share a flat namespace.
@@ -130,7 +121,6 @@ export async function emitModelsAndEnums(
     const interfaceUsings = collectUsings(options);
 
     const emittedModelName = csharpModelName(program, model);
-    const includedProperties = bodyProperties.get(model);
     const classFileName = `${emittedModelName}${options.fileExtension}`;
     await emitFile(program, {
       path: resolvePath(options.modelsOutputDir, ...classFolder, classFileName),
@@ -138,9 +128,7 @@ export async function emitModelsAndEnums(
         fileName: classFileName,
         namespace: classNs,
         usings: classUsings,
-        body: renderer.renderClass(
-          buildClassView(program, model, options, includedProperties),
-        ),
+        body: renderer.renderClass(buildClassView(program, model, options)),
       }),
     });
 
@@ -160,7 +148,7 @@ export async function emitModelsAndEnums(
           namespace: interfaceNs,
           usings: interfaceUsings,
           body: renderer.renderInterface(
-            buildInterfaceView(program, model, options, includedProperties),
+            buildInterfaceView(program, model, options),
           ),
         }),
       });
@@ -317,14 +305,12 @@ function sortUsings(set: Set<string>): string[] {
  * @param program - The compiled TypeSpec program.
  * @param model - The TypeSpec model node.
  * @param options - Resolved options for type resolution and nullability.
- * @param includedProperties - When set, only properties with these names are emitted.
  * @returns Populated class view model.
  */
 function buildClassView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
-  includedProperties?: Set<string>,
 ): ClassView {
   const className = csharpModelName(program, model);
   const safeClassName = className.startsWith("@")
@@ -332,6 +318,7 @@ function buildClassView(
     : className;
 
   const discriminator = buildDiscriminatorView(program, model, options);
+  const baseModel = emittedBaseModel(program, model);
 
   return {
     doc: docFor(program, model),
@@ -339,10 +326,10 @@ function buildClassView(
     interfaceName: options.emitInterfaces
       ? `${options.interfacesNamespace}.I${safeClassName}`
       : undefined,
-    baseClass: model.baseModel
-      ? typeReference(model.baseModel, options, program)
+    baseClass: baseModel
+      ? typeReference(baseModel, options, program)
       : undefined,
-    properties: buildPropertyViews(program, model, options, includedProperties),
+    properties: buildPropertyViews(program, model, options),
     discriminator,
     isAbstract: discriminator !== undefined,
   };
@@ -416,18 +403,17 @@ function buildDiscriminatorView(
  * @param program - The compiled TypeSpec program.
  * @param model - The TypeSpec model node.
  * @param options - Resolved options for type resolution and nullability.
- * @param includedProperties - When set, only properties with these names are emitted.
  * @returns Populated interface view model.
  */
 function buildInterfaceView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
-  includedProperties?: Set<string>,
 ): InterfaceView {
   const ifaceName = csharpModelName(program, model);
-  const baseIfaceName = model.baseModel
-    ? csharpModelName(program, model.baseModel)
+  const baseModel = emittedBaseModel(program, model);
+  const baseIfaceName = baseModel
+    ? csharpModelName(program, baseModel)
     : undefined;
   return {
     doc: docFor(program, model),
@@ -435,7 +421,7 @@ function buildInterfaceView(
     baseInterface: baseIfaceName
       ? `${options.interfacesNamespace}.I${baseIfaceName.startsWith("@") ? baseIfaceName.slice(1) : baseIfaceName}`
       : undefined,
-    properties: buildPropertyViews(program, model, options, includedProperties),
+    properties: buildPropertyViews(program, model, options),
   };
 }
 
@@ -564,29 +550,27 @@ function arrayInitializer(
 }
 
 /**
- * Builds the ordered array of {@link PropertyView} objects for all properties
- * of a TypeSpec model.
+ * Builds the ordered array of {@link PropertyView} objects for the class
+ * properties of a TypeSpec model (see {@link classProperties}): envelope
+ * properties and properties typed as envelope models are omitted, and
+ * properties of skipped envelope base models are flattened in.
  *
  * @param program - The compiled TypeSpec program.
  * @param model - The TypeSpec model node.
  * @param options - Resolved options for type resolution and nullability.
- * @param includedProperties - When set, only properties with these names are
- *   emitted (used to drop HTTP metadata from implicit-body response models).
  * @returns Array of property view models in declaration order.
  */
 function buildPropertyViews(
   program: Program,
   model: Model,
   options: ResolvedOptions,
-  includedProperties?: Set<string>,
 ): PropertyView[] {
   const discriminatorPropertyName = discriminatorPropertyNameInHierarchy(
     program,
     model,
   );
-  return [...model.properties.values()]
+  return classProperties(program, model)
     .filter((prop) => prop.name !== discriminatorPropertyName)
-    .filter((prop) => includedProperties?.has(prop.name) ?? true)
     .map((prop) => {
       const encoding = resolvePropertyEncoding(program, prop, options);
       const type = propertyTypeName(
@@ -815,8 +799,8 @@ function resolvePropertyEncoding(
 }
 
 /**
- * Returns `true` when any property of `model` uses `@encode(string)` on a
- * boolean, meaning the `BooleanStringJsonConverter` helper must be emitted.
+ * Returns `true` when any class property of `model` uses `@encode(string)` on
+ * a boolean, meaning the `BooleanStringJsonConverter` helper must be emitted.
  *
  * @param program - The compiled TypeSpec program.
  * @param model - The model to scan.
@@ -827,7 +811,7 @@ export function modelUsesBooleanStringEncoding(
   model: Model,
   options: ResolvedOptions,
 ): boolean {
-  for (const prop of model.properties.values()) {
+  for (const prop of classProperties(program, model)) {
     if (
       resolvePropertyEncoding(program, prop, options).usesBooleanStringConverter
     ) {
@@ -926,16 +910,15 @@ function getStringLiteralUnionValues(type: Type): string[] | undefined {
 }
 
 /**
- * Collects inferred enums from model properties defined as string-literal unions.
- * Properties excluded by `bodyProperties` (HTTP metadata on implicit-body
- * response models) are skipped, since no class property references them.
+ * Collects inferred enums from class properties defined as string-literal
+ * unions. Envelope properties (e.g. a `@header` typed as `"a" | "b"`) are
+ * skipped, since no class property references them.
  */
 function collectInferredEnums(
   program: Program,
   models: Model[],
   explicitEnums: Enum[],
   options: ResolvedOptions,
-  bodyProperties: Map<Model, Set<string>>,
 ): InferredEnum[] {
   const byKey = new Map<string, InferredEnum>();
   const ns = options.modelsNamespace;
@@ -949,9 +932,7 @@ function collectInferredEnums(
       ? []
       : folderSegments(options.effectiveRootNamespace, typespecNs);
 
-    const included = bodyProperties.get(model);
-    for (const prop of model.properties.values()) {
-      if (included && !included.has(prop.name)) continue;
+    for (const prop of classProperties(program, model)) {
       const values = getStringLiteralUnionValues(prop.type);
       if (!values) continue;
 

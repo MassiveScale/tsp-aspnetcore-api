@@ -187,16 +187,9 @@ export async function $onEmit(
     },
   });
 
-  const { models, bodyProperties } = analyzePayloadModels(program, candidates);
+  const models = analyzePayloadModels(program, candidates);
 
-  await emitModelsAndEnums(
-    program,
-    models,
-    enums,
-    renderer,
-    options,
-    bodyProperties,
-  );
+  await emitModelsAndEnums(program, models, enums, renderer, options);
 
   const controllerOptions: ControllerOptions = {
     routePrefix: options.routePrefix,

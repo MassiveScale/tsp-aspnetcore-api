@@ -386,7 +386,8 @@ function httpParamBinding(
  * response model itself is returned, matching the class emitted for it.
  *
  * `@error` models are skipped — errors are raised as exceptions and are not
- * returned by service methods.  Returns `"void"` when no non-error 2xx body is
+ * returned by service methods. This covers both an `@error` body and an
+ * `@error` response envelope whose `@body` type is not itself `@error`.  Returns `"void"` when no non-error 2xx body is
  * found (e.g. `void`, `204 No Content`, or response unions that contain only
  * error variants).
  *
@@ -410,6 +411,9 @@ function resolveReturnType(
       (typeof code === "number" && code >= 200 && code < 300) ||
       (typeof code === "object" && code.start >= 200 && code.end < 300);
     if (!is2xx) continue;
+    // An @error envelope can declare a 2xx status with `@body body: Problem`;
+    // its resolved body is the non-error `Problem`, so check the envelope too.
+    if (isErrorModel(program, response.type)) continue;
 
     for (const content of response.responses) {
       if (content.body?.bodyKind === "single") {

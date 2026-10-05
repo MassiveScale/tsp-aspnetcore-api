@@ -27,8 +27,9 @@ import { pascalCase } from "./utils.js";
  * - Template instances (`PagedResult<Widget>`): one distinct class per
  *   instantiation. `@friendlyName` wins when present; otherwise the template's
  *   name (or `@serverName`) is suffixed with each template argument's name, so
- *   `PagedResult<Widget>` becomes `PagedResultWidget` and
- *   `PagedResult<Widget[]>` becomes `PagedResultWidgetList`.
+ *   `PagedResult<Widget>` becomes `PagedResultWidget`,
+ *   `PagedResult<Widget[]>` becomes `PagedResultWidgetList`, and an anonymous
+ *   argument is named by its properties (`Box<{ id: string }>` → `BoxId`).
  *
  * Models declared with `is` (`model WidgetList is PagedResult<Widget>`) are not
  * template instances and keep their own name.
@@ -75,8 +76,12 @@ function templateArgumentName(
       if (isRecordModelType(arg)) {
         return `${templateArgumentName(program, arg.indexer.value)}Map`;
       }
-      return arg.name
-        ? csharpModelName(program, arg).replace(/^@/, "")
+      if (arg.name) return csharpModelName(program, arg).replace(/^@/, "");
+      // Anonymous models are named by their properties so `Box<{ id: string }>`
+      // and `Box<{ name: string }>` stay distinct; any remaining clash is
+      // reported as `duplicate-model-name` rather than silently overwritten.
+      return arg.properties.size > 0
+        ? [...arg.properties.keys()].map(pascalCase).join("")
         : "Object";
     case "Scalar":
     case "Enum":
