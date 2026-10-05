@@ -30,19 +30,40 @@ builder.Services.AddGeneratedValidators();
 
 The emitter reads TypeSpec constraint decorators and translates them to FluentValidation rules:
 
-| TypeSpec decorator             | FluentValidation rule                            |
-| ------------------------------ | ------------------------------------------------ |
-| Required non-optional `string` | `NotEmpty()`                                     |
-| `@minLength(n)`                | `MinimumLength(n)`                               |
-| `@maxLength(n)`                | `MaximumLength(n)`                               |
-| `@pattern("...")`              | `Matches(@"...")`                                |
-| `@format("email")`             | `EmailAddress()`                                 |
-| `@minValue(n)`                 | `GreaterThanOrEqualTo(n)`                        |
-| `@maxValue(n)`                 | `LessThanOrEqualTo(n)`                           |
-| Enum property                  | `IsInEnum()`                                     |
-| Nested model property          | `SetValidator(childValidator)` (injected via DI) |
+| TypeSpec decorator                                                                             | FluentValidation rule                            |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Required non-optional `string`                                                                 | `NotEmpty()`                                     |
+| Required non-optional property of any other type (number, `boolean`, date, enum, model, array) | `NotNull()` (POST)                               |
+| `@minLength(n)`                                                                                | `MinimumLength(n)`                               |
+| `@maxLength(n)`                                                                                | `MaximumLength(n)`                               |
+| `@pattern("...")`                                                                              | `Matches(@"...")`                                |
+| `@format("email")`                                                                             | `EmailAddress()`                                 |
+| `@minValue(n)`                                                                                 | `GreaterThanOrEqualTo(n)`                        |
+| `@maxValue(n)`                                                                                 | `LessThanOrEqualTo(n)`                           |
+| Enum property                                                                                  | `IsInEnum()`                                     |
+| Nested model property                                                                          | `SetValidator(childValidator)` (injected via DI) |
 
-Properties marked `@visibility(Lifecycle.Read)` (read-only) generate rejection rules rather than validation rules. In PATCH validators over a `MergePatchUpdate<T>` body they emit a "must not be present" rule so clients cannot supply the field at all. In POST validators — and in PATCH validators over a plain body — nullable read-only properties emit a `Null()` rule; non-nullable read-only properties produce no rule (the field is simply ignored).
+A property is **required** when it is not optional (`?`) and has no default value. Required rules apply to every type, not just strings:
+
+| Validator                     | Required string                                                                                                     | Required non-string                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| POST                          | `NotEmpty()`                                                                                                        | `NotNull()`                                     |
+| PATCH (`MergePatchUpdate<T>`) | May be omitted. An explicit `null` is rejected ("is required and cannot be null"), and an empty string is rejected. | May be omitted. An explicit `null` is rejected. |
+| PATCH (plain body)            | `NotEmpty()` when supplied                                                                                          | No rule (`null` means "not supplied")           |
+
+`NotNull()` is only emitted when the C# property can hold `null`. That's always true with the default `nullable-properties: true`. With `nullable-properties: false`, a required value type (`int`, `bool`, `DateTimeOffset`, …) is non-nullable, and an absent field reads as `0` / `false`, so no rule can tell it apart. Reference types (models, arrays, `Uri`) are still checked.
+
+### Read-only and lifecycle-restricted properties
+
+A property that is not writable for the operation's lifecycle phase gets a **rejection** rule instead of validation rules:
+
+| Visibility                                                    | POST (Create)                            | PATCH (Update)                               |
+| ------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------- |
+| `@visibility(Lifecycle.Read)` (read-only)                     | Rejected: "is read-only"                 | Rejected: "is read-only"                     |
+| `@visibility(Lifecycle.Create, Lifecycle.Read)` (immutable)   | Validated normally                       | Rejected: "cannot be changed after creation" |
+| `@visibility(Lifecycle.Update, Lifecycle.Read)` (update-only) | Rejected: "can only be set by an update" | Validated normally                           |
+
+In PATCH validators over a `MergePatchUpdate<T>` body, a rejected property gets a "must not be present" rule, so clients can't supply the field at all. In POST validators, and in PATCH validators over a plain body, a nullable rejected property gets a `Null()` rule. A non-nullable one gets no rule, because it can't be told apart from "not supplied", so the field is simply ignored. This applies to properties of every type.
 
 ### PATCH body shapes
 
@@ -63,7 +84,7 @@ this.RuleFor(x => x)
 RuleFor(x => x.Target).GreaterThanOrEqualTo(0).When(x => x.Target is not null);
 ```
 
-A plain POCO cannot distinguish an omitted field from one explicitly set to `null`, so a `null` value is treated as "not supplied" and the rule is skipped. Required-ness therefore degrades to a non-null check. If you need true absent-vs-null semantics, use a `MergePatchUpdate<T>` body.
+A plain POCO cannot distinguish an omitted field from one explicitly set to `null`, so a `null` value is treated as "not supplied" and the rule is skipped. Required-ness therefore can't be enforced on a plain PATCH body. If you need true absent-vs-null semantics, use a `MergePatchUpdate<T>` body.
 
 The null guard is emitted only when the property can actually hold `null`; a non-nullable value-type property (for example a required `int32` under `nullable-properties: false`) gets the rule with no `.When` clause.
 

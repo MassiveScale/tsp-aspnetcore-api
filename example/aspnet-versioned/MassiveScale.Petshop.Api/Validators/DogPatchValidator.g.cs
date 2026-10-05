@@ -30,6 +30,13 @@ public partial class DogPatchValidator : AbstractValidator<MarketOnce.Community.
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
+        // IsBarker is required and cannot be removed
+        this.RuleFor(x => x)
+            .Must(x => !x.IsNull("IsBarker"))
+            .When(x => x.IsDefined("IsBarker"))
+            .WithName("IsBarker")
+            .WithMessage("'IsBarker' is required and cannot be null.");
+
         ExtendRules();
     }
 

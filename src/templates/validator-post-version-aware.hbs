@@ -34,7 +34,7 @@ public partial class {{{modelName}}}Validator : AbstractValidator<{{{qualifiedMo
 {{#each baseProperties}}
 {{#if isReadOnly}}
 {{#if nullable}}
-        // {{{name}}} is read-only and must not be set on creation
+        // {{{name}}} {{#if isImmutable}}can only be set by an update{{else}}is read-only{{/if}} and must not be set on creation
         RuleFor(x => x.{{{name}}}).Null();
 
 {{/if}}
@@ -42,6 +42,11 @@ public partial class {{{modelName}}}Validator : AbstractValidator<{{{qualifiedMo
 {{#if notEmpty}}
         // {{{name}}} is required
         RuleFor(x => x.{{{name}}}).NotEmpty();
+
+{{/if}}
+{{#if notNull}}
+        // {{{name}}} is required
+        RuleFor(x => x.{{{name}}}).NotNull();
 
 {{/if}}
 {{#if minLength}}
@@ -99,7 +104,7 @@ public partial class {{{modelName}}}Validator : AbstractValidator<{{{qualifiedMo
 {{#each properties}}
 {{#if isReadOnly}}
 {{#if nullable}}
-            // {{{name}}} is read-only and must not be set on creation
+            // {{{name}}} {{#if isImmutable}}can only be set by an update{{else}}is read-only{{/if}} and must not be set on creation
             RuleFor(x => x.{{{name}}}).Null();
 
 {{/if}}
@@ -107,6 +112,11 @@ public partial class {{{modelName}}}Validator : AbstractValidator<{{{qualifiedMo
 {{#if notEmpty}}
             // {{{name}}} is required
             RuleFor(x => x.{{{name}}}).NotEmpty();
+
+{{/if}}
+{{#if notNull}}
+            // {{{name}}} is required
+            RuleFor(x => x.{{{name}}}).NotNull();
 
 {{/if}}
 {{#if minLength}}

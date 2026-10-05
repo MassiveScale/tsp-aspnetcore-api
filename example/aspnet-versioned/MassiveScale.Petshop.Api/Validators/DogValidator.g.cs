@@ -29,6 +29,9 @@ public partial class DogValidator : AbstractValidator<MarketOnce.Community.Campa
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
+        // IsBarker is required
+        RuleFor(x => x.IsBarker).NotNull();
+
         ExtendRules();
     }
 

@@ -30,6 +30,13 @@ public partial class CatPatchValidator : AbstractValidator<MarketOnce.Community.
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
+        // IsPurrer is required and cannot be removed
+        this.RuleFor(x => x)
+            .Must(x => !x.IsNull("IsPurrer"))
+            .When(x => x.IsDefined("IsPurrer"))
+            .WithName("IsPurrer")
+            .WithMessage("'IsPurrer' is required and cannot be null.");
+
         ExtendRules();
     }
 

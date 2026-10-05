@@ -38,6 +38,9 @@ public partial class StoreValidator : AbstractValidator<MarketOnce.Community.Cam
         // PhoneNumber is required
         RuleFor(x => x.PhoneNumber).NotEmpty();
 
+        // Pets is required
+        RuleFor(x => x.Pets).NotNull();
+
         // Pets items are validated recursively when not null
         RuleForEach(x => x.Pets!).SetValidator(petValidator).When(x => x.Pets is not null);
 

@@ -132,8 +132,26 @@ interface PropertyData {
   name: string;
   hasRules: boolean;
   notEmpty: boolean;
+  /**
+   * True for a required non-string property whose C# type can hold `null`:
+   * POST validators emit `NotNull()`. (A non-nullable value type such as `int`
+   * with `nullable-properties: false` reads an absent field as `0`, so it
+   * cannot be checked.)
+   */
+  notNull: boolean;
+  /**
+   * True for every required property (any type): MergePatch PATCH validators
+   * reject an explicit `null`, which would remove the value.
+   */
+  rejectNull: boolean;
   /** True when the property is read-only (not writable for the target lifecycle). */
   isReadOnly?: boolean;
+  /**
+   * True when the property is writable in another lifecycle phase but not
+   * this one: create-only (immutable) in PATCH, or update-only in POST. It is
+   * rejected like a read-only property, with a phase-specific message.
+   */
+  isImmutable?: boolean;
   /**
    * True when the C# property can hold `null` after deserialization of an
    * absent field. When `false`, `.Null()` would always fail — the read-only
@@ -362,19 +380,31 @@ function getValidatorModelReference(
   return { model: m, isCollection: false };
 }
 
-/** Extracts all constraint data for a single model property. */
+/**
+ * Extracts all constraint data for a single model property.
+ *
+ * @param isReadOnly - The property must be rejected when supplied.
+ * @param isImmutable - The rejection is because the property belongs to a
+ *   different lifecycle phase (see {@link PropertyData.isImmutable}).
+ */
 function buildSinglePropertyData(
   program: Program,
   prop: ModelProperty,
   options: ResolvedOptions,
   isReadOnly = false,
+  isImmutable = false,
 ): PropertyData {
   const hasDefault = prop.defaultValue !== undefined;
+  const nullable = isNullableForValidator(
+    program,
+    prop,
+    options.nullableProperties,
+  );
+  const isRequired = !isReadOnly && !prop.optional && !hasDefault;
   const notEmpty =
-    !isReadOnly &&
-    !prop.optional &&
-    !hasDefault &&
+    isRequired &&
     (isStringScalar(prop.type) || isStringLiteralUnion(prop.type));
+  const notNull = isRequired && !notEmpty && nullable;
   const minLength =
     getMinLength(program, prop) ?? getMinLength(program, prop.type);
   const maxLength =
@@ -412,7 +442,7 @@ function buildSinglePropertyData(
 
   const hasRules =
     isReadOnly ||
-    notEmpty ||
+    isRequired ||
     minLength !== undefined ||
     maxLength !== undefined ||
     pattern !== undefined ||
@@ -426,8 +456,11 @@ function buildSinglePropertyData(
     name: getServerName(program, prop) ?? pascalCase(prop.name),
     hasRules,
     notEmpty,
+    notNull,
+    rejectNull: isRequired,
     isReadOnly: isReadOnly || undefined,
-    nullable: isNullableForValidator(program, prop, options.nullableProperties),
+    isImmutable: (isReadOnly && isImmutable) || undefined,
+    nullable,
     minLength,
     maxLength,
     pattern,
@@ -478,6 +511,9 @@ function buildValidatorProperties(
       visibilityMember &&
       !isVisible(program, prop, { any: new Set([visibilityMember]) })
     ) {
+      // Writable in the other lifecycle phase only (e.g. create-only in a
+      // PATCH): reject it rather than silently accepting it.
+      result.push(buildSinglePropertyData(program, prop, options, true, true));
       continue;
     }
     if (versionFilter && !versionFilter(prop)) continue;
@@ -524,6 +560,9 @@ function buildVersionAwareValidatorProperties(
       visibilityMember &&
       !isVisible(program, prop, { any: new Set([visibilityMember]) })
     ) {
+      baseProperties.push(
+        buildSinglePropertyData(program, prop, options, true, true),
+      );
       continue;
     }
     const propData = buildSinglePropertyData(program, prop, options, false);

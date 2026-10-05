@@ -29,6 +29,9 @@ public partial class CatValidator : AbstractValidator<MarketOnce.Community.Campa
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
+        // IsPurrer is required
+        RuleFor(x => x.IsPurrer).NotNull();
+
         ExtendRules();
     }
 

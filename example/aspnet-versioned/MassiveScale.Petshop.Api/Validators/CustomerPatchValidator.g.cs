@@ -30,6 +30,13 @@ public partial class CustomerPatchValidator : AbstractValidator<MarketOnce.Commu
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
+        // FirstName is required and cannot be removed
+        this.RuleFor(x => x)
+            .Must(x => !x.IsNull("FirstName"))
+            .When(x => x.IsDefined("FirstName"))
+            .WithName("FirstName")
+            .WithMessage("'FirstName' is required and cannot be null.");
+
         // FirstName must not be empty when provided
         this.RuleFor(x => x)
             .Must(x => (x.GetString("FirstName")?.Length ?? 0) > 0)
@@ -41,6 +48,13 @@ public partial class CustomerPatchValidator : AbstractValidator<MarketOnce.Commu
             .Must(x => (x.GetString("FirstName")?.Length ?? 0) <= 100)
             .When(x => x.IsDefined("FirstName") && !x.IsNull("FirstName"))
             .WithName("FirstName");
+
+        // LastName is required and cannot be removed
+        this.RuleFor(x => x)
+            .Must(x => !x.IsNull("LastName"))
+            .When(x => x.IsDefined("LastName"))
+            .WithName("LastName")
+            .WithMessage("'LastName' is required and cannot be null.");
 
         // LastName must not be empty when provided
         this.RuleFor(x => x)

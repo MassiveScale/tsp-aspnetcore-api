@@ -48,6 +48,13 @@ public partial class PetPatchValidator : AbstractValidator<MarketOnce.Community.
             .WithName("LastModifiedDateTime")
             .WithMessage("'LastModifiedDateTime' is read-only and cannot be modified.");
 
+        // PhotoUrls is required and cannot be removed
+        this.RuleFor(x => x)
+            .Must(x => !x.IsNull("PhotoUrls"))
+            .When(x => x.IsDefined("PhotoUrls"))
+            .WithName("PhotoUrls")
+            .WithMessage("'PhotoUrls' is required and cannot be null.");
+
         // Rules added in v2.0
         When(_ => IsAtLeast("v2.0", _apiVersion, _versions), () =>
         {
