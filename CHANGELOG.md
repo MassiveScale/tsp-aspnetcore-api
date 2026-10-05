@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-05
+
 ### Changed
 
 - **Breaking:** model classes are now emitted only for HTTP payload data, decided by `@typespec/http` instead of by walking every model in the program. See [Model Generation — Which models get a class](docs/models.md#which-models-get-a-class). Classes that previously appeared and no longer do:
