@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ## [0.15.0] - 2026-10-05
 
+### Added
+
+- Array default values (`buckets?: int32[] = #[1000, 2500, 5000];`) now emit a C# list initializer (`= new List<int> { 1000, 2500, 5000 };`) instead of being silently dropped. Empty arrays emit `new List<T>()`, and elements may be enum members, strings, numbers, booleans, `null`, or nested arrays. Arrays containing object values still produce no initializer. See [Model Generation — Default property values](docs/models.md#default-property-values).
+
 ### Changed
 
 - **Breaking:** model classes are now emitted only for HTTP payload data, decided by `@typespec/http` instead of by walking every model in the program. See [Model Generation — Which models get a class](docs/models.md#which-models-get-a-class). Classes that previously appeared and no longer do:
@@ -18,6 +22,8 @@ All notable changes to this project will be documented in this file.
 - Response models with an implicit body (metadata mixed with plain properties, no `@body`) are emitted without their metadata properties, and the service method now returns that class (previously `object`).
 
 ### Fixed
+
+- Numeric defaults on `decimal` and `float32` properties (including array elements) now carry the `m` / `f` literal suffix (`= 9.99m;`, `= 0.5f;`). Previously they were emitted as bare literals, which do not compile because C# has no implicit conversion from a `double` literal to `decimal` or `float`.
 
 - PATCH validators no longer emit uncompilable code when the `@patch` operation takes a plain model as its body instead of a `MergePatchUpdate<T>`. Every rule was emitted in the `MergePatch<T>` shape — `x.GetString("Prop")`, `x.IsDefined("Prop")`, `x.IsNull("Prop")`, `x.TryGetValue<T>("Prop", out _)` — against an ordinary POCO that defines none of those members, producing errors such as `'QuotaGroupUpdate' does not contain a definition for 'GetString'`. This affected every constraint (`@minValue`, `@maxValue`, `@minLength`, `@maxLength`, `@pattern`, `@format("email")`, required strings, enum properties) as well as nested-model rules, in both the standard and version-aware PATCH templates. Plain bodies now emit typed, null-guarded rules — `RuleFor(x => x.Target).GreaterThanOrEqualTo(0).When(x => x.Target is not null)` — while `MergePatchUpdate<T>` bodies keep the existing property-name-keyed shape. Because a plain POCO cannot distinguish an omitted field from an explicit `null`, a `null` value is treated as "not supplied" and the rule is skipped; the guard is omitted entirely for non-nullable value types. See [Validators — PATCH body shapes](docs/validators.md#patch-body-shapes).
 

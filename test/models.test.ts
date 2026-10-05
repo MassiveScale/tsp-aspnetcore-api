@@ -440,6 +440,176 @@ describe("csharp emitter - models", () => {
       );
     });
 
+    it("assigns an array default value as a list initializer", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Buckets { someValue?: int32[] = #[1000, 2500, 5000, 10000, 25000]; }
+      `);
+
+      const file = results["Buckets.g.cs"];
+      ok(file, `expected Buckets.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes(
+          "public IList<int>? SomeValue { get; set; } = new List<int> { 1000, 2500, 5000, 10000, 25000 };",
+        ),
+        `expected array default initializer in:\n${file}`,
+      );
+    });
+
+    it("assigns an empty array default as an empty list", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Buckets { someValue: int32[] = #[]; }
+      `);
+
+      const file = results["Buckets.g.cs"];
+      ok(file, `expected Buckets.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes(
+          "public IList<int>? SomeValue { get; set; } = new List<int>();",
+        ),
+        `expected empty list initializer in:\n${file}`,
+      );
+    });
+
+    it("escapes string elements in an array default", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Config { tags: string[] = #["a", "say \\"hi\\""]; }
+      `);
+
+      const file = results["Config.g.cs"];
+      ok(file, `expected Config.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes(
+          'public IList<string>? Tags { get; set; } = new List<string> { "a", "say \\"hi\\"" };',
+        ),
+        `expected string list initializer in:\n${file}`,
+      );
+    });
+
+    it("qualifies enum elements in an array default", async () => {
+      const results = await emit(`
+        namespace Demo;
+        enum Size { small, medium, large }
+        model Widget { sizes: Size[] = #[Size.small, Size.large]; }
+      `);
+
+      const file = results["Widget.g.cs"];
+      ok(file, `expected Widget.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes(
+          "public IList<Demo.Models.Size>? Sizes { get; set; } = new List<Demo.Models.Size> { Demo.Models.Size.Small, Demo.Models.Size.Large };",
+        ),
+        `expected enum list initializer in:\n${file}`,
+      );
+    });
+
+    it("assigns nested array defaults as nested list initializers", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Grid { cells: int32[][] = #[#[1, 2], #[3]]; }
+      `);
+
+      const file = results["Grid.g.cs"];
+      ok(file, `expected Grid.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes(
+          "public IList<IList<int>>? Cells { get; set; } = new List<IList<int>> { new List<int> { 1, 2 }, new List<int> { 3 } };",
+        ),
+        `expected nested list initializer in:\n${file}`,
+      );
+    });
+
+    it("supports null elements in an array of nullable values", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Buckets { values: (int32 | null)[] = #[1, null]; }
+      `);
+
+      const file = results["Buckets.g.cs"];
+      ok(file, `expected Buckets.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes(
+          "public IList<int?>? Values { get; set; } = new List<int?> { 1, null };",
+        ),
+        `expected nullable-element list initializer in:\n${file}`,
+      );
+    });
+
+    it("suffixes decimal and float literals so the initializer compiles", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Prices {
+          rates: decimal[] = #[1.5, 2];
+          price: decimal = 9.99;
+          ratio: float32 = 0.5;
+          weights: float32[] = #[0.25];
+          scores: float64[] = #[1.5];
+        }
+      `);
+
+      const file = results["Prices.g.cs"];
+      ok(file, `expected Prices.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes(
+          "public IList<decimal>? Rates { get; set; } = new List<decimal> { 1.5m, 2m };",
+        ),
+        `expected decimal list initializer in:\n${file}`,
+      );
+      ok(
+        file.includes("public decimal? Price { get; set; } = 9.99m;"),
+        `expected decimal initializer in:\n${file}`,
+      );
+      ok(
+        file.includes("public float? Ratio { get; set; } = 0.5f;"),
+        `expected float initializer in:\n${file}`,
+      );
+      ok(
+        file.includes(
+          "public IList<float>? Weights { get; set; } = new List<float> { 0.25f };",
+        ),
+        `expected float list initializer in:\n${file}`,
+      );
+      ok(
+        file.includes(
+          "public IList<double>? Scores { get; set; } = new List<double> { 1.5 };",
+        ),
+        `expected unsuffixed double list initializer in:\n${file}`,
+      );
+    });
+
+    it("omits the initializer when an array element is unsupported", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Item { x: int32; }
+        model Bag { items: Item[] = #[#{ x: 1 }]; }
+      `);
+
+      const file = results["Bag.g.cs"];
+      ok(file, `expected Bag.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes("public IList<Demo.Models.Item>? Items { get; set; }") &&
+          !file.includes("Items { get; set; } ="),
+        `expected no initializer for unsupported element in:\n${file}`,
+      );
+    });
+
+    it("omits the initializer when an array default targets a non-list type", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Pair { coords: [int32, int32] = #[1, 2]; }
+      `);
+
+      const file = results["Pair.g.cs"];
+      ok(file, `expected Pair.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes("Coords { get; set; }") &&
+          !file.includes("Coords { get; set; } ="),
+        `expected no initializer for tuple target in:\n${file}`,
+      );
+    });
+
     it("does not emit an initializer when no default is present", async () => {
       const results = await emit(`
         namespace Demo;

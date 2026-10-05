@@ -9,6 +9,7 @@
  */
 
 import {
+  type ArrayValue,
   Enum,
   Model,
   ModelProperty,
@@ -469,19 +470,23 @@ function buildEnumView(program: Program, en: Enum): EnumView {
  * Handles the value kinds that map cleanly to C# literals:
  * - `EnumValue`    → `EnumTypeName.MemberName`
  * - `StringValue`  → `"value"`
- * - `NumericValue` → `42` / `3.14`
+ * - `NumericValue` → `42` / `3.14` (suffixed `m` / `f` for `decimal` / `float` targets)
  * - `BooleanValue` → `true` | `false`
  * - `NullValue`    → `null`
+ * - `ArrayValue`   → `new List<T> { ... }` (see {@link arrayInitializer})
  *
- * Returns `undefined` for complex value kinds (objects, arrays, scalars) that
- * cannot be represented as a simple C# literal.
+ * Returns `undefined` for complex value kinds (objects, scalar constructors)
+ * that cannot be represented as a simple C# literal.
  *
  * @param value - The TypeSpec default value from `ModelProperty.defaultValue`.
+ * @param targetType - The C# type the initializer is assigned to, e.g.
+ *   `"IList<int>?"`. Used to pick numeric literal suffixes and the list element type.
  * @param options - Resolved options (namespace used to qualify the enum type).
  * @returns A C# initializer expression string, or `undefined` if unsupported.
  */
 function defaultValueInitializer(
   value: Value,
+  targetType: string,
   options: ResolvedOptions,
 ): string | undefined {
   switch (value.valueKind) {
@@ -492,14 +497,70 @@ function defaultValueInitializer(
     case "StringValue":
       return `"${value.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
     case "NumericValue":
-      return value.value.toString();
+      return numericLiteral(value.value.toString(), targetType);
     case "BooleanValue":
       return value.value ? "true" : "false";
     case "NullValue":
       return "null";
+    case "ArrayValue":
+      return arrayInitializer(value, targetType, options);
     default:
       return undefined;
   }
+}
+
+/**
+ * C# numeric literal suffixes required when a literal is assigned to a type
+ * that has no implicit conversion from `int` / `double` literals.
+ */
+const NUMERIC_LITERAL_SUFFIXES: Record<string, string> = {
+  decimal: "m",
+  float: "f",
+};
+
+/**
+ * Appends the C# literal suffix needed for `targetType` (e.g. `2.5` → `2.5m`
+ * for `decimal`), so the initializer compiles without an explicit cast.
+ *
+ * @param literal - The numeric literal text.
+ * @param targetType - The C# type the literal is assigned to, possibly nullable.
+ * @returns The literal, suffixed when required.
+ */
+function numericLiteral(literal: string, targetType: string): string {
+  const suffix = NUMERIC_LITERAL_SUFFIXES[targetType.replace(/\?$/, "")];
+  return suffix ? `${literal}${suffix}` : literal;
+}
+
+/** Captures the element type `T` of a C# `IList<T>` / `IList<T>?` type string. */
+const LIST_TYPE_PATTERN = /^IList<(.+)>\??$/;
+
+/**
+ * Converts a TypeSpec array default (`#[1, 2, 3]`) to a C# list initializer,
+ * e.g. `new List<int> { 1, 2, 3 }`. Elements are converted recursively, so
+ * nested arrays and enum members are supported.
+ *
+ * @param value - The TypeSpec array value.
+ * @param targetType - The C# property type; must be `IList<T>` (optionally nullable).
+ * @param options - Resolved options passed through to element conversion.
+ * @returns The list initializer, or `undefined` when the target is not a list
+ *   or any element cannot be converted.
+ */
+function arrayInitializer(
+  value: ArrayValue,
+  targetType: string,
+  options: ResolvedOptions,
+): string | undefined {
+  const elementType = LIST_TYPE_PATTERN.exec(targetType)?.[1];
+  if (!elementType) return undefined;
+  if (value.values.length === 0) return `new List<${elementType}>()`;
+
+  const elements: string[] = [];
+  for (const element of value.values) {
+    const initializer = defaultValueInitializer(element, elementType, options);
+    if (initializer === undefined) return undefined;
+    elements.push(initializer);
+  }
+  return `new List<${elementType}> { ${elements.join(", ")} }`;
 }
 
 /**
@@ -552,6 +613,7 @@ function buildPropertyViews(
         attributes: encoding.attributes,
         initializer: resolveInitializer(
           prop.defaultValue,
+          type,
           qualifiedInferredEnumType,
           options,
         ),
@@ -567,11 +629,13 @@ function buildPropertyViews(
  * instead of the raw string. Falls back to {@link defaultValueInitializer} for
  * all other cases.
  *
+ * @param targetType - The C# property type the initializer is assigned to.
  * @param qualifiedInferredEnumType - Fully-qualified inferred enum type name,
  *   already prefixed with `options.modelsNamespace`.
  */
 function resolveInitializer(
   value: Value | undefined,
+  targetType: string,
   qualifiedInferredEnumType: string | undefined,
   options: ResolvedOptions,
 ): string | undefined {
@@ -579,7 +643,7 @@ function resolveInitializer(
   if (qualifiedInferredEnumType && value.valueKind === "StringValue") {
     return `${qualifiedInferredEnumType}.${pascalCase(value.value)}`;
   }
-  return defaultValueInitializer(value, options);
+  return defaultValueInitializer(value, targetType, options);
 }
 
 /**
