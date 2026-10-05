@@ -481,7 +481,7 @@ function defaultValueInitializer(
       return `${options.modelsNamespace}.${pascalCase(member.enum.name)}.${pascalCase(member.name)}`;
     }
     case "StringValue":
-      return `"${value.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+      return csharpStringLiteral(value.value);
     case "NumericValue":
       return numericLiteral(value.value.toString(), targetType);
     case "BooleanValue":
@@ -493,6 +493,52 @@ function defaultValueInitializer(
     default:
       return undefined;
   }
+}
+
+/** Short C# escape sequences for characters that cannot appear raw in a string literal. */
+const CSHARP_STRING_ESCAPES: Record<string, string> = {
+  "\\": "\\\\",
+  '"': '\\"',
+  "\0": "\\0",
+  "\x07": "\\a",
+  "\b": "\\b",
+  "\f": "\\f",
+  "\n": "\\n",
+  "\r": "\\r",
+  "\t": "\\t",
+  "\v": "\\v",
+};
+
+/** Code points C# treats as line breaks besides `\r` / `\n`: NEL, LS and PS. */
+const CSHARP_EXTRA_LINE_BREAKS = new Set([0x85, 0x2028, 0x2029]);
+
+/**
+ * Converts a string to a C# regular string literal, escaping backslashes,
+ * quotes, and every control or line-terminator character. A raw newline (or
+ * U+0085 / U+2028 / U+2029, which C# also treats as line breaks) inside a
+ * regular string literal is a compile error.
+ *
+ * @param value - The string to encode.
+ * @returns A quoted C# string literal, e.g. `"line1\nline2"`.
+ */
+function csharpStringLiteral(value: string): string {
+  let escaped = "";
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    const short = CSHARP_STRING_ESCAPES[char];
+    if (short) {
+      escaped += short;
+    } else if (
+      code < 0x20 ||
+      code === 0x7f ||
+      CSHARP_EXTRA_LINE_BREAKS.has(code)
+    ) {
+      escaped += `\\u${code.toString(16).padStart(4, "0")}`;
+    } else {
+      escaped += char;
+    }
+  }
+  return `"${escaped}"`;
 }
 
 /**

@@ -488,6 +488,43 @@ describe("csharp emitter - models", () => {
       );
     });
 
+    it("escapes control characters in scalar and array string defaults", async () => {
+      // Built with fromCharCode so the source never contains a raw U+2028,
+      // which would end a regular-expression literal.
+      const LINE_SEPARATOR = String.fromCharCode(0x2028);
+      const RAW_CONTROL_CHARACTERS = new RegExp(
+        `[\\u0001\\u0007\\t${LINE_SEPARATOR}]`,
+      );
+      // TypeSpec escapes (\\n, \\r, \\t) plus raw characters inserted by the JS
+      // template (bell, U+0001, U+2028) that have no TypeSpec escape sequence.
+      const results = await emit(`
+        namespace Demo;
+        model Config {
+          env: string = "a\\nb\\r\\tc\\\\d";
+          lines: string[] = #["line1\\nline2", "bell\u0007 soh\u0001 sep${LINE_SEPARATOR}end"];
+        }
+      `);
+
+      const file = results["Config.g.cs"];
+      ok(file, `expected Config.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes(
+          'public string? Env { get; set; } = "a\\nb\\r\\tc\\\\d";',
+        ),
+        `expected escaped scalar initializer in:\n${file}`,
+      );
+      ok(
+        file.includes(
+          'public IList<string>? Lines { get; set; } = new List<string> { "line1\\nline2", "bell\\a soh\\u0001 sep\\u2028end" };',
+        ),
+        `expected escaped list initializer in:\n${file}`,
+      );
+      ok(
+        !RAW_CONTROL_CHARACTERS.test(file),
+        `expected no raw control characters in:\n${JSON.stringify(file)}`,
+      );
+    });
+
     it("qualifies enum elements in an array default", async () => {
       const results = await emit(`
         namespace Demo;

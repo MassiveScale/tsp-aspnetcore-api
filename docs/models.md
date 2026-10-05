@@ -107,6 +107,7 @@ When a TypeSpec model property carries a default value, the emitter assigns it a
 | --------------------------------------- | ------------------------------ |
 | Enum member (`Size.medium`)             | `Size.Medium`                  |
 | String literal (`"production"`)         | `"production"`                 |
+| String with control chars (`"a\nb"`)    | `"a\nb"` (escaped)             |
 | Numeric literal (`20`)                  | `20`                           |
 | Numeric literal on `decimal` (`9.99`)   | `9.99m`                        |
 | Numeric literal on `float32` (`0.5`)    | `0.5f`                         |

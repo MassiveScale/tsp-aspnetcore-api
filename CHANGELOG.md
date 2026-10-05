@@ -27,6 +27,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- String defaults containing newlines, tabs or other control characters (`env: string = "a\nb"`, `#["line1\nline2"]`) now emit C# escape sequences (`"a\nb"`, `\t`, `\a`, `\u0001`, …). Previously the raw character was written into a regular C# string literal, which does not compile. The line terminators U+0085, U+2028 and U+2029 are escaped too, since C# treats them as line breaks.
+
 - An `@error` response envelope that declares a 2xx status with a non-error body (`@error model OddError { @statusCode code: 200; @body body: Problem; }`) no longer becomes the service return type (`Task<Problem?>`). The envelope is now checked for `@error`, not just its body.
 
 - Numeric defaults on `decimal` and `float32` properties (including array elements) now carry the `m` / `f` literal suffix (`= 9.99m;`, `= 0.5f;`). Previously they were emitted as bare literals, which do not compile because C# has no implicit conversion from a `double` literal to `decimal` or `float`.
