@@ -100,6 +100,7 @@ export async function emitModelsAndEnums(
   options: ResolvedOptions,
 ): Promise<void> {
   const inferredEnums = collectInferredEnums(program, models, enums, options);
+  const emittedModels: ReadonlySet<Model> = new Set(models);
 
   for (const model of models) {
     // All models and interfaces share a flat namespace.
@@ -128,7 +129,9 @@ export async function emitModelsAndEnums(
         fileName: classFileName,
         namespace: classNs,
         usings: classUsings,
-        body: renderer.renderClass(buildClassView(program, model, options)),
+        body: renderer.renderClass(
+          buildClassView(program, model, options, emittedModels),
+        ),
       }),
     });
 
@@ -305,19 +308,26 @@ function sortUsings(set: Set<string>): string[] {
  * @param program - The compiled TypeSpec program.
  * @param model - The TypeSpec model node.
  * @param options - Resolved options for type resolution and nullability.
+ * @param emittedModels - Models that get a C# class.
  * @returns Populated class view model.
  */
 function buildClassView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  emittedModels: ReadonlySet<Model>,
 ): ClassView {
   const className = csharpModelName(program, model);
   const safeClassName = className.startsWith("@")
     ? className.slice(1)
     : className;
 
-  const discriminator = buildDiscriminatorView(program, model, options);
+  const discriminator = buildDiscriminatorView(
+    program,
+    model,
+    options,
+    emittedModels,
+  );
   const baseModel = emittedBaseModel(program, model);
 
   return {
@@ -370,8 +380,13 @@ function discriminatorPropertyNameInHierarchy(
  * {@link buildPropertyViews}) — System.Text.Json rejects a declared property
  * name that collides with `TypeDiscriminatorPropertyName`.
  *
+ * Derived models that get no class (see `analyzePayloadModels`) are left out,
+ * so the attributes never reference a type that doesn't exist.
+ *
  * @param program - The compiled TypeSpec program.
  * @param model - The TypeSpec model node to inspect.
+ * @param options - Resolved options (models namespace).
+ * @param emittedModels - Models that get a C# class.
  * @returns A populated discriminator view, or `undefined` when `model` has no
  *   `@discriminator` decorator of its own.
  */
@@ -379,12 +394,14 @@ function buildDiscriminatorView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  emittedModels: ReadonlySet<Model>,
 ): DiscriminatorView | undefined {
   const discriminator = getDiscriminator(program, model);
   if (!discriminator) return undefined;
 
   const [union] = getDiscriminatedUnionFromInheritance(model, discriminator);
   const derivedTypes: DiscriminatedTypeView[] = [...union.variants.entries()]
+    .filter(([, derivedModel]) => emittedModels.has(derivedModel))
     .map(([discriminatorValue, derivedModel]) => ({
       className: `${options.modelsNamespace}.${csharpModelName(program, derivedModel)}`,
       discriminatorValue,

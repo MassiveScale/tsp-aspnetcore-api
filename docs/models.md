@@ -70,6 +70,8 @@ When the program has HTTP operations, a model gets a class if it is reachable fr
 - transitively, a property type, base model, array/record element, union variant, or `MergePatchUpdate<T>` source of one of those;
 - every derived model of a `@discriminator` base that is reachable, since polymorphic JSON needs them.
 
+  A derived model that gets no class is left out of the base's `[JsonDerivedType]` attributes and its validator's derived-type list, so nothing references a missing type. "Gets no class" means it is a response or metadata-only model (e.g. `model Odd extends Pet { kind: "odd"; @body body: Widget; }`), or it lost a `duplicate-model-name` clash. For the response/metadata-only case the emitter reports a **`discriminator-variant-skipped`** warning, because a payload with that discriminator value (`kind: "odd"`) won't deserialize.
+
 Models that no operation reaches are **not** emitted, and neither are non-discriminated derived models that are never used directly. `@error` models are emitted when they are a body (e.g. `Problem` in `@error model NotFoundError { ...NotFoundResponse; @body body: Problem; }`). [Validators](./validators.md) follow the same rule: they are only emitted for models that get a class.
 
 When the program has **no** HTTP operations (a models-only library), every model is emitted except metadata-only models and explicit-body response models.

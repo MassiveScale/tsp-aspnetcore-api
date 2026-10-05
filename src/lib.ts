@@ -395,6 +395,12 @@ export const $lib = createTypeSpecLibrary({
         default: paramMessage`"${"model"}" maps to the C# class "${"className"}", which is already emitted for "${"existing"}". Rename one of them with @friendlyName or @serverName.`,
       },
     },
+    "discriminator-variant-skipped": {
+      severity: "warning",
+      messages: {
+        default: paramMessage`"${"variant"}" is a response or metadata-only model, so it gets no class and is omitted from the polymorphic types of "${"base"}". A payload with ${"property"} "${"value"}" will not deserialize.`,
+      },
+    },
     "output-file-left-behind": {
       severity: "warning",
       messages: {

@@ -866,6 +866,118 @@ describe("csharp emitter - response and metadata-only models", () => {
     });
   });
 
+  describe("skipped discriminated variants", () => {
+    const VARIANT_CODE =
+      "@massivescale/tsp-aspnetcore-api/discriminator-variant-skipped";
+
+    it("omits an envelope variant from [JsonDerivedType] and validators, with a warning", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(
+        `
+        ${HTTP_HEADER}
+        @service namespace Demo;
+
+        model Widget { name: string; }
+        @discriminator("kind") model Pet { kind: string; name: string; }
+        model Dog extends Pet { kind: "dog"; bark: string; }
+        model Odd extends Pet { kind: "odd"; @body body: Widget; }
+
+        @route("/p") interface Pets {
+          @get read(): Pet;
+          @post create(@body body: Pet): void;
+        }
+        `,
+        { "emit-validators": true },
+      );
+
+      deepStrictEqual(modelFiles(results), ["Dog.g.cs", "Pet.g.cs"]);
+      const pet = results["Models/Pet.g.cs"];
+      assertContains(
+        pet,
+        '[JsonDerivedType(typeof(Demo.Models.Dog), "dog")]',
+        "Pet",
+      );
+      ok(!pet.includes("Odd"), `expected no Odd reference in:\n${pet}`);
+
+      const validator = results["Validators/PetValidator.g.cs"];
+      assertContains(
+        validator,
+        "v.Add<Demo.Models.Dog>(dogValidator);",
+        "PetValidator",
+      );
+      ok(
+        !validator.includes("Odd"),
+        `expected no Odd validator in:\n${validator}`,
+      );
+      ok(
+        !results["Validators/ValidatorsInitializer.g.cs"].includes("Odd"),
+        "expected no Odd registration",
+      );
+
+      const warnings = diagnostics.filter((d) => d.code === VARIANT_CODE);
+      deepStrictEqual(
+        warnings.length,
+        1,
+        `got: ${diagnostics.map((d) => d.code).join(", ")}`,
+      );
+      deepStrictEqual(warnings[0].severity, "warning");
+      const message = String(warnings[0].message);
+      ok(
+        message.includes("Demo.Odd") &&
+          message.includes("Demo.Pet") &&
+          message.includes('kind "odd"'),
+        `unexpected message: ${message}`,
+      );
+    });
+
+    it("warns about envelope variants in a program without operations", async () => {
+      const [, diagnostics] = await emitWithDiagnostics(`
+        ${HTTP_HEADER}
+        namespace Demo;
+
+        model Widget { name: string; }
+        @discriminator("kind") model Pet { kind: string; }
+        model Odd extends Pet { kind: "odd"; @body body: Widget; }
+      `);
+      ok(
+        diagnostics.some((d) => d.code === VARIANT_CODE),
+        `got: ${diagnostics.map((d) => d.code).join(", ")}`,
+      );
+    });
+
+    it("omits a variant dropped by duplicate-model-name without a second diagnostic", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(
+        `
+        ${HTTP_HEADER}
+        @service namespace Demo;
+
+        @discriminator("kind") model Pet { kind: string; }
+        model Dog extends Pet { kind: "dog"; }
+        namespace Other { model Dog extends Demo.Pet { kind: "other-dog"; } }
+
+        @route("/p") interface Pets { @post create(@body body: Pet): void; }
+        `,
+        { "emit-validators": true },
+      );
+      const codes = diagnostics.map((d) => d.code);
+      ok(
+        codes.includes(
+          "@massivescale/tsp-aspnetcore-api/duplicate-model-name",
+        ) && !codes.includes(VARIANT_CODE),
+        `got: ${codes.join(", ")}`,
+      );
+      const pet = results["Models/Pet.g.cs"];
+      ok(
+        !pet.includes('"other-dog"'),
+        `expected the dropped variant to be omitted from:\n${pet}`,
+      );
+      const validator = results["Validators/PetValidator.g.cs"];
+      ok(
+        (validator.match(/v\.Add</g) ?? []).length === 1,
+        `expected one derived validator in:\n${validator}`,
+      );
+    });
+  });
+
   describe("@error response envelopes", () => {
     it("does not return the body of an @error envelope that declares a 2xx status", async () => {
       const results = await emit(`

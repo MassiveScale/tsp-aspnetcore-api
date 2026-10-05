@@ -605,12 +605,16 @@ function deriveReferencedValidators(
  * `@discriminator`. Uses {@link getDiscriminatedUnionFromInheritance} to find
  * all concrete derived types and returns them sorted by type name.
  *
+ * Derived models without a class (and so without a validator) are left out,
+ * so the constructor never asks for a validator that is never registered.
+ *
  * Returns `undefined` when the model has no discriminator.
  */
 function buildDerivedTypeValidators(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  validatedModels: readonly Model[],
 ): DerivedTypeValidator[] | undefined {
   const discriminator = getDiscriminator(program, model);
   if (!discriminator) return undefined;
@@ -618,6 +622,7 @@ function buildDerivedTypeValidators(
   const [union] = getDiscriminatedUnionFromInheritance(model, discriminator);
   const derived: DerivedTypeValidator[] = [];
   for (const [, derivedModel] of union.variants) {
+    if (!validatedModels.includes(derivedModel)) continue;
     const typeName = csharpModelName(program, derivedModel);
     const qualifiedTypeName = computeModelFqName(
       program,
@@ -851,6 +856,7 @@ async function emitValidatorModels(
         program,
         model,
         options,
+        allModels,
       );
       const data: ValidatorTemplateData = {
         namespace,
@@ -971,6 +977,7 @@ async function emitVersionAwareValidatorModels(
         program,
         model,
         options,
+        allModels,
       );
       const data: VersionAwareValidatorTemplateData = {
         namespace,

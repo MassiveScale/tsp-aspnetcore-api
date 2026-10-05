@@ -28,6 +28,7 @@ import {
   Program,
   type ModelProperty,
   type Type,
+  getDiscriminatedUnionFromInheritance,
   getDiscriminator,
   getTypeName,
   isArrayModelType,
@@ -277,7 +278,7 @@ export function analyzePayloadModels(
   const [services] = getAllHttpServices(program);
   const operations = services.flatMap((service) => service.operations);
   if (operations.length === 0) {
-    return withUniqueClassNames(
+    return finalizeModels(
       program,
       candidates.filter((model) => !isHttpEnvelopeModel(program, model)),
     );
@@ -356,7 +357,55 @@ export function analyzePayloadModels(
 
   const ordered = candidates.filter((model) => reached.has(model));
   const extras = [...reached].filter((model) => !candidates.includes(model));
-  return withUniqueClassNames(program, [...ordered, ...extras]);
+  return finalizeModels(program, [...ordered, ...extras]);
+}
+
+/**
+ * Applies the final filters to the models chosen for emission: drops class-name
+ * duplicates and warns about discriminated variants that get no class.
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param models - Candidate models, in priority order.
+ * @returns The models to emit.
+ */
+function finalizeModels(program: Program, models: Model[]): Model[] {
+  const unique = withUniqueClassNames(program, models);
+  reportSkippedDiscriminatorVariants(program, unique);
+  return unique;
+}
+
+/**
+ * Warns about each derived model of an emitted `@discriminator` base that is
+ * an envelope model. It gets no class, so it is left out of the base's
+ * `[JsonDerivedType]` list and derived-validator list, and payloads carrying
+ * its discriminator value will not deserialize. (Variants dropped by
+ * `duplicate-model-name` are already reported as errors.)
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param models - The final set of models that get a class.
+ */
+function reportSkippedDiscriminatorVariants(
+  program: Program,
+  models: Model[],
+): void {
+  for (const model of models) {
+    const discriminator = getDiscriminator(program, model);
+    if (!discriminator) continue;
+    const [union] = getDiscriminatedUnionFromInheritance(model, discriminator);
+    for (const [value, variant] of union.variants) {
+      if (!isHttpEnvelopeModel(program, variant)) continue;
+      reportDiagnostic(program, {
+        code: "discriminator-variant-skipped",
+        target: variant,
+        format: {
+          variant: getTypeName(variant),
+          base: getTypeName(model),
+          property: discriminator.propertyName,
+          value,
+        },
+      });
+    }
+  }
 }
 
 /**
