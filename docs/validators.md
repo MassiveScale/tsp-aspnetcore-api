@@ -77,17 +77,23 @@ For discriminated hierarchies (`@discriminator("...")`), the discriminator prope
 
 ## Custom rules
 
-Every generated validator is a `partial class` that exposes a virtual `ExtendRules()` method. Override it in a hand-written partial to add custom rules without editing the generated file:
+Every generated validator is a `partial class` that declares a [partial method](https://learn.microsoft.com/dotnet/csharp/language-reference/keywords/partial-member) named `ExtendRules()` and calls it at the end of its constructor. Implement it in a hand-written partial (same class name and namespace) to add custom rules without editing the generated file:
 
 ```csharp
+using FluentValidation;
+
+namespace Demo.Validators;
+
 public partial class WidgetValidator
 {
-    protected override void ExtendRules()
+    partial void ExtendRules()
     {
         RuleFor(x => x.Name).Must(name => !name.Contains("admin")).WithMessage("Name cannot contain 'admin'.");
     }
 }
 ```
+
+Write it exactly as `partial void ExtendRules()`, with no access modifier. Do not use `override`: C# does not allow one part of a partial class to override a member declared in another part of the same class, so `protected override void ExtendRules()` fails with CS0111 (duplicate member) and CS0115 (no method to override). Your file needs `using FluentValidation;` for the `RuleFor` extension methods, because `using` directives in the generated part don't carry over. Implementing it is optional. If no hand-written part implements it, the compiler removes both the declaration and the call.
 
 ## Version strategies
 

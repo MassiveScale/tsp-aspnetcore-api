@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
   - Inferred enums for string-literal-union properties on template instances are named after the instance (`BoxShadeValue`, not `BoxValue`), so instantiations no longer share one enum.
   - Validators follow the same rule and are only emitted for models that get a class.
 - Response models with an implicit body (metadata mixed with plain properties, no `@body`) are emitted without their metadata properties, and the service method now returns that class (previously `object`).
+- **Breaking:** the validator custom-rule hook `ExtendRules()` is now a C# partial method (`partial void ExtendRules();`) instead of `protected virtual void ExtendRules() { }`. Implement it in your hand-written partial as `partial void ExtendRules() { ... }`. The old documented approach, `protected override void ExtendRules()` in a second part of the same partial class, never compiled: C# reports a duplicate member (CS0111) because both parts are the same class, and a class can't override its own method. Code that subclassed a generated validator to override `ExtendRules()` must move those rules into a partial implementation. See [Validators — Custom rules](docs/validators.md#custom-rules).
 
 ### Fixed
 

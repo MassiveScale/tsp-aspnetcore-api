@@ -550,6 +550,105 @@ describe("csharp emitter - validators", () => {
     });
   });
 
+  describe("ExtendRules custom-rule hook", () => {
+    const VALIDATOR_OPTIONS = {
+      "emit-validators": true,
+      "emit-controllers": false,
+      "emit-services": false,
+      "emit-interfaces": false,
+    };
+
+    // C# forbids overriding a member in another part of the same partial class
+    // (CS0111), so the hook must be a partial method rather than a virtual one.
+    function assertPartialMethodHook(validator: string | undefined): void {
+      ok(validator, "expected the validator file to be emitted");
+      ok(
+        validator.includes("    partial void ExtendRules();"),
+        `expected a partial ExtendRules() declaration in:\n${validator}`,
+      );
+      ok(
+        /^ {8}ExtendRules\(\);\r?\n {4}\}/m.test(validator),
+        `expected the constructor to call ExtendRules() last in:\n${validator}`,
+      );
+      ok(
+        !validator.includes("virtual void ExtendRules"),
+        `expected no virtual ExtendRules() in:\n${validator}`,
+      );
+    }
+
+    it("declares ExtendRules() as a partial method in standard POST and PATCH validators", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        model Widget { id: string; name: string; }
+        model WidgetPatch is MergePatchUpdate<Widget>;
+
+        interface Widgets {
+          @route("/widgets")
+          @post create(@body body: Widget): Widget;
+
+          @route("/widgets/{id}")
+          @patch update(@path id: string, @body body: WidgetPatch): Widget;
+        }
+        `,
+        VALIDATOR_OPTIONS,
+      );
+
+      assertPartialMethodHook(results["Validators/WidgetValidator.g.cs"]);
+      assertPartialMethodHook(results["Validators/WidgetPatchValidator.g.cs"]);
+    });
+
+    it("declares ExtendRules() as a partial method in version-aware POST and PATCH validators", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+
+        @versioned(Versions)
+        @service(#{ title: "Demo" })
+        namespace Demo;
+
+        enum Versions { v1_0: "v1.0", v2_0: "v2.0" }
+
+        model Widget {
+          id: string;
+          @added(Versions.v2_0) @maxLength(10) label?: string;
+        }
+        model WidgetPatch is MergePatchUpdate<Widget>;
+
+        interface Widgets {
+          @route("/widgets")
+          @post create(@body body: Widget): Widget;
+
+          @route("/widgets/{id}")
+          @patch update(@path id: string, @body body: WidgetPatch): Widget;
+        }
+        `,
+        VALIDATOR_OPTIONS,
+      );
+
+      const postValidator = results["Validators/WidgetValidator.g.cs"];
+      const patchValidator = results["Validators/WidgetPatchValidator.g.cs"];
+      ok(
+        postValidator?.includes("Rules added in v2.0"),
+        `expected the version-aware POST template to be used:\n${postValidator}`,
+      );
+      ok(
+        patchValidator?.includes("Rules added in v2.0"),
+        `expected the version-aware PATCH template to be used:\n${patchValidator}`,
+      );
+      assertPartialMethodHook(postValidator);
+      assertPartialMethodHook(patchValidator);
+    });
+  });
+
   describe("plain (non-MergePatch) PATCH bodies", () => {
     // `IsDefined`/`GetString`/`IsNull`/`TryGetValue` are members of MergePatch<T> only.
     // A plain model used as a PATCH body is an ordinary POCO, so rules must use typed
