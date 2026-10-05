@@ -4,12 +4,17 @@
 
 When a TypeSpec model property carries a default value, the emitter assigns it as a C# property initializer. The following value kinds are supported:
 
-| TypeSpec default                | C# initializer |
-| ------------------------------- | -------------- |
-| Enum member (`Size.medium`)     | `Size.Medium`  |
-| String literal (`"production"`) | `"production"` |
-| Numeric literal (`20`)          | `20`           |
-| Boolean literal (`true`)        | `true`         |
+| TypeSpec default                        | C# initializer                 |
+| --------------------------------------- | ------------------------------ |
+| Enum member (`Size.medium`)             | `Size.Medium`                  |
+| String literal (`"production"`)         | `"production"`                 |
+| Numeric literal (`20`)                  | `20`                           |
+| Numeric literal on `decimal` (`9.99`)   | `9.99m`                        |
+| Numeric literal on `float32` (`0.5`)    | `0.5f`                         |
+| Boolean literal (`true`)                | `true`                         |
+| Array value (`#[1000, 2500]`)           | `new List<int> { 1000, 2500 }` |
+| Empty array value (`#[]`)               | `new List<int>()`              |
+| Nested array value (`#[#[1, 2], #[3]]`) | `new List<IList<int>> { ... }` |
 
 ```typespec
 enum Size { small, medium, large }
@@ -19,6 +24,7 @@ model Widget {
   pageSize: int32 = 20;
   env: string = "production";
   enabled: boolean = true;
+  buckets?: int32[] = #[1000, 2500, 5000];
 }
 ```
 
@@ -40,10 +46,16 @@ public partial class Widget : IWidget
     [JsonPropertyName("enabled")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? Enabled { get; set; } = true;
+
+    [JsonPropertyName("buckets")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IList<int>? Buckets { get; set; } = new List<int> { 1000, 2500, 5000 };
 }
 ```
 
-Complex default value kinds (objects, arrays, scalar constructors) are not supported and produce no initializer.
+Array defaults must use TypeSpec's array-value syntax `#[...]`. A bare `[...]` is a tuple _type_, and the TypeSpec compiler rejects it as a default with `expect-value: Is a tuple type, but is being used as a value here`. Array elements may be any supported value kind, including enum members, `null` (for nullable element types), and nested arrays.
+
+Object values (`#{...}`), scalar constructors, and arrays containing either are not supported and produce no initializer.
 
 ## Enums
 

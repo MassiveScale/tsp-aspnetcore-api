@@ -30,7 +30,6 @@ public partial class CatPatchValidator : AbstractValidator<MarketOnce.Community.
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
-
         ExtendRules();
     }
 

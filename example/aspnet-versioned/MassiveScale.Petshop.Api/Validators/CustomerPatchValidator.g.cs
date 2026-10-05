@@ -42,7 +42,6 @@ public partial class CustomerPatchValidator : AbstractValidator<MarketOnce.Commu
             .When(x => x.IsDefined("FirstName") && !x.IsNull("FirstName"))
             .WithName("FirstName");
 
-
         // LastName must not be empty when provided
         this.RuleFor(x => x)
             .Must(x => (x.GetString("LastName")?.Length ?? 0) > 0)
@@ -54,7 +53,6 @@ public partial class CustomerPatchValidator : AbstractValidator<MarketOnce.Commu
             .Must(x => (x.GetString("LastName")?.Length ?? 0) <= 100)
             .When(x => x.IsDefined("LastName") && !x.IsNull("LastName"))
             .WithName("LastName");
-
 
         // Email cannot exceed a MaxLength of 255 when provided
         this.RuleFor(x => x)
@@ -68,13 +66,11 @@ public partial class CustomerPatchValidator : AbstractValidator<MarketOnce.Commu
             .When(x => x.IsDefined("Email") && !x.IsNull("Email"))
             .WithName("Email");
 
-
         // PhoneNumber cannot exceed a MaxLength of 20 when provided
         this.RuleFor(x => x)
             .Must(x => (x.GetString("PhoneNumber")?.Length ?? 0) <= 20)
             .When(x => x.IsDefined("PhoneNumber") && !x.IsNull("PhoneNumber"))
             .WithName("PhoneNumber");
-
 
         ExtendRules();
     }
