@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
   - Properties whose declared type explicitly allows `null` (`string | null`, `int32 | null`) still accept `null` even when required: they get no `NotNull()` or reject-null rule.
   - Rules that can't be checked are still skipped: a non-nullable value type under `nullable-properties: false` can't be told apart from "not supplied", and neither can a `null` in a plain (non-MergePatch) PATCH body.
 
+### Fixed
+
+- Widened the `@typespec/versioning` peer dependency from `^0.85.0` to `>=0.85.0 <1.0.0`. For a `0.x` package, `^0.85.0` only allows `0.85.x`, so consumers on `@typespec/versioning` 0.86 or later got peer-dependency conflicts.
+
 ## [0.15.0] - 2026-10-05
 
 ### Added
