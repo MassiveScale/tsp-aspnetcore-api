@@ -649,6 +649,328 @@ describe("csharp emitter - validators", () => {
     });
   });
 
+  describe("required and immutable properties of any type", () => {
+    const VALIDATOR_OPTIONS = {
+      "emit-validators": true,
+      "emit-controllers": false,
+      "emit-services": false,
+      "emit-interfaces": false,
+    };
+
+    const widgetSource = (patchBody: string): string => `
+      import "@typespec/http";
+      using TypeSpec.Http;
+
+      @service
+      namespace Demo;
+
+      enum Size { small, large }
+      model Part { label: string; }
+
+      model Widget {
+        @visibility(Lifecycle.Read) id: string;
+        name: string;
+        count: int32;
+        enabled: boolean;
+        size: Size;
+        part: Part;
+        tags: string[];
+        @visibility(Lifecycle.Create, Lifecycle.Read) slot: int32;
+        @visibility(Lifecycle.Update, Lifecycle.Read) revision: int32;
+        optCount?: int32;
+        defCount: int32 = 5;
+      }
+
+      interface Widgets {
+        @route("/widgets") @post create(@body body: Widget): Widget;
+        @route("/widgets/{id}") @patch update(@path id: string, @body body: ${patchBody}): Widget;
+      }
+    `;
+
+    /** Asserts every expected line is present in `file`. */
+    function assertLines(
+      file: string | undefined,
+      label: string,
+      lines: string[],
+    ): void {
+      ok(file, `expected ${label} to be emitted`);
+      for (const line of lines) {
+        ok(
+          file.includes(line),
+          `expected ${label} to contain:\n  ${line}\n\nin:\n${file}`,
+        );
+      }
+    }
+
+    it("requires non-string properties with NotNull() in POST validators", async () => {
+      const results = await emit(
+        widgetSource("MergePatchUpdate<Widget>"),
+        VALIDATOR_OPTIONS,
+      );
+      const post = results["Validators/WidgetValidator.g.cs"];
+      assertLines(post, "WidgetValidator", [
+        "RuleFor(x => x.Name).NotEmpty();",
+        "RuleFor(x => x.Count).NotNull();",
+        "RuleFor(x => x.Enabled).NotNull();",
+        "RuleFor(x => x.Size).NotNull();",
+        "RuleFor(x => x.Part).NotNull();",
+        "RuleFor(x => x.Tags).NotNull();",
+        "RuleFor(x => x.Slot).NotNull();",
+      ]);
+      for (const absent of ["x.OptCount", "x.DefCount", "x.Name).NotNull"]) {
+        ok(!post.includes(absent), `expected no ${absent} rule in:\n${post}`);
+      }
+    });
+
+    it("rejects an update-only property in POST validators", async () => {
+      const results = await emit(
+        widgetSource("MergePatchUpdate<Widget>"),
+        VALIDATOR_OPTIONS,
+      );
+      const post = results["Validators/WidgetValidator.g.cs"];
+      assertLines(post, "WidgetValidator", [
+        "// Revision can only be set by an update and must not be set on creation",
+        "RuleFor(x => x.Revision).Null();",
+        "// Id is read-only and must not be set on creation",
+      ]);
+      ok(
+        !post.includes("x.Revision).NotNull"),
+        `expected the update-only property not to be required in:\n${post}`,
+      );
+    });
+
+    it("rejects explicit null for required properties and rejects immutable ones in MergePatch validators", async () => {
+      const results = await emit(
+        widgetSource("MergePatchUpdate<Widget>"),
+        VALIDATOR_OPTIONS,
+      );
+      const patch = results["Validators/WidgetPatchValidator.g.cs"];
+      for (const name of [
+        "Name",
+        "Count",
+        "Enabled",
+        "Size",
+        "Part",
+        "Tags",
+        "Revision",
+      ]) {
+        assertLines(patch, "WidgetPatchValidator", [
+          `.Must(x => !x.IsNull("${name}"))`,
+          `.WithMessage("'${name}' is required and cannot be null.");`,
+        ]);
+      }
+      assertLines(patch, "WidgetPatchValidator", [
+        "// Slot cannot be changed after creation",
+        '.Must(x => !x.IsDefined("Slot"))',
+        `.WithMessage("'Slot' cannot be changed after creation.");`,
+        `.WithMessage("'Id' is read-only and cannot be modified.");`,
+      ]);
+      for (const absent of [
+        'IsNull("OptCount")',
+        'IsNull("DefCount")',
+        'IsNull("Slot")',
+        'IsNull("Id")',
+      ]) {
+        ok(!patch.includes(absent), `expected no ${absent} rule in:\n${patch}`);
+      }
+    });
+
+    it("rejects immutable properties in plain PATCH validators when they can be null", async () => {
+      const results = await emit(widgetSource("Widget"), VALIDATOR_OPTIONS);
+      const patch = results["Validators/WidgetPatchValidator.g.cs"];
+      assertLines(patch, "WidgetPatchValidator", [
+        "// Slot cannot be changed after creation and must not be supplied",
+        "RuleFor(x => x.Slot).Null();",
+      ]);
+      ok(
+        !patch.includes("NotNull()"),
+        `a plain PATCH body cannot distinguish omitted from null, so nothing is required:\n${patch}`,
+      );
+    });
+
+    it("skips rules that cannot be checked on non-nullable value types", async () => {
+      const results = await emit(widgetSource("Widget"), {
+        ...VALIDATOR_OPTIONS,
+        "nullable-properties": false,
+      });
+      const post = results["Validators/WidgetValidator.g.cs"];
+      const patch = results["Validators/WidgetPatchValidator.g.cs"];
+      assertLines(post, "WidgetValidator", [
+        "RuleFor(x => x.Part).NotNull();",
+        "RuleFor(x => x.Tags).NotNull();",
+      ]);
+      for (const absent of [
+        "x.Count)",
+        "x.Enabled)",
+        "x.Slot)",
+        "x.Revision)",
+      ]) {
+        ok(
+          !post.includes(absent),
+          `expected no ${absent} rule in POST:\n${post}`,
+        );
+      }
+      ok(
+        !patch.includes("x.Slot)"),
+        `expected no Slot rule in PATCH:\n${patch}`,
+      );
+    });
+
+    it("does not reject null for required properties whose type explicitly allows it", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        model Part { label: string; }
+
+        model Widget {
+          note: string | null;
+          count: int32 | null;
+          part: Part | null;
+          mode: "fast" | "slow" | null;
+          name: string;
+        }
+
+        interface Widgets {
+          @route("/widgets") @post create(@body body: Widget): Widget;
+          @route("/widgets") @patch update(@body body: MergePatchUpdate<Widget>): Widget;
+        }
+        `,
+        VALIDATOR_OPTIONS,
+      );
+      const post = results["Validators/WidgetValidator.g.cs"];
+      const patch = results["Validators/WidgetPatchValidator.g.cs"];
+      assertLines(post, "WidgetValidator", [
+        "RuleFor(x => x.Name).NotEmpty();",
+      ]);
+      assertLines(patch, "WidgetPatchValidator", [
+        '.Must(x => !x.IsNull("Name"))',
+      ]);
+      for (const name of ["Note", "Count", "Part", "Mode"]) {
+        ok(
+          !post.includes(`x.${name}).NotNull()`) &&
+            !post.includes(`x.${name}).NotEmpty()`),
+          `expected no non-null rule for ${name} in:\n${post}`,
+        );
+        ok(
+          !patch.includes(`IsNull("${name}"))\n`) &&
+            !patch.includes(`.Must(x => !x.IsNull("${name}"))`),
+          `expected no reject-null rule for ${name} in:\n${patch}`,
+        );
+      }
+    });
+
+    // TypeSpec cannot version a property's visibility, so a lifecycle-restricted
+    // property added in v2 is never writable in this phase in any version.
+    // The single model class still declares it, so the rejection compiles, and
+    // keeping it stops an older-version client from slipping the value through.
+    for (const strategy of ["earliest", "per-version"] as const) {
+      it(`keeps lifecycle rejections for properties added in later versions (${strategy})`, async () => {
+        const results = await emit(
+          `
+          import "@typespec/http";
+          import "@typespec/versioning";
+          using TypeSpec.Http;
+          using TypeSpec.Versioning;
+
+          @versioned(Versions)
+          @service(#{ title: "Demo" })
+          namespace Demo;
+
+          enum Versions { v1, v2 }
+
+          model Widget {
+            name: string;
+            @added(Versions.v2) @visibility(Lifecycle.Update, Lifecycle.Read) revision?: int32;
+            @added(Versions.v2) @visibility(Lifecycle.Create, Lifecycle.Read) slot?: int32;
+          }
+
+          interface Widgets {
+            @route("/widgets") @post create(@body body: Widget): Widget;
+            @route("/widgets") @patch update(@body body: MergePatchUpdate<Widget>): Widget;
+          }
+          `,
+          { ...VALIDATOR_OPTIONS, "validators-version-strategy": strategy },
+        );
+        const dir = strategy === "per-version" ? "Validators/v1" : "Validators";
+        assertLines(
+          results[`${dir}/WidgetValidator.g.cs`],
+          `${dir}/WidgetValidator`,
+          [
+            "// Revision can only be set by an update and must not be set on creation",
+            "RuleFor(x => x.Revision).Null();",
+          ],
+        );
+        assertLines(
+          results[`${dir}/WidgetPatchValidator.g.cs`],
+          `${dir}/WidgetPatchValidator`,
+          [
+            '.Must(x => !x.IsDefined("Slot"))',
+            `.WithMessage("'Slot' cannot be changed after creation.");`,
+          ],
+        );
+      });
+    }
+
+    it("applies the same rules in version-aware validators, in base and per-version blocks", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+
+        @versioned(Versions)
+        @service(#{ title: "Demo" })
+        namespace Demo;
+
+        enum Versions { v1_0: "v1.0", v2_0: "v2.0" }
+
+        model Widget {
+          @visibility(Lifecycle.Read) id: string;
+          count: int32;
+          @visibility(Lifecycle.Create, Lifecycle.Read) slot: int32;
+          @added(Versions.v2_0) weight: float64;
+        }
+
+        interface Widgets {
+          @route("/widgets") @post create(@body body: Widget): Widget;
+          @route("/widgets/{id}") @patch update(@path id: string, @body body: MergePatchUpdate<Widget>): Widget;
+        }
+        `,
+        VALIDATOR_OPTIONS,
+      );
+      const post = results["Validators/WidgetValidator.g.cs"];
+      assertLines(post, "WidgetValidator", [
+        "Rules added in v2.0",
+        "RuleFor(x => x.Count).NotNull();",
+        "RuleFor(x => x.Weight).NotNull();",
+      ]);
+      const patch = results["Validators/WidgetPatchValidator.g.cs"];
+      assertLines(patch, "WidgetPatchValidator", [
+        "Rules added in v2.0",
+        '.Must(x => !x.IsNull("Count"))',
+        '.Must(x => !x.IsNull("Weight"))',
+        `.WithMessage("'Slot' cannot be changed after creation.");`,
+      ]);
+      for (const [file, label, base, versioned] of [
+        [post, "WidgetValidator", "x.Count).NotNull", "x.Weight).NotNull"],
+        [patch, "WidgetPatchValidator", 'IsNull("Count")', 'IsNull("Weight")'],
+      ] as const) {
+        const groupStart = file.indexOf("Rules added in v2.0");
+        ok(
+          file.indexOf(base) < groupStart &&
+            file.indexOf(versioned) > groupStart,
+          `expected ${base} in the base block and ${versioned} in the v2.0 block of ${label}:\n${file}`,
+        );
+      }
+    });
+  });
+
   describe("plain (non-MergePatch) PATCH bodies", () => {
     // `IsDefined`/`GetString`/`IsNull`/`TryGetValue` are members of MergePatch<T> only.
     // A plain model used as a PATCH body is an ordinary POCO, so rules must use typed

@@ -29,6 +29,9 @@ public partial class TagValidator : AbstractValidator<MarketOnce.Community.Campa
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
+        // Id is required
+        RuleFor(x => x.Id).NotNull();
+
         // Name is required
         RuleFor(x => x.Name).NotEmpty();
 

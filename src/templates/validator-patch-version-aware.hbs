@@ -35,13 +35,22 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
 {{#each baseProperties}}
 {{#if ../isMergePatchBody}}
 {{#if isReadOnly}}
-        // {{{name}}} is read-only and cannot be modified via patch
+        // {{{name}}} {{#if isImmutable}}cannot be changed after creation{{else}}is read-only and cannot be modified via patch{{/if}}
         this.RuleFor(x => x)
             .Must(x => !x.IsDefined("{{{name}}}"))
             .WithName("{{{name}}}")
-            .WithMessage("'{{{name}}}' is read-only and cannot be modified.");
+            .WithMessage("'{{{name}}}' {{#if isImmutable}}cannot be changed after creation{{else}}is read-only and cannot be modified{{/if}}.");
 
 {{else}}
+{{#if rejectNull}}
+        // {{{name}}} is required and cannot be removed
+        this.RuleFor(x => x)
+            .Must(x => !x.IsNull("{{{name}}}"))
+            .When(x => x.IsDefined("{{{name}}}"))
+            .WithName("{{{name}}}")
+            .WithMessage("'{{{name}}}' is required and cannot be null.");
+
+{{/if}}
 {{#if notEmpty}}
         // {{{name}}} must not be empty when provided
         this.RuleFor(x => x)
@@ -110,7 +119,7 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
 {{else}}
 {{#if isReadOnly}}
 {{#if nullable}}
-        // {{{name}}} is read-only and must not be supplied
+        // {{{name}}} {{#if isImmutable}}cannot be changed after creation{{else}}is read-only{{/if}} and must not be supplied
         RuleFor(x => x.{{{name}}}).Null();
 
 {{/if}}
@@ -176,13 +185,22 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
 {{#each properties}}
 {{#if ../../isMergePatchBody}}
 {{#if isReadOnly}}
-            // {{{name}}} is read-only and cannot be modified via patch
+            // {{{name}}} {{#if isImmutable}}cannot be changed after creation{{else}}is read-only and cannot be modified via patch{{/if}}
             this.RuleFor(x => x)
                 .Must(x => !x.IsDefined("{{{name}}}"))
                 .WithName("{{{name}}}")
-                .WithMessage("'{{{name}}}' is read-only and cannot be modified.");
+                .WithMessage("'{{{name}}}' {{#if isImmutable}}cannot be changed after creation{{else}}is read-only and cannot be modified{{/if}}.");
 
 {{else}}
+{{#if rejectNull}}
+            // {{{name}}} is required and cannot be removed
+            this.RuleFor(x => x)
+                .Must(x => !x.IsNull("{{{name}}}"))
+                .When(x => x.IsDefined("{{{name}}}"))
+                .WithName("{{{name}}}")
+                .WithMessage("'{{{name}}}' is required and cannot be null.");
+
+{{/if}}
 {{#if notEmpty}}
             // {{{name}}} must not be empty when provided
             this.RuleFor(x => x)
@@ -251,7 +269,7 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
 {{else}}
 {{#if isReadOnly}}
 {{#if nullable}}
-            // {{{name}}} is read-only and must not be supplied
+            // {{{name}}} {{#if isImmutable}}cannot be changed after creation{{else}}is read-only{{/if}} and must not be supplied
             RuleFor(x => x.{{{name}}}).Null();
 
 {{/if}}

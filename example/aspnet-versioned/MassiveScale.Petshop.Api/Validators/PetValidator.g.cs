@@ -38,6 +38,12 @@ public partial class PetValidator : AbstractValidator<MarketOnce.Community.Campa
         // LastModifiedDateTime is read-only and must not be set on creation
         RuleFor(x => x.LastModifiedDateTime).Null();
 
+        // PhotoUrls is required
+        RuleFor(x => x.PhotoUrls).NotNull();
+
+        // Status can only be set by an update and must not be set on creation
+        RuleFor(x => x.Status).Null();
+
         // Rules added in v2.0
         When(_ => IsAtLeast("v2.0", _apiVersion, _versions), () =>
         {

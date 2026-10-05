@@ -30,6 +30,13 @@ public partial class StorePatchValidator : AbstractValidator<MarketOnce.Communit
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
+        // Name is required and cannot be removed
+        this.RuleFor(x => x)
+            .Must(x => !x.IsNull("Name"))
+            .When(x => x.IsDefined("Name"))
+            .WithName("Name")
+            .WithMessage("'Name' is required and cannot be null.");
+
         // Name must not be empty when provided
         this.RuleFor(x => x)
             .Must(x => (x.GetString("Name")?.Length ?? 0) > 0)
@@ -42,15 +49,36 @@ public partial class StorePatchValidator : AbstractValidator<MarketOnce.Communit
             .When(x => x.IsDefined("Name") && !x.IsNull("Name"))
             .WithName("Name");
 
+        // PhoneNumber is required and cannot be removed
+        this.RuleFor(x => x)
+            .Must(x => !x.IsNull("PhoneNumber"))
+            .When(x => x.IsDefined("PhoneNumber"))
+            .WithName("PhoneNumber")
+            .WithMessage("'PhoneNumber' is required and cannot be null.");
+
         // PhoneNumber must not be empty when provided
         this.RuleFor(x => x)
             .Must(x => (x.GetString("PhoneNumber")?.Length ?? 0) > 0)
             .When(x => x.IsDefined("PhoneNumber") && !x.IsNull("PhoneNumber"))
             .WithName("PhoneNumber");
 
+        // Pets is required and cannot be removed
+        this.RuleFor(x => x)
+            .Must(x => !x.IsNull("Pets"))
+            .When(x => x.IsDefined("Pets"))
+            .WithName("Pets")
+            .WithMessage("'Pets' is required and cannot be null.");
+
         // Rules added in v2.0
         When(_ => IsAtLeast("v2.0", _apiVersion, _versions), () =>
         {
+            // Email is required and cannot be removed
+            this.RuleFor(x => x)
+                .Must(x => !x.IsNull("Email"))
+                .When(x => x.IsDefined("Email"))
+                .WithName("Email")
+                .WithMessage("'Email' is required and cannot be null.");
+
             // Email must not be empty when provided
             this.RuleFor(x => x)
                 .Must(x => (x.GetString("Email")?.Length ?? 0) > 0)
