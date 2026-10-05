@@ -23,7 +23,7 @@ namespace MarketOnce.Community.Campaign.Api.Services
         /// <summary>
         /// Retrieves a list of all stores.
         /// </summary>
-        Task<MarketOnce.Community.Campaign.Api.Models.PagedResult?> ListAsync(CancellationToken cancellationToken);
+        Task<MarketOnce.Community.Campaign.Api.Models.PagedResultStore?> ListAsync(CancellationToken cancellationToken);
     
         /// <summary>
         /// Retrieves a specific store by its unique identifier.

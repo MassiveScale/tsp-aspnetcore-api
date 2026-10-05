@@ -16,7 +16,7 @@ namespace MassiveScale.Petshop.Api.Services
             throw new NotImplementedException();
         }
 
-        public Task<PagedResult?> ListAsync(CancellationToken cancellationToken)
+        public Task<PagedResultStore?> ListAsync(CancellationToken cancellationToken)
         {
             throw new NotImplementedException();
         }

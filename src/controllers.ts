@@ -51,6 +51,8 @@ import {
   renderDocComment,
 } from "./renderer.js";
 import { getServerName } from "./decorators.js";
+import { csharpModelName } from "./naming.js";
+import { resolvePayloadType } from "./payloads.js";
 import { ResolvedOptions, sortUsings } from "./emitter.js";
 import { SCALAR_MAP, FORMAT_MAP, pascalCase, camelCase } from "./utils.js";
 
@@ -378,8 +380,14 @@ function httpParamBinding(
  * Determines the C# return type for an HTTP operation by inspecting the first
  * 2xx response body type.
  *
+ * The body type comes from `@typespec/http`, so a response model's explicit
+ * `@body` / `@bodyRoot` type is returned rather than the response model. For an
+ * implicit body (a response model mixing metadata with plain properties) the
+ * response model itself is returned, matching the class emitted for it.
+ *
  * `@error` models are skipped — errors are raised as exceptions and are not
- * returned by service methods.  Returns `"void"` when no non-error 2xx body is
+ * returned by service methods. This covers both an `@error` body and an
+ * `@error` response envelope whose `@body` type is not itself `@error`.  Returns `"void"` when no non-error 2xx body is
  * found (e.g. `void`, `204 No Content`, or response unions that contain only
  * error variants).
  *
@@ -403,10 +411,17 @@ function resolveReturnType(
       (typeof code === "number" && code >= 200 && code < 300) ||
       (typeof code === "object" && code.start >= 200 && code.end < 300);
     if (!is2xx) continue;
+    // An @error envelope can declare a 2xx status with `@body body: Problem`;
+    // its resolved body is the non-error `Problem`, so check the envelope too.
+    if (isErrorModel(program, response.type)) continue;
 
     for (const content of response.responses) {
       if (content.body?.bodyKind === "single") {
-        const bodyType = content.body.type;
+        const bodyType = resolvePayloadType(
+          content.body.type,
+          content.body.property,
+          response.type,
+        );
         // Skip @error models even when they appear under a 2xx status code.
         if (isErrorModel(program, bodyType)) continue;
         return typeRef(program, bodyType, options);
@@ -483,17 +498,15 @@ function typeRef(
       if (isMergePatch(program, type)) {
         const source = getMergePatchSource(program, type);
         if (source) {
-          const sourceName =
-            getServerName(program, source) ?? pascalCase(source.name);
+          const sourceName = csharpModelName(program, source);
           return options.mergePatchStyle === "typed"
             ? `${options.modelsNamespace}.${sourceName}MergePatchUpdate`
             : `${options.helpersNamespace}.MergePatch<${options.modelsNamespace}.${sourceName}>`;
         }
       }
-      const modelName =
-        getServerName(program, type) ??
-        (type.name ? pascalCase(type.name) : undefined);
-      return modelName ? `${options.modelsNamespace}.${modelName}` : "object";
+      return type.name
+        ? `${options.modelsNamespace}.${csharpModelName(program, type)}`
+        : "object";
     }
     case "Enum":
       return `${options.modelsNamespace}.${pascalCase(type.name)}`;

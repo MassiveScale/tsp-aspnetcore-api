@@ -30,7 +30,6 @@ public partial class DogPatchValidator : AbstractValidator<MarketOnce.Community.
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
-
         ExtendRules();
     }
 
@@ -51,9 +50,11 @@ public partial class DogPatchValidator : AbstractValidator<MarketOnce.Community.
     }
 
     /// <summary>
-    /// Override this method to add custom validation rules beyond the auto-generated ones.
+    /// Implement this partial method in a hand-written part of this class to add custom
+    /// validation rules beyond the auto-generated ones. When no implementation exists,
+    /// the compiler removes both this declaration and the call to it.
     /// </summary>
-    protected virtual void ExtendRules() { }
+    partial void ExtendRules();
 }
 
 #pragma warning restore CS0612 // Type or member is obsolete

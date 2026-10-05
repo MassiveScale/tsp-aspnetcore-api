@@ -9,6 +9,7 @@
  */
 
 import {
+  type ArrayValue,
   Enum,
   Model,
   ModelProperty,
@@ -26,6 +27,7 @@ import {
   isRecordModelType,
   isStdNamespace,
   isTemplateDeclaration,
+  isTemplateInstance,
   resolvePath,
 } from "@typespec/compiler";
 import {
@@ -33,6 +35,8 @@ import {
   isMergePatch,
 } from "@typespec/http/experimental/merge-patch";
 import { getServerName } from "./decorators.js";
+import { csharpModelName } from "./naming.js";
+import { classProperties, emittedBaseModel } from "./payloads.js";
 import {
   ResolvedOptions,
   csharpNamespaceFor,
@@ -95,7 +99,8 @@ export async function emitModelsAndEnums(
   renderer: Renderer,
   options: ResolvedOptions,
 ): Promise<void> {
-  const inferredEnums = collectInferredEnums(models, enums, options);
+  const inferredEnums = collectInferredEnums(program, models, enums, options);
+  const emittedModels: ReadonlySet<Model> = new Set(models);
 
   for (const model of models) {
     // All models and interfaces share a flat namespace.
@@ -116,8 +121,7 @@ export async function emitModelsAndEnums(
     const classUsings = collectUsings(options);
     const interfaceUsings = collectUsings(options);
 
-    const emittedModelName =
-      getServerName(program, model) ?? pascalCase(model.name);
+    const emittedModelName = csharpModelName(program, model);
     const classFileName = `${emittedModelName}${options.fileExtension}`;
     await emitFile(program, {
       path: resolvePath(options.modelsOutputDir, ...classFolder, classFileName),
@@ -125,7 +129,9 @@ export async function emitModelsAndEnums(
         fileName: classFileName,
         namespace: classNs,
         usings: classUsings,
-        body: renderer.renderClass(buildClassView(program, model, options)),
+        body: renderer.renderClass(
+          buildClassView(program, model, options, emittedModels),
+        ),
       }),
     });
 
@@ -302,19 +308,27 @@ function sortUsings(set: Set<string>): string[] {
  * @param program - The compiled TypeSpec program.
  * @param model - The TypeSpec model node.
  * @param options - Resolved options for type resolution and nullability.
+ * @param emittedModels - Models that get a C# class.
  * @returns Populated class view model.
  */
 function buildClassView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  emittedModels: ReadonlySet<Model>,
 ): ClassView {
-  const className = getServerName(program, model) ?? pascalCase(model.name);
+  const className = csharpModelName(program, model);
   const safeClassName = className.startsWith("@")
     ? className.slice(1)
     : className;
 
-  const discriminator = buildDiscriminatorView(program, model, options);
+  const discriminator = buildDiscriminatorView(
+    program,
+    model,
+    options,
+    emittedModels,
+  );
+  const baseModel = emittedBaseModel(program, model);
 
   return {
     doc: docFor(program, model),
@@ -322,8 +336,8 @@ function buildClassView(
     interfaceName: options.emitInterfaces
       ? `${options.interfacesNamespace}.I${safeClassName}`
       : undefined,
-    baseClass: model.baseModel
-      ? typeReference(model.baseModel, options, program)
+    baseClass: baseModel
+      ? typeReference(baseModel, options, program)
       : undefined,
     properties: buildPropertyViews(program, model, options),
     discriminator,
@@ -366,8 +380,13 @@ function discriminatorPropertyNameInHierarchy(
  * {@link buildPropertyViews}) — System.Text.Json rejects a declared property
  * name that collides with `TypeDiscriminatorPropertyName`.
  *
+ * Derived models that get no class (see `analyzePayloadModels`) are left out,
+ * so the attributes never reference a type that doesn't exist.
+ *
  * @param program - The compiled TypeSpec program.
  * @param model - The TypeSpec model node to inspect.
+ * @param options - Resolved options (models namespace).
+ * @param emittedModels - Models that get a C# class.
  * @returns A populated discriminator view, or `undefined` when `model` has no
  *   `@discriminator` decorator of its own.
  */
@@ -375,14 +394,16 @@ function buildDiscriminatorView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  emittedModels: ReadonlySet<Model>,
 ): DiscriminatorView | undefined {
   const discriminator = getDiscriminator(program, model);
   if (!discriminator) return undefined;
 
   const [union] = getDiscriminatedUnionFromInheritance(model, discriminator);
   const derivedTypes: DiscriminatedTypeView[] = [...union.variants.entries()]
+    .filter(([, derivedModel]) => emittedModels.has(derivedModel))
     .map(([discriminatorValue, derivedModel]) => ({
-      className: `${options.modelsNamespace}.${getServerName(program, derivedModel) ?? pascalCase(derivedModel.name)}`,
+      className: `${options.modelsNamespace}.${csharpModelName(program, derivedModel)}`,
       discriminatorValue,
     }))
     .sort((a, b) => a.discriminatorValue.localeCompare(b.discriminatorValue));
@@ -406,10 +427,10 @@ function buildInterfaceView(
   model: Model,
   options: ResolvedOptions,
 ): InterfaceView {
-  const ifaceName = getServerName(program, model) ?? pascalCase(model.name);
-  const baseIfaceName = model.baseModel
-    ? (getServerName(program, model.baseModel) ??
-      pascalCase(model.baseModel.name))
+  const ifaceName = csharpModelName(program, model);
+  const baseModel = emittedBaseModel(program, model);
+  const baseIfaceName = baseModel
+    ? csharpModelName(program, baseModel)
     : undefined;
   return {
     doc: docFor(program, model),
@@ -452,19 +473,23 @@ function buildEnumView(program: Program, en: Enum): EnumView {
  * Handles the value kinds that map cleanly to C# literals:
  * - `EnumValue`    → `EnumTypeName.MemberName`
  * - `StringValue`  → `"value"`
- * - `NumericValue` → `42` / `3.14`
+ * - `NumericValue` → `42` / `3.14` (suffixed `m` / `f` for `decimal` / `float` targets)
  * - `BooleanValue` → `true` | `false`
  * - `NullValue`    → `null`
+ * - `ArrayValue`   → `new List<T> { ... }` (see {@link arrayInitializer})
  *
- * Returns `undefined` for complex value kinds (objects, arrays, scalars) that
- * cannot be represented as a simple C# literal.
+ * Returns `undefined` for complex value kinds (objects, scalar constructors)
+ * that cannot be represented as a simple C# literal.
  *
  * @param value - The TypeSpec default value from `ModelProperty.defaultValue`.
+ * @param targetType - The C# type the initializer is assigned to, e.g.
+ *   `"IList<int>?"`. Used to pick numeric literal suffixes and the list element type.
  * @param options - Resolved options (namespace used to qualify the enum type).
  * @returns A C# initializer expression string, or `undefined` if unsupported.
  */
 function defaultValueInitializer(
   value: Value,
+  targetType: string,
   options: ResolvedOptions,
 ): string | undefined {
   switch (value.valueKind) {
@@ -473,21 +498,125 @@ function defaultValueInitializer(
       return `${options.modelsNamespace}.${pascalCase(member.enum.name)}.${pascalCase(member.name)}`;
     }
     case "StringValue":
-      return `"${value.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+      return csharpStringLiteral(value.value);
     case "NumericValue":
-      return value.value.toString();
+      return numericLiteral(value.value.toString(), targetType);
     case "BooleanValue":
       return value.value ? "true" : "false";
     case "NullValue":
       return "null";
+    case "ArrayValue":
+      return arrayInitializer(value, targetType, options);
     default:
       return undefined;
   }
 }
 
+/** Short C# escape sequences for characters that cannot appear raw in a string literal. */
+const CSHARP_STRING_ESCAPES: Record<string, string> = {
+  "\\": "\\\\",
+  '"': '\\"',
+  "\0": "\\0",
+  "\x07": "\\a",
+  "\b": "\\b",
+  "\f": "\\f",
+  "\n": "\\n",
+  "\r": "\\r",
+  "\t": "\\t",
+  "\v": "\\v",
+};
+
+/** Code points C# treats as line breaks besides `\r` / `\n`: NEL, LS and PS. */
+const CSHARP_EXTRA_LINE_BREAKS = new Set([0x85, 0x2028, 0x2029]);
+
 /**
- * Builds the ordered array of {@link PropertyView} objects for all properties
- * of a TypeSpec model.
+ * Converts a string to a C# regular string literal, escaping backslashes,
+ * quotes, and every control or line-terminator character. A raw newline (or
+ * U+0085 / U+2028 / U+2029, which C# also treats as line breaks) inside a
+ * regular string literal is a compile error.
+ *
+ * @param value - The string to encode.
+ * @returns A quoted C# string literal, e.g. `"line1\nline2"`.
+ */
+function csharpStringLiteral(value: string): string {
+  let escaped = "";
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    const short = CSHARP_STRING_ESCAPES[char];
+    if (short) {
+      escaped += short;
+    } else if (
+      code < 0x20 ||
+      code === 0x7f ||
+      CSHARP_EXTRA_LINE_BREAKS.has(code)
+    ) {
+      escaped += `\\u${code.toString(16).padStart(4, "0")}`;
+    } else {
+      escaped += char;
+    }
+  }
+  return `"${escaped}"`;
+}
+
+/**
+ * C# numeric literal suffixes required when a literal is assigned to a type
+ * that has no implicit conversion from `int` / `double` literals.
+ */
+const NUMERIC_LITERAL_SUFFIXES: Record<string, string> = {
+  decimal: "m",
+  float: "f",
+};
+
+/**
+ * Appends the C# literal suffix needed for `targetType` (e.g. `2.5` → `2.5m`
+ * for `decimal`), so the initializer compiles without an explicit cast.
+ *
+ * @param literal - The numeric literal text.
+ * @param targetType - The C# type the literal is assigned to, possibly nullable.
+ * @returns The literal, suffixed when required.
+ */
+function numericLiteral(literal: string, targetType: string): string {
+  const suffix = NUMERIC_LITERAL_SUFFIXES[targetType.replace(/\?$/, "")];
+  return suffix ? `${literal}${suffix}` : literal;
+}
+
+/** Captures the element type `T` of a C# `IList<T>` / `IList<T>?` type string. */
+const LIST_TYPE_PATTERN = /^IList<(.+)>\??$/;
+
+/**
+ * Converts a TypeSpec array default (`#[1, 2, 3]`) to a C# list initializer,
+ * e.g. `new List<int> { 1, 2, 3 }`. Elements are converted recursively, so
+ * nested arrays and enum members are supported.
+ *
+ * @param value - The TypeSpec array value.
+ * @param targetType - The C# property type; must be `IList<T>` (optionally nullable).
+ * @param options - Resolved options passed through to element conversion.
+ * @returns The list initializer, or `undefined` when the target is not a list
+ *   or any element cannot be converted.
+ */
+function arrayInitializer(
+  value: ArrayValue,
+  targetType: string,
+  options: ResolvedOptions,
+): string | undefined {
+  const elementType = LIST_TYPE_PATTERN.exec(targetType)?.[1];
+  if (!elementType) return undefined;
+  if (value.values.length === 0) return `new List<${elementType}>()`;
+
+  const elements: string[] = [];
+  for (const element of value.values) {
+    const initializer = defaultValueInitializer(element, elementType, options);
+    if (initializer === undefined) return undefined;
+    elements.push(initializer);
+  }
+  return `new List<${elementType}> { ${elements.join(", ")} }`;
+}
+
+/**
+ * Builds the ordered array of {@link PropertyView} objects for the class
+ * properties of a TypeSpec model (see {@link classProperties}): envelope
+ * properties and properties typed as envelope models are omitted, and
+ * properties of skipped envelope base models are flattened in.
  *
  * @param program - The compiled TypeSpec program.
  * @param model - The TypeSpec model node.
@@ -503,7 +632,7 @@ function buildPropertyViews(
     program,
     model,
   );
-  return [...model.properties.values()]
+  return classProperties(program, model)
     .filter((prop) => prop.name !== discriminatorPropertyName)
     .map((prop) => {
       const encoding = resolvePropertyEncoding(program, prop, options);
@@ -514,7 +643,11 @@ function buildPropertyViews(
         options,
         encoding.typeOverride,
       );
-      const inferredEnumType = inferredEnumTypeNameForProperty(model, prop);
+      const inferredEnumType = inferredEnumTypeNameForProperty(
+        program,
+        model,
+        prop,
+      );
       const qualifiedInferredEnumType = inferredEnumType
         ? `${options.modelsNamespace}.${inferredEnumType}`
         : undefined;
@@ -527,6 +660,7 @@ function buildPropertyViews(
         attributes: encoding.attributes,
         initializer: resolveInitializer(
           prop.defaultValue,
+          type,
           qualifiedInferredEnumType,
           options,
         ),
@@ -542,11 +676,13 @@ function buildPropertyViews(
  * instead of the raw string. Falls back to {@link defaultValueInitializer} for
  * all other cases.
  *
+ * @param targetType - The C# property type the initializer is assigned to.
  * @param qualifiedInferredEnumType - Fully-qualified inferred enum type name,
  *   already prefixed with `options.modelsNamespace`.
  */
 function resolveInitializer(
   value: Value | undefined,
+  targetType: string,
   qualifiedInferredEnumType: string | undefined,
   options: ResolvedOptions,
 ): string | undefined {
@@ -554,7 +690,7 @@ function resolveInitializer(
   if (qualifiedInferredEnumType && value.valueKind === "StringValue") {
     return `${qualifiedInferredEnumType}.${pascalCase(value.value)}`;
   }
-  return defaultValueInitializer(value, options);
+  return defaultValueInitializer(value, targetType, options);
 }
 
 /**
@@ -726,8 +862,8 @@ function resolvePropertyEncoding(
 }
 
 /**
- * Returns `true` when any property of `model` uses `@encode(string)` on a
- * boolean, meaning the `BooleanStringJsonConverter` helper must be emitted.
+ * Returns `true` when any class property of `model` uses `@encode(string)` on
+ * a boolean, meaning the `BooleanStringJsonConverter` helper must be emitted.
  *
  * @param program - The compiled TypeSpec program.
  * @param model - The model to scan.
@@ -738,7 +874,7 @@ export function modelUsesBooleanStringEncoding(
   model: Model,
   options: ResolvedOptions,
 ): boolean {
-  for (const prop of model.properties.values()) {
+  for (const prop of classProperties(program, model)) {
     if (
       resolvePropertyEncoding(program, prop, options).usesBooleanStringConverter
     ) {
@@ -782,7 +918,11 @@ function propertyTypeName(
     if (format && FORMAT_MAP[format.toLowerCase()]) {
       type = FORMAT_MAP[format.toLowerCase()];
     } else {
-      const inferredEnumType = inferredEnumTypeNameForProperty(model, prop);
+      const inferredEnumType = inferredEnumTypeNameForProperty(
+        program,
+        model,
+        prop,
+      );
       type = inferredEnumType
         ? `${options.modelsNamespace}.${inferredEnumType}`
         : typeReference(prop.type, options, program);
@@ -796,14 +936,21 @@ function propertyTypeName(
  * Returns the inferred enum type name for a string-literal union property.
  *
  * For MergePatchUpdate models, uses the base model stem so
- * `WidgetMergePatchUpdate.color` resolves to `WidgetColor`.
+ * `WidgetMergePatchUpdate.color` resolves to `WidgetColor`. For template
+ * instances, uses the instance's class name (`PagedResultWidget`) so two
+ * instantiations with different literal unions never share one enum.
  */
 function inferredEnumTypeNameForProperty(
+  program: Program,
   model: Model,
   prop: ModelProperty,
 ): string | undefined {
   if (!getStringLiteralUnionValues(prop.type)) return undefined;
-  return `${pascalCase(model.name)}${pascalCase(prop.name)}`;
+  const modelStem =
+    isTemplateInstance(model) && !isMergePatch(program, model)
+      ? csharpModelName(program, model).replace(/^@/, "")
+      : pascalCase(model.name);
+  return `${modelStem}${pascalCase(prop.name)}`;
 }
 
 /**
@@ -826,9 +973,12 @@ function getStringLiteralUnionValues(type: Type): string[] | undefined {
 }
 
 /**
- * Collects inferred enums from model properties defined as string-literal unions.
+ * Collects inferred enums from class properties defined as string-literal
+ * unions. Envelope properties (e.g. a `@header` typed as `"a" | "b"`) are
+ * skipped, since no class property references them.
  */
 function collectInferredEnums(
+  program: Program,
   models: Model[],
   explicitEnums: Enum[],
   options: ResolvedOptions,
@@ -845,11 +995,11 @@ function collectInferredEnums(
       ? []
       : folderSegments(options.effectiveRootNamespace, typespecNs);
 
-    for (const prop of model.properties.values()) {
+    for (const prop of classProperties(program, model)) {
       const values = getStringLiteralUnionValues(prop.type);
       if (!values) continue;
 
-      const name = inferredEnumTypeNameForProperty(model, prop);
+      const name = inferredEnumTypeNameForProperty(program, model, prop);
       if (!name) continue;
 
       const key = `${ns}.${name}`;
@@ -921,15 +1071,15 @@ function typeReference(
       if (program && isMergePatch(program, type)) {
         const source = getMergePatchSource(program, type);
         if (source) {
-          const sourceName =
-            getServerName(program, source) ?? pascalCase(source.name);
+          const sourceName = csharpModelName(program, source);
           return `${options.helpersNamespace}.MergePatch<${options.modelsNamespace}.${sourceName}>`;
         }
       }
-      const modelName =
-        (program ? getServerName(program, type) : undefined) ??
-        (type.name ? pascalCase(type.name) : undefined);
-      return modelName ? `${options.modelsNamespace}.${modelName}` : "object";
+      if (!type.name) return "object";
+      const modelName = program
+        ? csharpModelName(program, type)
+        : pascalCase(type.name);
+      return `${options.modelsNamespace}.${modelName}`;
     }
     case "Enum":
       return `${options.modelsNamespace}.${pascalCase(type.name)}`;

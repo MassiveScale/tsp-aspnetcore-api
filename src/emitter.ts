@@ -31,7 +31,6 @@ import {
   resolvePath,
 } from "@typespec/compiler";
 import { isMergePatch } from "@typespec/http/experimental/merge-patch";
-import { getServerName } from "./decorators.js";
 import { EmitterOptions, reportDiagnostic } from "./lib.js";
 import { pascalCase } from "./utils.js";
 import {
@@ -52,6 +51,8 @@ import {
   shouldEmitEnum,
 } from "./models.js";
 import { emitHelpers } from "./helpers.js";
+import { csharpModelName } from "./naming.js";
+import { analyzePayloadModels } from "./payloads.js";
 import { emitValidators } from "./validators.js";
 import { cleanOutputDirectories } from "./clean.js";
 
@@ -143,7 +144,8 @@ export interface ResolvedOptions {
  * compiler.
  *
  * Emits:
- * - One `<Model>.g.cs` and `I<Model>.g.cs` per TypeSpec model.
+ * - One `<Model>.g.cs` and `I<Model>.g.cs` per payload model (see
+ *   {@link analyzePayloadModels}); response and metadata-only models are skipped.
  * - One `<Name>.g.cs` per TypeSpec enum.
  * - One controller file and one service-interface file per HTTP operation
  *   container.
@@ -172,18 +174,20 @@ export async function $onEmit(
     await cleanOutputDirectories(program, options);
   }
 
-  const models: Model[] = [];
+  const candidates: Model[] = [];
   const enums: Enum[] = [];
 
   navigateProgram(program, {
     model(model) {
       if (shouldEmitModel(model) && !isMergePatch(program, model))
-        models.push(model);
+        candidates.push(model);
     },
     enum(en) {
       if (shouldEmitEnum(en)) enums.push(en);
     },
   });
+
+  const models = analyzePayloadModels(program, candidates);
 
   await emitModelsAndEnums(program, models, enums, renderer, options);
 
@@ -216,7 +220,7 @@ export async function $onEmit(
   await emitHelpers(program, models, renderer, options);
 
   if (options.emitValidators) {
-    await emitValidators(program, options);
+    await emitValidators(program, options, new Set(models));
   }
 }
 
@@ -297,7 +301,7 @@ export function computeModelFqName(
   options: ResolvedOptions,
 ): string {
   const classNs = options.modelsNamespace;
-  const className = getServerName(program, model) ?? pascalCase(model.name);
+  const className = csharpModelName(program, model);
   return classNs ? `${classNs}.${className}` : className;
 }
 

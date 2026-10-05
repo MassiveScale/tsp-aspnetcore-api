@@ -42,14 +42,11 @@ public partial class StorePatchValidator : AbstractValidator<MarketOnce.Communit
             .When(x => x.IsDefined("Name") && !x.IsNull("Name"))
             .WithName("Name");
 
-
         // PhoneNumber must not be empty when provided
         this.RuleFor(x => x)
             .Must(x => (x.GetString("PhoneNumber")?.Length ?? 0) > 0)
             .When(x => x.IsDefined("PhoneNumber") && !x.IsNull("PhoneNumber"))
             .WithName("PhoneNumber");
-
-
 
         // Rules added in v2.0
         When(_ => IsAtLeast("v2.0", _apiVersion, _versions), () =>
@@ -71,7 +68,6 @@ public partial class StorePatchValidator : AbstractValidator<MarketOnce.Communit
                 .Must(x => System.Net.Mail.MailAddress.TryCreate(x.GetString("Email") ?? string.Empty, out _))
                 .When(x => x.IsDefined("Email") && !x.IsNull("Email"))
                 .WithName("Email");
-
 
         });
 
@@ -95,9 +91,11 @@ public partial class StorePatchValidator : AbstractValidator<MarketOnce.Communit
     }
 
     /// <summary>
-    /// Override this method to add custom validation rules beyond the auto-generated ones.
+    /// Implement this partial method in a hand-written part of this class to add custom
+    /// validation rules beyond the auto-generated ones. When no implementation exists,
+    /// the compiler removes both this declaration and the call to it.
     /// </summary>
-    protected virtual void ExtendRules() { }
+    partial void ExtendRules();
 }
 
 #pragma warning restore CS0612 // Type or member is obsolete
