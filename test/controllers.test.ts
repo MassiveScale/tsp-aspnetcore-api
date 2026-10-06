@@ -60,6 +60,56 @@ describe("csharp emitter - controllers", () => {
         "expected MergePatchUpdate model to be replaced with MergePatch<Widget>",
       );
     });
+
+    it("keeps the namespace on model names that clash with framework types", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+        @service namespace Demo;
+        model Task { id: string; title: string; }
+        model Version { id: string; }
+        enum Severity { low, high }
+        model Note { id: string; severity?: Severity; }
+        @route("/tasks") interface Tasks {
+          @get get(@path id: string): Task;
+          @post create(@body body: Task): Task;
+        }
+        @route("/versions") interface Versions {
+          @get list(): Version[];
+        }
+        @route("/notes") interface Notes {
+          @get get(@path id: string): Note;
+        }
+      `);
+
+      const tasks = results["Controllers/TasksControllerBase.g.cs"];
+      ok(
+        tasks.includes("[FromBody] Demo.Models.Task body"),
+        `expected Task to stay qualified next to System.Threading.Tasks:\n${tasks}`,
+      );
+      const service = results["Services/ITasksService.g.cs"];
+      ok(
+        service.includes("Task<Demo.Models.Task?> GetAsync") &&
+          !service.includes("Task<Task"),
+        `expected the service interface to qualify Task:\n${service}`,
+      );
+      const versions = results["Services/IVersionsService.g.cs"];
+      ok(
+        versions.includes("IList<Demo.Models.Version>"),
+        `expected Version to stay qualified next to System:\n${versions}`,
+      );
+      const notes = results["Services/INotesService.g.cs"];
+      ok(
+        notes.includes("Task<Note?> GetAsync") &&
+          !notes.includes("Demo.Models.Note"),
+        `expected non-clashing names to stay short:\n${notes}`,
+      );
+      const note = results["Note.g.cs"];
+      ok(
+        note.includes("Demo.Models.Severity? Severity"),
+        `expected the Severity enum reference to stay qualified:\n${note}`,
+      );
+    });
   });
 
   describe("cancellation-token option", () => {

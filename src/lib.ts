@@ -409,6 +409,12 @@ export const $lib = createTypeSpecLibrary({
         default: paramMessage`"${"variant"}" is a response or metadata-only model, so it gets no class and is omitted from the polymorphic types of "${"base"}". A payload with ${"property"} "${"value"}" will not deserialize.`,
       },
     },
+    "merge-patch-recursive-reference": {
+      severity: "error",
+      messages: {
+        default: paramMessage`"${"property"}" makes nested MergePatch validation recursive (${"cycle"}), which is not supported: the generated PATCH validators would depend on each other and could not be resolved from dependency injection. Break the loop, for example by excluding the property from updates with @visibility, or emit only POST validators with validators: "post".`,
+      },
+    },
     "output-file-left-behind": {
       severity: "warning",
       messages: {

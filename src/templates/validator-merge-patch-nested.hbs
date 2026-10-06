@@ -1,0 +1,77 @@
+{{!--
+  validator-merge-patch-nested.hbs — partial registered as `mergePatchNestedRules`.
+
+  Renders the rule that validates a model-typed property of a MergePatch body.
+  Used by validator-patch.hbs and validator-patch-version-aware.hbs; custom
+  PATCH validator templates can include it with `{{> mergePatchNestedRules}}`.
+  When included on its own line, every rendered line gets that line's indent.
+
+  ── Template variables (one entry of `properties`) ──────────────────────────
+  name                          — Wire/C# property name (e.g. "Appearance")
+  isCollectionReference         — True for an array of models
+  referencedQualifiedModelName  — Item model type used to deserialize array items
+  mergePatchValidatorParamName  — Constructor parameter holding the nested validator
+  mergePatchFactoryTypeName     — Patch type whose FromJson builds the nested patch
+
+  The enclosing constructor must declare `jsonSerializerOptions`.
+--}}
+{{#if isCollectionReference}}
+// {{{name}}} replaces the whole array, so each item is validated as a complete model
+this.RuleFor(x => x).Custom((patch, context) =>
+{
+    if (!patch.Properties.TryGetValue("{{{name}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+    if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
+    {
+        context.AddFailure("{{{name}}}", "'{{{name}}}' must be an array.");
+        return;
+    }
+    var index = 0;
+    foreach (var item in element.EnumerateArray())
+    {
+        if (item.ValueKind != System.Text.Json.JsonValueKind.Object)
+        {
+            context.AddFailure($"{{{name}}}[{index}]", "Array items must be objects.");
+            index++;
+            continue;
+        }
+        {{{referencedQualifiedModelName}}}? nestedModel;
+        try
+        {
+            nestedModel = System.Text.Json.JsonSerializer.Deserialize<{{{referencedQualifiedModelName}}}>(item.GetRawText(), jsonSerializerOptions);
+        }
+        catch (System.Exception ex) when (ex is System.Text.Json.JsonException or System.NotSupportedException or System.InvalidOperationException)
+        {
+            // NotSupportedException: an abstract or polymorphic item sent without its type discriminator.
+            context.AddFailure($"{{{name}}}[{index}]", "The array item could not be deserialized.");
+            index++;
+            continue;
+        }
+        if (nestedModel is null)
+        {
+            context.AddFailure($"{{{name}}}[{index}]", "Array items must be objects.");
+        }
+        else
+        {
+            var nestedResult = {{{mergePatchValidatorParamName}}}.Validate(nestedModel);
+            foreach (var failure in nestedResult.Errors)
+                context.AddFailure($"{{{name}}}[{index}].{failure.PropertyName}", failure.ErrorMessage);
+        }
+        index++;
+    }
+});
+{{else}}
+// {{{name}}} is merged into the existing value, so it is validated as a nested patch
+this.RuleFor(x => x).Custom((patch, context) =>
+{
+    if (!patch.Properties.TryGetValue("{{{name}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+    if (element.ValueKind != System.Text.Json.JsonValueKind.Object)
+    {
+        context.AddFailure("{{{name}}}", "'{{{name}}}' must be an object.");
+        return;
+    }
+    var nestedPatch = {{{mergePatchFactoryTypeName}}}.FromJson(element.GetRawText(), jsonSerializerOptions);
+    var nestedResult = {{{mergePatchValidatorParamName}}}.Validate(nestedPatch);
+    foreach (var failure in nestedResult.Errors)
+        context.AddFailure($"{{{name}}}.{failure.PropertyName}", failure.ErrorMessage);
+});
+{{/if}}

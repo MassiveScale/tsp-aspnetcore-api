@@ -9,8 +9,10 @@
 using FluentValidation;
 {{#unless fullyQualifiedTypes}}
 using {{{modelsNamespace}}};
-{{#if useHelpersNamespace}}using {{{helpersNamespace}}};
-{{/if}}{{/unless}}
+{{#if useHelpersNamespace}}
+using {{{helpersNamespace}}};
+{{/if}}
+{{/unless}}
 {{#if namespace}}
 
 namespace {{{namespace}}};

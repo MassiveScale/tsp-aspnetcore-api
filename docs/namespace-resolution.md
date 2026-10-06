@@ -58,6 +58,8 @@ options:
 
 With `namespace-from-path: false` and a matching root namespace, models in `Legacy.Common` are placed under `Models/Common/` because their TypeSpec namespace is mapped to `Acme.Common` before the `Acme` prefix is stripped.
 
-## Fully-qualified cross-references
+## Cross-section references
 
-Because each section can have its own namespace, generated code never relies on `using` directives to reference types from another section (or another model in the same section) — every reference is written as a fully-qualified name, e.g. `Acme.Controllers` action signatures reference `Acme.Models.Widget`, not a bare `Widget` paired with `using Acme.Models;`. See [Cross-namespace references](models.md#cross-namespace-references) for the full list of reference sites this covers.
+Each section has its own namespace, so a file that references a type from another section needs either a `using` directive or a qualified name. By default (`fully-qualified-types: false`) generated files import the models and helpers namespaces they need and use short names, e.g. `Acme.Controllers` action signatures reference `Widget` alongside `using Acme.Models;`. Set `fully-qualified-types: true` to write `Acme.Models.Widget` instead and rely on no imports.
+
+Model and enum names that clash with a framework type imported by generated files (`Task`, `Version`, `File`, …) are always qualified, whatever the setting. See [Cross-namespace references](models.md#cross-namespace-references) for the full list of reference sites and the name-clash rule.

@@ -8,10 +8,16 @@ All notable changes to this project will be documented in this file.
 
 - Object-value defaults (`= #{...}`) now generate fresh nested model initializers, including nested objects and object values inside arrays. See [Model Generation — Default property values](docs/models.md#default-property-values).
 - `TryPatch` optionally reports rejected JSON paths while preserving the existing non-throwing `Patch` API. Valid sibling properties continue to apply when another path is rejected. See [RFC 7396 Merge Patch](docs/merge-patch.md).
+- `merge-patch-recursive-reference` error diagnostic, reported on a property that makes nested MergePatch validation recursive (`model Node { child?: Node; }`, or `A → B → A`). Such validators would need each other in their constructors and couldn't be resolved from dependency injection. See [Validators — Recursive models](docs/validators.md#recursive-models).
+- A model validated both as a plain PATCH body and as a nested MergePatch body now gets two validators: `{Model}PatchValidator` for the plain body and `{Model}MergePatchValidator` for `MergePatch<{Model}>`. Previously the later route silently replaced the earlier body type, so the result depended on route order and one of the two validators was missing at runtime. See [Validators — One model, two PATCH body types](docs/validators.md#one-model-two-patch-body-types).
+- The `mergePatchNestedRules` Handlebars partial, and the `validatorName` and `usesJsonOptions` variables, for custom PATCH validator templates. See [Custom Templates — Validator view models](docs/custom-templates.md#validator-view-models).
 
 ### Changed
 
-- Generated references to models, enums, and helpers now use short type names by default and add the required namespace imports. Set `fully-qualified-types: true` to preserve fully qualified references in generated code. This changes generated source text for consumers that compare checked-in output; generated APIs and CLR types are unchanged.
+- **Breaking:** generated references to models, enums, and helpers now use short type names by default, and each generated file imports the namespaces it needs. Model and enum names that clash with a framework type imported by generated files (`Task`, `Version`, `File`, `Action`, `ProblemDetails`, `Severity`, …) always keep their namespace, so they can't cause ambiguous-reference errors (CS0104). See [Model Generation — Cross-namespace references](docs/models.md#cross-namespace-references). To upgrade:
+  - To keep the previous output, set `fully-qualified-types: true`.
+  - Custom validator or `entity-merge-patch` templates copied from an earlier release now receive a short `qualifiedModelName`. Add the `using` lines for `modelsNamespace` and `helpersNamespace`, or set `fully-qualified-types: true`. See [Custom Templates — Upgrading custom templates](docs/custom-templates.md#upgrading-custom-templates).
+- **Breaking:** MergePatch PATCH validators that validate nested model properties take `IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>` as an extra constructor parameter and read nested values with the application's JSON settings. DI supplies it automatically after `AddControllers()`; code that constructs these validators directly must pass it. See [Validators — JSON options](docs/validators.md#json-options).
 - **Breaking:** `Patch` now recursively merges nested JSON objects instead of replacing the entire nested value. Explicit `null` removes a value at any depth so the model's default initializer can restore it; arrays still replace as a whole. Callers that relied on nested-object replacement must send the complete object or apply replacement logic themselves.
 - **Breaking:** MergePatch validators now recursively validate nested model objects and complete replacement array elements. Invalid nested enums, constraints, required nulls, lifecycle-restricted members, and non-object values that previously passed can now fail validation. Later-version nested members retain their version guards. See [Validators — PATCH body shapes](docs/validators.md#patch-body-shapes).
 
@@ -25,6 +31,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Nested PATCH validators are now emitted for model references that only a derived type declares, and derived types of a nested `@discriminator` base now get the POST validators their base validator injects. Previously these validators were injected but never generated or registered, so resolving the parent validator from DI threw.
+- A MergePatch array item that can't be deserialized (for example an abstract `@discriminator` item sent without its discriminator) now fails validation with "The array item could not be deserialized." instead of throwing `NotSupportedException` and returning HTTP 500.
+- `Patch` / `TryPatch` now merge object values into `Record<T>` (dictionary) and free-form JSON properties key by key. Previously every key was rejected as an unknown member, so the dictionary was never updated.
+- `Patch` / `TryPatch` apply all properties in one serialize/merge/deserialize pass instead of one pass per property, and cache property lookups per type.
+- Generated PATCH validators no longer have a misaligned constructor or an extra blank line after the `using` block.
 - Widened the `@typespec/versioning` peer dependency from `^0.85.0` to `>=0.85.0 <1.0.0`. For a `0.x` package, `^0.85.0` only allows `0.85.x`, so consumers on `@typespec/versioning` 0.86 or later got peer-dependency conflicts.
 
 ## [0.15.0] - 2026-10-05

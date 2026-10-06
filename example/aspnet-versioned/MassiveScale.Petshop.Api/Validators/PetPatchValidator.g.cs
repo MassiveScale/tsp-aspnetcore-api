@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.Http;
 using MarketOnce.Community.Campaign.Api.Models;
 using MarketOnce.Community.Campaign.Api.Helpers;
 
-
 namespace MarketOnce.Community.Campaign.Api.Validators;
 
 /// <summary>
@@ -29,9 +28,10 @@ public partial class PetPatchValidator : AbstractValidator<MergePatch<Pet>>
     /// <summary>
     /// Initializes a new instance of <see cref="PetPatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
-        public PetPatchValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<Tag> tagValidator)
+    public PetPatchValidator(IHttpContextAccessor httpContextAccessor, Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions> jsonOptions, AbstractValidator<Tag> tagValidator)
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
+        var jsonSerializerOptions = jsonOptions.Value.JsonSerializerOptions;
 
         // Id is read-only and cannot be modified via patch
         this.RuleFor(x => x)
@@ -61,44 +61,49 @@ public partial class PetPatchValidator : AbstractValidator<MergePatch<Pet>>
         // Rules added in v2.0
         When(_ => IsAtLeast("v2.0", _apiVersion, _versions), () =>
         {
-                        this.RuleFor(x => x).Custom((patch, context) =>
-                        {
-                                if (!patch.Properties.TryGetValue("Tags", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
-                                if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
-                                {
-                                        context.AddFailure("Tags", "'Tags' must be an array.");
-                                        return;
-                                }
-                                var index = 0;
-                                foreach (var item in element.EnumerateArray())
-                                {
-                                        if (item.ValueKind != System.Text.Json.JsonValueKind.Object)
-                                        {
-                                                context.AddFailure($"Tags[{index}]", "Array items must be objects.");
-                                                index++;
-                                                continue;
-                                        }
-                                        try
-                                        {
-                                                var nestedModel = System.Text.Json.JsonSerializer.Deserialize<Tag>(item.GetRawText());
-                                                if (nestedModel is null)
-                                                {
-                                                        context.AddFailure($"Tags[{index}]", "Array items must be objects.");
-                                                }
-                                                else
-                                                {
-                                                        var nestedResult = tagValidator.Validate(nestedModel);
-                                                        foreach (var failure in nestedResult.Errors)
-                                                                context.AddFailure($"Tags[{index}].{failure.PropertyName}", failure.ErrorMessage);
-                                                }
-                                        }
-                                        catch (System.Text.Json.JsonException)
-                                        {
-                                                context.AddFailure($"Tags[{index}]", "The array item could not be deserialized.");
-                                        }
-                                        index++;
-                                }
-                        });
+            // Tags replaces the whole array, so each item is validated as a complete model
+            this.RuleFor(x => x).Custom((patch, context) =>
+            {
+                if (!patch.Properties.TryGetValue("Tags", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+                if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
+                {
+                    context.AddFailure("Tags", "'Tags' must be an array.");
+                    return;
+                }
+                var index = 0;
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (item.ValueKind != System.Text.Json.JsonValueKind.Object)
+                    {
+                        context.AddFailure($"Tags[{index}]", "Array items must be objects.");
+                        index++;
+                        continue;
+                    }
+                    Tag? nestedModel;
+                    try
+                    {
+                        nestedModel = System.Text.Json.JsonSerializer.Deserialize<Tag>(item.GetRawText(), jsonSerializerOptions);
+                    }
+                    catch (System.Exception ex) when (ex is System.Text.Json.JsonException or System.NotSupportedException or System.InvalidOperationException)
+                    {
+                        // NotSupportedException: an abstract or polymorphic item sent without its type discriminator.
+                        context.AddFailure($"Tags[{index}]", "The array item could not be deserialized.");
+                        index++;
+                        continue;
+                    }
+                    if (nestedModel is null)
+                    {
+                        context.AddFailure($"Tags[{index}]", "Array items must be objects.");
+                    }
+                    else
+                    {
+                        var nestedResult = tagValidator.Validate(nestedModel);
+                        foreach (var failure in nestedResult.Errors)
+                            context.AddFailure($"Tags[{index}].{failure.PropertyName}", failure.ErrorMessage);
+                    }
+                    index++;
+                }
+            });
 
         });
 

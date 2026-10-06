@@ -3,7 +3,8 @@
  *
  * Resolves the C# class name for a TypeSpec model. Every module that writes or
  * references a model class goes through {@link csharpModelName} so declarations
- * and references can never disagree.
+ * and references can never disagree, and through {@link qualifyTypeName} so
+ * every reference is qualified the same way.
  */
 
 import {
@@ -49,6 +50,154 @@ export function csharpModelName(program: Program, model: Model): string {
   const args = model.templateMapper?.args ?? [];
   const suffix = args.map((arg) => templateArgumentName(program, arg)).join("");
   return `${serverName ?? pascalCase(model.name)}${sanitizeIdentifier(suffix)}`;
+}
+
+/**
+ * Type names exported by the namespaces that generated files import (`System`,
+ * `System.Collections.Generic`, `System.Threading`, `System.Threading.Tasks`,
+ * `Microsoft.AspNetCore.Mvc`, `Microsoft.AspNetCore.Http`, `FluentValidation`,
+ * `Microsoft.Extensions.DependencyInjection`, `System.Text.Json`, and the
+ * implicit usings of the ASP.NET Core SDK). A generated type with one of these
+ * names would be an ambiguous reference (CS0104) when written unqualified, so
+ * {@link qualifyTypeName} always writes it with its namespace.
+ */
+const AMBIGUOUS_SHORT_NAMES: ReadonlySet<string> = new Set([
+  "Action",
+  "ActionResult",
+  "Activator",
+  "Array",
+  "Attribute",
+  "Barrier",
+  "Boolean",
+  "Buffer",
+  "Byte",
+  "CancellationToken",
+  "Char",
+  "Comparer",
+  "Console",
+  "ContentResult",
+  "Controller",
+  "ControllerBase",
+  "Convert",
+  "DateOnly",
+  "DateTime",
+  "DateTimeOffset",
+  "Decimal",
+  "Delegate",
+  "Dictionary",
+  "Directory",
+  "Double",
+  "Endpoint",
+  "Enum",
+  "Environment",
+  "Exception",
+  "File",
+  "FileResult",
+  "Func",
+  "Guid",
+  "Half",
+  "HashSet",
+  "HttpClient",
+  "HttpContext",
+  "HttpRequest",
+  "HttpResponse",
+  "Index",
+  "Int16",
+  "Int32",
+  "Int64",
+  "Interlocked",
+  "JsonDocument",
+  "JsonElement",
+  "JsonResult",
+  "JsonSerializer",
+  "KeyValuePair",
+  "Lazy",
+  "LinkedList",
+  "List",
+  "Lock",
+  "Math",
+  "Memory",
+  "Monitor",
+  "Mutex",
+  "Nullable",
+  "Object",
+  "ObjectResult",
+  "Parallel",
+  "Path",
+  "PriorityQueue",
+  "ProblemDetails",
+  "Progress",
+  "Queue",
+  "Random",
+  "Range",
+  "Results",
+  "Semaphore",
+  "ServiceCollection",
+  "ServiceDescriptor",
+  "ServiceLifetime",
+  "ServiceProvider",
+  "Severity",
+  "Single",
+  "SortedDictionary",
+  "SortedList",
+  "SortedSet",
+  "Span",
+  "Stack",
+  "StatusCodes",
+  "Stream",
+  "String",
+  "Task",
+  "TaskStatus",
+  "Thread",
+  "TimeOnly",
+  "TimeSpan",
+  "TimeZoneInfo",
+  "Timer",
+  "Tuple",
+  "Type",
+  "Uri",
+  "ValidationContext",
+  "ValidationFailure",
+  "ValidationProblemDetails",
+  "ValidationResult",
+  "ValueTask",
+  "Version",
+  "Volatile",
+]);
+
+/**
+ * Returns the identifier used to reference a generated type from another file.
+ *
+ * With `fully-qualified-types: true` the namespace is always included. Otherwise
+ * the short name is returned (the referencing file imports the namespace),
+ * except for names in {@link AMBIGUOUS_SHORT_NAMES}, which keep their namespace
+ * so they cannot collide with a framework type of the same name.
+ *
+ * @param namespace - The C# namespace the type is declared in.
+ * @param typeName - The C# type identifier, possibly `@`-prefixed.
+ * @param options - The `fullyQualifiedTypes` setting.
+ * @returns The type reference to write into generated code.
+ */
+export function qualifyTypeName(
+  namespace: string,
+  typeName: string,
+  options: { fullyQualifiedTypes: boolean },
+): string {
+  if (!namespace) return typeName;
+  if (options.fullyQualifiedTypes || isAmbiguousShortName(typeName)) {
+    return `${namespace}.${typeName}`;
+  }
+  return typeName;
+}
+
+/**
+ * Returns `true` when an unqualified reference to `typeName` would clash with
+ * a framework type imported by generated files.
+ *
+ * @param typeName - The C# type identifier, possibly `@`-prefixed.
+ */
+export function isAmbiguousShortName(typeName: string): boolean {
+  return AMBIGUOUS_SHORT_NAMES.has(typeName.replace(/^@/, ""));
 }
 
 /**

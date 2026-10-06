@@ -36,7 +36,7 @@ import {
   isMergePatch,
 } from "@typespec/http/experimental/merge-patch";
 import { getServerName } from "./decorators.js";
-import { csharpModelName } from "./naming.js";
+import { csharpModelName, qualifyTypeName } from "./naming.js";
 import { classProperties, emittedBaseModel } from "./payloads.js";
 import {
   ResolvedOptions,
@@ -252,9 +252,10 @@ function isInStdNamespace(ns: Namespace | undefined): boolean {
  * Builds the sorted list of `using` namespaces for a single emitted model or
  * interface file.
  *
- * Model, enum, and helper (`MergePatch<T>`) references are always emitted as
- * fully-qualified type names (see {@link typeReference}), so this only needs
- * {@link SYSTEM_USINGS} plus any `additional-usings` from options.
+ * Models and enums live in the models namespace, so references to them need no
+ * import. When `fully-qualified-types` is `false` and the model references the
+ * generic `MergePatch<T>` helper, the helpers namespace is imported as well.
+ * {@link SYSTEM_USINGS} and any `additional-usings` are always included.
  *
  * @param options - Resolved options (additional usings).
  * @returns Sorted, deduplicated array of `using` namespace strings.
@@ -363,7 +364,7 @@ function buildClassView(
     doc: docFor(program, model),
     className,
     interfaceName: options.emitInterfaces
-      ? csharpTypeName(
+      ? qualifyTypeName(
           options.interfacesNamespace,
           `I${safeClassName}`,
           options,
@@ -436,7 +437,7 @@ function buildDiscriminatorView(
   const derivedTypes: DiscriminatedTypeView[] = [...union.variants.entries()]
     .filter(([, derivedModel]) => emittedModels.has(derivedModel))
     .map(([discriminatorValue, derivedModel]) => ({
-      className: csharpTypeName(
+      className: qualifyTypeName(
         options.modelsNamespace,
         csharpModelName(program, derivedModel),
         options,
@@ -467,7 +468,7 @@ function buildInterfaceView(
   const ifaceName = csharpModelName(program, model);
   const baseModel = emittedBaseModel(program, model);
   const baseIfaceName = baseModel
-    ? csharpTypeName(
+    ? qualifyTypeName(
         options.interfacesNamespace,
         `I${csharpModelName(program, baseModel).replace(/^@/, "")}`,
         options,
@@ -540,10 +541,12 @@ function defaultValueInitializer(
     case "EnumValue": {
       const member = value.value;
       const enumName = pascalCase(member.enum.name);
+      // A member named after its own enum type shadows the type inside the
+      // class, so the initializer must spell out the namespace.
       const enumTypeName =
-        options.fullyQualifiedTypes || containingMemberName === enumName
+        containingMemberName === enumName
           ? `${options.modelsNamespace}.${enumName}`
-          : enumName;
+          : qualifyTypeName(options.modelsNamespace, enumName, options);
       return `${enumTypeName}.${pascalCase(member.name)}`;
     }
     case "StringValue":
@@ -720,7 +723,7 @@ function objectInitializer(
       prop,
     );
     const qualifiedInferredEnumType = inferredEnumType
-      ? csharpTypeName(options.modelsNamespace, inferredEnumType, options)
+      ? qualifyTypeName(options.modelsNamespace, inferredEnumType, options)
       : undefined;
     const initializer = resolveInitializer(
       descriptor.value,
@@ -793,7 +796,7 @@ function buildPropertyViews(
         prop,
       );
       const qualifiedInferredEnumType = inferredEnumType
-        ? csharpTypeName(options.modelsNamespace, inferredEnumType, options)
+        ? qualifyTypeName(options.modelsNamespace, inferredEnumType, options)
         : undefined;
       return {
         doc: docFor(program, prop),
@@ -1081,7 +1084,7 @@ function propertyTypeName(
         prop,
       );
       type = inferredEnumType
-        ? csharpTypeName(options.modelsNamespace, inferredEnumType, options)
+        ? qualifyTypeName(options.modelsNamespace, inferredEnumType, options)
         : typeReference(prop.type, options, program);
     }
   }
@@ -1183,15 +1186,6 @@ function buildInferredEnumView(inferred: InferredEnum): EnumView {
   };
 }
 
-/** Applies the configured namespace style to a generated C# type identifier. */
-function csharpTypeName(
-  namespace: string,
-  typeName: string,
-  options: ResolvedOptions,
-): string {
-  return options.fullyQualifiedTypes ? `${namespace}.${typeName}` : typeName;
-}
-
 /**
  * Recursively resolves the C# type string for any TypeSpec {@link Type} node,
  * without applying nullability.
@@ -1237,12 +1231,12 @@ function typeReference(
         const source = getMergePatchSource(program, type);
         if (source) {
           const sourceName = csharpModelName(program, source);
-          const patchName = csharpTypeName(
+          const patchName = qualifyTypeName(
             options.helpersNamespace,
             "MergePatch",
             options,
           );
-          const modelName = csharpTypeName(
+          const modelName = qualifyTypeName(
             options.modelsNamespace,
             sourceName,
             options,
@@ -1254,10 +1248,10 @@ function typeReference(
       const modelName = program
         ? csharpModelName(program, type)
         : pascalCase(type.name);
-      return csharpTypeName(options.modelsNamespace, modelName, options);
+      return qualifyTypeName(options.modelsNamespace, modelName, options);
     }
     case "Enum":
-      return csharpTypeName(
+      return qualifyTypeName(
         options.modelsNamespace,
         pascalCase(type.name),
         options,

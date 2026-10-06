@@ -10,7 +10,6 @@ using FluentValidation;
 using Microsoft.AspNetCore.Http;
 using MarketOnce.Community.Campaign.Api.Models;
 
-
 namespace MarketOnce.Community.Campaign.Api.Validators;
 
 /// <summary>

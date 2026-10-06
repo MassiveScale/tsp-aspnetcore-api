@@ -5,6 +5,12 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { emit, emitWithDiagnostics } from "./host.js";
 
+function describeDiagnostics(
+  diagnostics: readonly { code: string; message: string }[],
+): string {
+  return diagnostics.map((d) => `${d.code}: ${d.message}`).join("\n");
+}
+
 function writeTemplate(name: string, content: string): string {
   const dir = mkdtempSync(join(tmpdir(), "csharp-tpl-"));
   const file = join(dir, `${name}.hbs`);
@@ -429,9 +435,91 @@ describe("csharp emitter - validators", () => {
       );
       ok(
         patchValidator.includes(
-          "JsonSerializer.Deserialize<Tag>(item.GetRawText())",
+          "JsonSerializer.Deserialize<Tag>(item.GetRawText(), jsonSerializerOptions)",
         ) && patchValidator.includes('$"Tags[{index}].{failure.PropertyName}"'),
         `expected full-model array-item validation in:\n${patchValidator}`,
+      );
+    });
+
+    it("reads nested values with the application's MVC JSON options", async () => {
+      const results = await emit(NESTED_MODEL_SOURCE, {
+        "emit-validators": true,
+        "emit-controllers": false,
+        "emit-services": false,
+        "emit-interfaces": false,
+      });
+      const patchValidator = results["Validators/BookPatchValidator.g.cs"];
+      ok(
+        patchValidator.includes(
+          "public BookPatchValidator(Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions> jsonOptions, AbstractValidator<MergePatch<Author>> authorPatchValidator, AbstractValidator<Tag> tagValidator)",
+        ),
+        `expected JsonOptions as the first constructor parameter in:\n${patchValidator}`,
+      );
+      ok(
+        patchValidator.includes(
+          "var jsonSerializerOptions = jsonOptions.Value.JsonSerializerOptions;",
+        ) &&
+          patchValidator.includes(
+            "MergePatch<Author>.FromJson(element.GetRawText(), jsonSerializerOptions)",
+          ),
+        `expected nested patches to use the configured options in:\n${patchValidator}`,
+      );
+
+      const authorPatch = results["Validators/AuthorPatchValidator.g.cs"];
+      ok(
+        authorPatch.includes("public AuthorPatchValidator()") &&
+          !authorPatch.includes("jsonOptions"),
+        `expected validators without nested values to keep a parameterless constructor:\n${authorPatch}`,
+      );
+    });
+
+    it("turns array-item deserialization failures into validation failures", async () => {
+      const results = await emit(NESTED_MODEL_SOURCE, {
+        "emit-validators": true,
+        "emit-controllers": false,
+        "emit-services": false,
+        "emit-interfaces": false,
+      });
+      const patchValidator = results["Validators/BookPatchValidator.g.cs"];
+      ok(
+        patchValidator.includes(
+          "catch (System.Exception ex) when (ex is System.Text.Json.JsonException or System.NotSupportedException or System.InvalidOperationException)",
+        ) &&
+          patchValidator.includes(
+            '"The array item could not be deserialized."',
+          ),
+        `expected abstract-item failures to be caught in:\n${patchValidator}`,
+      );
+    });
+
+    it("indents nested MergePatch rules with the surrounding code", async () => {
+      const results = await emit(NESTED_MODEL_SOURCE, {
+        "emit-validators": true,
+        "emit-controllers": false,
+        "emit-services": false,
+        "emit-interfaces": false,
+      });
+      const lines =
+        results["Validators/BookPatchValidator.g.cs"].split(/\r?\n/);
+      ok(
+        lines.some((line) => line.startsWith("    public BookPatchValidator(")),
+        "expected a 4-space constructor",
+      );
+      ok(
+        lines
+          .filter((line) => line.includes(".Custom((patch, context) =>"))
+          .every((line) => line.startsWith("        this.RuleFor")),
+        "expected nested rules at the 8-space statement indent",
+      );
+      ok(
+        !lines.some((line) => line.length > 0 && line.trim().length === 0),
+        "expected no whitespace-only lines",
+      );
+      const usingEnd = lines.findIndex((line) => line.startsWith("namespace "));
+      strictEqual(
+        lines[usingEnd - 2].startsWith("using "),
+        true,
+        "expected exactly one blank line between the usings and the namespace",
       );
     });
 
@@ -1373,6 +1461,324 @@ describe("csharp emitter - validators", () => {
       ok(
         !validator.includes("RuleFor(x => x.Target)"),
         `did not expect typed property access against a MergePatch body in:\n${validator}`,
+      );
+    });
+  });
+
+  describe("nested PATCH validator discovery", () => {
+    const OPTIONS = {
+      "emit-validators": true,
+      "emit-controllers": false,
+      "emit-services": false,
+      "emit-interfaces": false,
+    };
+
+    it("emits nested MergePatch validators for references declared only on a derived type", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+        @service namespace Demo;
+        model Owner { name: string; }
+        @discriminator("kind")
+        model Pet { kind: string; name: string; }
+        model Dog extends Pet { kind: "dog"; owner?: Owner; }
+        model PetPatch is MergePatchUpdate<Pet>;
+        @route("/pets") interface Pets {
+          @patch update(@body body: PetPatch): void;
+        }
+        `,
+        OPTIONS,
+      );
+      const dog = results["Validators/DogPatchValidator.g.cs"];
+      ok(
+        dog.includes(
+          "AbstractValidator<MergePatch<Owner>> ownerPatchValidator",
+        ),
+        `expected Dog to inject the Owner patch validator:\n${dog}`,
+      );
+      ok(
+        results["Validators/OwnerPatchValidator.g.cs"],
+        `expected an Owner patch validator, got: ${Object.keys(results).join(", ")}`,
+      );
+      const registrations = results["Validators/ValidatorsInitializer.g.cs"];
+      ok(
+        registrations.includes(
+          "AddScoped<AbstractValidator<MergePatch<Owner>>>(sp => sp.GetRequiredService<OwnerPatchValidator>())",
+        ),
+        `expected the Owner patch validator to be registered:\n${registrations}`,
+      );
+    });
+
+    it("emits the derived-type validators that a nested discriminated base injects", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+        @service namespace Demo;
+        @discriminator("kind")
+        model Gadget { kind: string; }
+        model Gear extends Gadget { kind: "gear"; teeth?: int32; }
+        model Widget { gadgets?: Gadget[]; }
+        model WidgetPatch is MergePatchUpdate<Widget>;
+        @route("/widgets") interface Widgets {
+          @patch update(@body body: WidgetPatch): void;
+        }
+        `,
+        OPTIONS,
+      );
+      ok(
+        results["Validators/GadgetValidator.g.cs"].includes(
+          "AbstractValidator<Gear> gearValidator",
+        ),
+        "expected the base validator to inject the Gear validator",
+      );
+      ok(
+        results["Validators/GearValidator.g.cs"],
+        `expected a Gear validator, got: ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        results["Validators/ValidatorsInitializer.g.cs"].includes(
+          "AddScoped<GearValidator>()",
+        ),
+        "expected the Gear validator to be registered",
+      );
+    });
+
+    const PLAIN_AND_NESTED_SOURCE = (
+      routeOrder: "plain-first" | "merge-first",
+    ) => {
+      const plain = `@route("/addresses") interface Addresses { @patch update(@body body: Address): void; }`;
+      const merge = `@route("/customers") interface Customers { @patch update(@body body: CustomerPatch): void; }`;
+      return `
+        import "@typespec/http";
+        using TypeSpec.Http;
+        @service namespace Demo;
+        model Address { @maxLength(40) street: string; }
+        model Customer { address?: Address; }
+        model CustomerPatch is MergePatchUpdate<Customer>;
+        ${routeOrder === "plain-first" ? `${plain}\n${merge}` : `${merge}\n${plain}`}
+      `;
+    };
+
+    it("emits both a plain and a MergePatch validator when a model needs both", async () => {
+      const results = await emit(
+        PLAIN_AND_NESTED_SOURCE("plain-first"),
+        OPTIONS,
+      );
+      const plain = results["Validators/AddressPatchValidator.g.cs"];
+      const merge = results["Validators/AddressMergePatchValidator.g.cs"];
+      ok(
+        plain.includes(
+          "public partial class AddressPatchValidator : AbstractValidator<Address>",
+        ) && plain.includes("RuleFor(x => x.Street)"),
+        `expected the plain PATCH validator to keep its name and body type:\n${plain}`,
+      );
+      ok(
+        merge.includes(
+          "public partial class AddressMergePatchValidator : AbstractValidator<MergePatch<Address>>",
+        ) &&
+          merge.includes("public AddressMergePatchValidator(") &&
+          merge.includes('GetString("Street")'),
+        `expected a separate MergePatch validator:\n${merge}`,
+      );
+      const registrations = results["Validators/ValidatorsInitializer.g.cs"];
+      ok(
+        registrations.includes(
+          "AddScoped<AbstractValidator<Address>>(sp => sp.GetRequiredService<AddressPatchValidator>())",
+        ) &&
+          registrations.includes(
+            "AddScoped<AbstractValidator<MergePatch<Address>>>(sp => sp.GetRequiredService<AddressMergePatchValidator>())",
+          ),
+        `expected both validators to be registered:\n${registrations}`,
+      );
+    });
+
+    it("gives the same output whatever order the routes are declared in", async () => {
+      const first = await emit(PLAIN_AND_NESTED_SOURCE("plain-first"), OPTIONS);
+      const second = await emit(
+        PLAIN_AND_NESTED_SOURCE("merge-first"),
+        OPTIONS,
+      );
+      const validatorFiles = (files: Record<string, string>) =>
+        Object.keys(files)
+          .filter((path) => path.startsWith("Validators/"))
+          .sort();
+      strictEqual(
+        JSON.stringify(validatorFiles(first)),
+        JSON.stringify(validatorFiles(second)),
+      );
+      for (const path of validatorFiles(first)) {
+        strictEqual(first[path], second[path], `expected ${path} to match`);
+      }
+    });
+
+    it("keeps a single PatchValidator when a model is only a MergePatch body", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+        @service namespace Demo;
+        model Address { street: string; }
+        model Customer { address?: Address; }
+        model CustomerPatch is MergePatchUpdate<Customer>;
+        @route("/customers") interface Customers { @patch update(@body body: CustomerPatch): void; }
+        `,
+        OPTIONS,
+      );
+      ok(results["Validators/AddressPatchValidator.g.cs"]);
+      ok(!results["Validators/AddressMergePatchValidator.g.cs"]);
+    });
+  });
+
+  describe("recursive MergePatch references", () => {
+    const OPTIONS = {
+      "emit-validators": true,
+      "emit-controllers": false,
+      "emit-services": false,
+      "emit-interfaces": false,
+    };
+
+    function source(models: string): string {
+      return `
+        import "@typespec/http";
+        using TypeSpec.Http;
+        @service namespace Demo;
+        ${models}
+        model RootPatch is MergePatchUpdate<Root>;
+        @route("/roots") interface Roots { @patch update(@body body: RootPatch): void; }
+      `;
+    }
+
+    it("reports a model that references itself", async () => {
+      const [, diagnostics] = await emitWithDiagnostics(
+        source(`model Root { name?: string; child?: Root; }`),
+        OPTIONS,
+      );
+      const errors = diagnostics.filter(
+        (d) =>
+          d.code ===
+          "@massivescale/tsp-aspnetcore-api/merge-patch-recursive-reference",
+      );
+      strictEqual(errors.length, 1, describeDiagnostics(diagnostics));
+      strictEqual(errors[0].severity, "error");
+      ok(
+        errors[0].message.includes('"Root.child"') &&
+          errors[0].message.includes("(Root → Root)"),
+        errors[0].message,
+      );
+    });
+
+    it("reports a loop through several models once", async () => {
+      const [, diagnostics] = await emitWithDiagnostics(
+        source(`
+          model Root { branch?: Branch; }
+          model Branch { leaf?: Leaf; }
+          model Leaf { root?: Root; }
+        `),
+        OPTIONS,
+      );
+      const errors = diagnostics.filter((d) =>
+        d.code.endsWith("merge-patch-recursive-reference"),
+      );
+      strictEqual(errors.length, 1, describeDiagnostics(diagnostics));
+      ok(
+        errors[0].message.includes('"Leaf.root"') &&
+          errors[0].message.includes("(Root → Branch → Leaf → Root)"),
+        errors[0].message,
+      );
+    });
+
+    it("ignores loops through arrays, read-only properties, and POST-only validation", async () => {
+      const throughArray = await emitWithDiagnostics(
+        source(`model Root { children?: Root[]; }`),
+        OPTIONS,
+      );
+      const throughReadOnly = await emitWithDiagnostics(
+        source(`model Root { @visibility(Lifecycle.Read) parent?: Root; }`),
+        OPTIONS,
+      );
+      const createOnly = await emitWithDiagnostics(
+        source(`model Root { @visibility(Lifecycle.Create) parent?: Root; }`),
+        OPTIONS,
+      );
+      const postOnly = await emitWithDiagnostics(
+        source(`model Root { child?: Root; }`),
+        { ...OPTIONS, validators: "post" },
+      );
+      for (const [label, [, diagnostics]] of Object.entries({
+        throughArray,
+        throughReadOnly,
+        createOnly,
+        postOnly,
+      })) {
+        ok(
+          !diagnostics.some((d) =>
+            d.code.endsWith("merge-patch-recursive-reference"),
+          ),
+          `${label}: ${describeDiagnostics(diagnostics)}`,
+        );
+      }
+    });
+
+    it("does not report a model reached through two different paths", async () => {
+      await emit(
+        source(`
+          model Shared { name?: string; }
+          model Left { shared?: Shared; }
+          model Right { shared?: Shared; }
+          model Root { left?: Left; right?: Right; }
+        `),
+        OPTIONS,
+      );
+    });
+  });
+
+  describe("version-aware nested MergePatch rules", () => {
+    it("indents nested rules inside version groups and injects JsonOptions after the HTTP context", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+        @versioned(Versions)
+        @service namespace Demo;
+        enum Versions { v1: "v1", v2: "v2" }
+        model Tag { name: string; }
+        model Widget {
+          name?: string;
+          @added(Versions.v2) tags?: Tag[];
+        }
+        model WidgetPatch is MergePatchUpdate<Widget>;
+        @route("/widgets") interface Widgets { @patch update(@body body: WidgetPatch): void; }
+        `,
+        {
+          "emit-validators": true,
+          "emit-controllers": false,
+          "emit-services": false,
+          "emit-interfaces": false,
+        },
+      );
+      const validator = results["Validators/WidgetPatchValidator.g.cs"];
+      ok(
+        validator.includes(
+          "public WidgetPatchValidator(IHttpContextAccessor httpContextAccessor, Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions> jsonOptions, AbstractValidator<Tag> tagValidator)",
+        ),
+        `expected JsonOptions after the HTTP context accessor:\n${validator}`,
+      );
+      const lines = validator.split(/\r?\n/);
+      const groupStart = lines.findIndex((line) =>
+        line.includes("Rules added in v2"),
+      );
+      const nested = lines.findIndex(
+        (line, index) =>
+          index > groupStart && line.includes(".Custom((patch, context) =>"),
+      );
+      ok(
+        nested > groupStart &&
+          lines[nested].startsWith("            this.RuleFor"),
+        `expected the nested rule at the 12-space group indent:\n${validator}`,
       );
     });
   });

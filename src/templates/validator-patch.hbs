@@ -9,8 +9,10 @@
 using FluentValidation;
 {{#unless fullyQualifiedTypes}}
 using {{{modelsNamespace}}};
-{{#if useHelpersNamespace}}using {{{helpersNamespace}}};
-{{/if}}{{/unless}}
+{{#if useHelpersNamespace}}
+using {{{helpersNamespace}}};
+{{/if}}
+{{/unless}}
 {{#if namespace}}
 
 namespace {{{namespace}}};
@@ -22,13 +24,17 @@ namespace {{{namespace}}};
 /// Extend this partial class to add custom validation rules.
 /// </summary>
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualifiedPatchBodyTypeName}}}>
+public partial class {{{validatorName}}} : AbstractValidator<{{{qualifiedPatchBodyTypeName}}}>
 {
     /// <summary>
-    /// Initializes a new instance of <see cref="{{{modelName}}}PatchValidator"/> with the auto-generated rules.
+    /// Initializes a new instance of <see cref="{{{validatorName}}}"/> with the auto-generated rules.
     /// </summary>
-        public {{{modelName}}}PatchValidator({{#each referencedValidators}}{{#unless @first}}, {{/unless}}AbstractValidator<{{{qualifiedValidatorTypeName}}}> {{{paramName}}}{{/each}})
+    public {{{validatorName}}}({{#if usesJsonOptions}}Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions> jsonOptions{{#if referencedValidators}}, {{/if}}{{/if}}{{#each referencedValidators}}{{#unless @first}}, {{/unless}}AbstractValidator<{{{qualifiedValidatorTypeName}}}> {{{paramName}}}{{/each}})
     {
+{{#if usesJsonOptions}}
+        var jsonSerializerOptions = jsonOptions.Value.JsonSerializerOptions;
+
+{{/if}}
 {{#each properties}}
 {{#if ../isMergePatchBody}}
 {{#if isReadOnly}}
@@ -113,62 +119,8 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
 
 {{/if}}
 {{#if referencedModelName}}
-{{#if isCollectionReference}}
-                this.RuleFor(x => x).Custom((patch, context) =>
-                {
-                        if (!patch.Properties.TryGetValue("{{{name}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
-                        if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
-                        {
-                                context.AddFailure("{{{name}}}", "'{{{name}}}' must be an array.");
-                                return;
-                        }
-                        var index = 0;
-                        foreach (var item in element.EnumerateArray())
-                        {
-                                if (item.ValueKind != System.Text.Json.JsonValueKind.Object)
-                                {
-                                        context.AddFailure($"{{{name}}}[{index}]", "Array items must be objects.");
-                                        index++;
-                                        continue;
-                                }
-                                try
-                                {
-                                        var nestedModel = System.Text.Json.JsonSerializer.Deserialize<{{{referencedQualifiedModelName}}}>(item.GetRawText());
-                                        if (nestedModel is null)
-                                        {
-                                                context.AddFailure($"{{{name}}}[{index}]", "Array items must be objects.");
-                                        }
-                                        else
-                                        {
-                                                var nestedResult = {{{mergePatchValidatorParamName}}}.Validate(nestedModel);
-                                                foreach (var failure in nestedResult.Errors)
-                                                        context.AddFailure($"{{{name}}}[{index}].{failure.PropertyName}", failure.ErrorMessage);
-                                        }
-                                }
-                                catch (System.Text.Json.JsonException)
-                                {
-                                        context.AddFailure($"{{{name}}}[{index}]", "The array item could not be deserialized.");
-                                }
-                                index++;
-                        }
-                });
+        {{> mergePatchNestedRules}}
 
-{{else}}
-                this.RuleFor(x => x).Custom((patch, context) =>
-                {
-                        if (!patch.Properties.TryGetValue("{{{name}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
-                        if (element.ValueKind != System.Text.Json.JsonValueKind.Object)
-                        {
-                                context.AddFailure("{{{name}}}", "'{{{name}}}' must be an object.");
-                                return;
-                        }
-                        var nestedPatch = {{{mergePatchFactoryTypeName}}}.FromJson(element.GetRawText());
-                        var nestedResult = {{{mergePatchValidatorParamName}}}.Validate(nestedPatch);
-                        foreach (var failure in nestedResult.Errors)
-                                context.AddFailure($"{{{name}}}.{failure.PropertyName}", failure.ErrorMessage);
-                });
-
-{{/if}}
 {{/if}}
 {{/if}}
 {{else}}

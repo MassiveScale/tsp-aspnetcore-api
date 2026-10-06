@@ -103,7 +103,7 @@ Every model class shares the `models-namespace`, so two different models that ma
 
 ## Default property values
 
-Generated C# references use short type names by default, with namespaces supplied by `using` directives in the generated file. Set `fully-qualified-types: true` to include the namespace on model, enum, and helper references. An enum value initializer is fully qualified when its generated property name shadows the enum type name (for example, a `Theme` property of type `Theme`) so C# resolves the enum rather than the property.
+An enum value initializer is fully qualified when its generated property name shadows the enum type name (for example, a `Theme` property of type `Theme`) so C# resolves the enum rather than the property. Other references follow [Cross-namespace references](#cross-namespace-references).
 
 When a TypeSpec model property carries a default value, the emitter assigns it as a C# property initializer. The following value kinds are supported:
 
@@ -325,6 +325,19 @@ When a model is renamed with `@serverName`, all references to it — including b
 
 ## Cross-namespace references
 
-Every reference to an emitted model, interface, or enum — base classes, property types (including inside `IList<T>`, `IDictionary<string, T>`, and unions), companion-interface implementations, discriminator `[JsonDerivedType(typeof(...))]` attributes, and `MergePatch<T>` — is always written as a fully-qualified C# type name (e.g. `Demo.Models.Widget`, `Demo.Helpers.MergePatch<Demo.Models.Widget>`), never a bare name paired with a `using` directive. This holds even when the reference is within the same namespace.
+Every reference to an emitted model, interface, or enum (base classes, property types including inside `IList<T>`, `IDictionary<string, T>`, and unions, companion-interface implementations, discriminator `[JsonDerivedType(typeof(...))]` attributes, `MergePatch<T>`, controller and service signatures, and validators) is written the same way, controlled by `fully-qualified-types`:
 
-Generated files therefore never depend on `using` resolution to compile, which avoids ambiguous- or missing-reference errors when `models-namespace`, `controllers-namespace`, `services-namespace`, `validators-namespace`, and `helpers-namespace` differ (the default configuration).
+| `fully-qualified-types` | Reference                                                                            | Imports                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `false` (default)       | Short name: `Widget`, `MergePatch<Widget>`                                           | Each file adds `using` lines for the models and helpers namespaces it needs. |
+| `true`                  | Fully qualified: `Demo.Models.Widget`, `Demo.Helpers.MergePatch<Demo.Models.Widget>` | None needed.                                                                 |
+
+### Names that clash with framework types
+
+Generated files import framework namespaces such as `System`, `System.Threading.Tasks`, `Microsoft.AspNetCore.Mvc`, and `FluentValidation`. A model or enum with the same name as a type from one of them (for example `Task`, `File`, `Version`, `Action`, `Range`, `ProblemDetails`, `Severity`, or `ValidationResult`) would be an ambiguous reference (CS0104) as a short name. Those names always keep their namespace, even when `fully-qualified-types` is `false`:
+
+```csharp
+public abstract Task<IActionResult> Create([FromBody] Demo.Models.Task body, CancellationToken cancellationToken);
+```
+
+Other models in the same file still use short names. The list of protected names lives in `src/naming.ts` (`AMBIGUOUS_SHORT_NAMES`). If one of your own `additional-usings` namespaces introduces another clash, set `fully-qualified-types: true` or rename the model with [`@serverName`](./decorators.md).

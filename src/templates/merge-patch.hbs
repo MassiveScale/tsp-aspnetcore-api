@@ -198,6 +198,7 @@ public class MergePatch<T>
             return false;
         }
 
+        var entries = new List<PatchEntry>();
         foreach (var (name, element) in Properties)
         {
             var prop = FindProperty(name);
@@ -206,62 +207,114 @@ public class MergePatch<T>
                 rejected.Add(name);
                 continue;
             }
-            try
-            {
-                var target = JsonSerializer.SerializeToNode(original, options) as JsonObject;
-                if (target is null)
-                {
-                    rejected.Add(name);
-                    continue;
-                }
+            entries.Add(new PatchEntry(prop, name, element));
+        }
+        if (entries.Count == 0) return rejected.Count == 0;
 
-                var patch = new JsonObject
-                {
-                    [name] = JsonNode.Parse(element.GetRawText()),
-                };
-                MergeObject(target, patch, typeof(T), rejected, string.Empty);
-                var updated = target.Deserialize<T>(options);
-                if (updated is null)
-                {
-                    rejected.Add(name);
-                    continue;
-                }
-                prop.SetValue(original, prop.GetValue(updated));
-            }
-            catch (JsonException ex)
+        // One serialize/merge/deserialize round trip applies every property. Only when
+        // that fails is each property retried alone, so one bad value cannot block its
+        // valid siblings and the failing path can be reported.
+        var batchRejected = new List<string>();
+        if (TryApply(original, entries, batchRejected, options, out _))
+        {
+            rejected.AddRange(batchRejected);
+            return rejected.Count == 0;
+        }
+
+        foreach (var entry in entries)
+        {
+            if (!TryApply(original, new[] { entry }, rejected, options, out var failedPath))
             {
-                var path = ex.Path;
-                rejected.Add(path is { Length: > 1 } && path.StartsWith("$.", StringComparison.Ordinal)
-                    ? path[2..]
-                    : path is { Length: > 1 } && path[0] == '$'
-                        ? path[1..]
-                        : name);
-            }
-            catch
-            {
-                rejected.Add(name);
+                rejected.Add(failedPath ?? entry.Name);
             }
         }
 
         return rejected.Count == 0;
     }
 
+    private readonly record struct PatchEntry(PropertyInfo Property, string Name, JsonElement Value);
+
+    /// <summary>
+    /// Merges <paramref name="entries"/> into a JSON copy of <paramref name="original"/>,
+    /// deserializes the result, and copies the patched properties back. Nested paths
+    /// that cannot be merged are added to <paramref name="rejected"/>. On failure nothing
+    /// is copied and <paramref name="failedPath"/> holds the JSON path of the bad value
+    /// when the serializer reported one.
+    /// </summary>
+    private static bool TryApply(T original, IReadOnlyList<PatchEntry> entries, List<string> rejected, JsonSerializerOptions? options, out string? failedPath)
+    {
+        failedPath = null;
+        try
+        {
+            if (JsonSerializer.SerializeToNode(original, options) is not JsonObject target) return false;
+
+            var patch = new JsonObject();
+            foreach (var entry in entries)
+            {
+                patch[entry.Name] = JsonNode.Parse(entry.Value.GetRawText());
+            }
+            MergeObject(target, patch, typeof(T), rejected, string.Empty);
+
+            var updated = target.Deserialize<T>(options);
+            if (updated is null) return false;
+            foreach (var entry in entries)
+            {
+                entry.Property.SetValue(original, entry.Property.GetValue(updated));
+            }
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            var path = ex.Path;
+            failedPath = path is { Length: > 1 } && path.StartsWith("$.", StringComparison.Ordinal)
+                ? path[2..]
+                : path is { Length: > 1 } && path[0] == '$'
+                    ? path[1..]
+                    : null;
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Applies RFC 7396 merge rules from <paramref name="patch"/> onto <paramref name="target"/>.
+    /// Keys of a CLR model must match one of its properties; keys of a dictionary or a
+    /// free-form JSON value (<see cref="JsonElement"/>, <see cref="JsonNode"/>, <see cref="object"/>)
+    /// are data, so any key is accepted and matched exactly.
+    /// </summary>
     private static void MergeObject(JsonObject target, JsonObject patch, Type targetType, List<string> rejected, string prefix)
     {
+        var openValueType = GetOpenObjectValueType(targetType);
         foreach (var (patchName, patchValue) in patch)
         {
-            var property = FindProperty(targetType, patchName);
-            var wireName = property?.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property?.Name ?? patchName;
-            var path = prefix.Length == 0 ? wireName : $"{prefix}.{wireName}";
-            if (property is null && targetType != typeof(object))
+            string wireName;
+            Type childType;
+            if (openValueType is not null)
             {
-                rejected.Add(path);
-                continue;
+                wireName = patchName;
+                childType = openValueType;
             }
+            else
+            {
+                var member = FindMember(targetType, patchName);
+                if (member is null)
+                {
+                    rejected.Add(prefix.Length == 0 ? patchName : $"{prefix}.{patchName}");
+                    continue;
+                }
+                wireName = member.Value.WireName;
+                childType = member.Value.Property.PropertyType;
+            }
+            var path = prefix.Length == 0 ? wireName : $"{prefix}.{wireName}";
+
+            var comparison = openValueType is null ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
             string? targetName = null;
             foreach (var targetEntry in target)
             {
-                if (string.Equals(targetEntry.Key, wireName, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(targetEntry.Key, wireName, comparison))
                 {
                     targetName = targetEntry.Key;
                     break;
@@ -277,12 +330,12 @@ public class MergePatch<T>
             {
                 if (targetName is not null && target[targetName] is JsonObject existingChild)
                 {
-                    MergeObject(existingChild, patchChild, property?.PropertyType ?? typeof(object), rejected, path);
+                    MergeObject(existingChild, patchChild, childType, rejected, path);
                 }
                 else
                 {
                     var targetChild = new JsonObject();
-                    MergeObject(targetChild, patchChild, property?.PropertyType ?? typeof(object), rejected, path);
+                    MergeObject(targetChild, patchChild, childType, rejected, path);
                     target[targetName ?? wireName] = targetChild;
                 }
                 continue;
@@ -290,6 +343,38 @@ public class MergePatch<T>
 
             target[targetName ?? wireName] = patchValue.DeepClone();
         }
+    }
+
+    /// <summary>
+    /// Returns the value type of an object whose keys are data rather than CLR properties:
+    /// <c>TValue</c> for a string-keyed dictionary, <see cref="object"/> for a free-form
+    /// JSON value. Returns <see langword="null"/> for a regular model type.
+    /// </summary>
+    private static Type? GetOpenObjectValueType(Type type)
+    {
+        type = Nullable.GetUnderlyingType(type) ?? type;
+        if (type == typeof(object) || type == typeof(JsonElement) || typeof(JsonNode).IsAssignableFrom(type))
+        {
+            return typeof(object);
+        }
+        if (TryGetStringKeyedValueType(type, out var valueType)) return valueType;
+        foreach (var candidate in type.GetInterfaces())
+        {
+            if (TryGetStringKeyedValueType(candidate, out valueType)) return valueType;
+        }
+        return null;
+    }
+
+    private static bool TryGetStringKeyedValueType(Type type, out Type? valueType)
+    {
+        valueType = null;
+        if (!type.IsGenericType) return false;
+        var definition = type.GetGenericTypeDefinition();
+        if (definition != typeof(IDictionary<,>) && definition != typeof(IReadOnlyDictionary<,>)) return false;
+        var arguments = type.GetGenericArguments();
+        if (arguments[0] != typeof(string)) return false;
+        valueType = arguments[1];
+        return true;
     }
 
     /// <summary>
@@ -306,12 +391,25 @@ public class MergePatch<T>
         return ValueTask.CompletedTask;
     }
 
-    private static PropertyInfo? FindProperty(string name) => FindProperty(typeof(T), name);
+    private static PropertyInfo? FindProperty(string name) => FindMember(typeof(T), name)?.Property;
 
-    private static PropertyInfo? FindProperty(Type type, string name) =>
-        Array.Find(type.GetProperties(BindingFlags.Public | BindingFlags.Instance), p =>
+    /// <summary>
+    /// Public instance properties of each patched type keyed by JSON wire name (case-insensitive),
+    /// built once per type because reflection is slow on the PATCH hot path.
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Dictionary<string, (PropertyInfo Property, string WireName)>> _typeProperties = new();
+
+    private static (PropertyInfo Property, string WireName)? FindMember(Type type, string name) =>
+        _typeProperties.GetOrAdd(type, BuildPropertyMap).TryGetValue(name, out var member) ? member : null;
+
+    private static Dictionary<string, (PropertyInfo Property, string WireName)> BuildPropertyMap(Type type)
+    {
+        var map = new Dictionary<string, (PropertyInfo Property, string WireName)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
-            var wireName = p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name;
-            return string.Equals(wireName, name, StringComparison.OrdinalIgnoreCase);
-        });
+            var wireName = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name;
+            map.TryAdd(wireName, (property, wireName));
+        }
+        return map;
+    }
 }

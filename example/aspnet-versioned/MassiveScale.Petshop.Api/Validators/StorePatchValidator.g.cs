@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.Http;
 using MarketOnce.Community.Campaign.Api.Models;
 using MarketOnce.Community.Campaign.Api.Helpers;
 
-
 namespace MarketOnce.Community.Campaign.Api.Validators;
 
 /// <summary>
@@ -29,9 +28,10 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
     /// <summary>
     /// Initializes a new instance of <see cref="StorePatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
-        public StorePatchValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<Pet> petValidator)
+    public StorePatchValidator(IHttpContextAccessor httpContextAccessor, Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions> jsonOptions, AbstractValidator<Pet> petValidator)
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
+        var jsonSerializerOptions = jsonOptions.Value.JsonSerializerOptions;
 
         // Name is required and cannot be removed
         this.RuleFor(x => x)
@@ -72,44 +72,49 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
             .WithName("Pets")
             .WithMessage("'Pets' is required and cannot be null.");
 
-                this.RuleFor(x => x).Custom((patch, context) =>
+        // Pets replaces the whole array, so each item is validated as a complete model
+        this.RuleFor(x => x).Custom((patch, context) =>
+        {
+            if (!patch.Properties.TryGetValue("Pets", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+            if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                context.AddFailure("Pets", "'Pets' must be an array.");
+                return;
+            }
+            var index = 0;
+            foreach (var item in element.EnumerateArray())
+            {
+                if (item.ValueKind != System.Text.Json.JsonValueKind.Object)
                 {
-                        if (!patch.Properties.TryGetValue("Pets", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
-                        if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
-                        {
-                                context.AddFailure("Pets", "'Pets' must be an array.");
-                                return;
-                        }
-                        var index = 0;
-                        foreach (var item in element.EnumerateArray())
-                        {
-                                if (item.ValueKind != System.Text.Json.JsonValueKind.Object)
-                                {
-                                        context.AddFailure($"Pets[{index}]", "Array items must be objects.");
-                                        index++;
-                                        continue;
-                                }
-                                try
-                                {
-                                        var nestedModel = System.Text.Json.JsonSerializer.Deserialize<Pet>(item.GetRawText());
-                                        if (nestedModel is null)
-                                        {
-                                                context.AddFailure($"Pets[{index}]", "Array items must be objects.");
-                                        }
-                                        else
-                                        {
-                                                var nestedResult = petValidator.Validate(nestedModel);
-                                                foreach (var failure in nestedResult.Errors)
-                                                        context.AddFailure($"Pets[{index}].{failure.PropertyName}", failure.ErrorMessage);
-                                        }
-                                }
-                                catch (System.Text.Json.JsonException)
-                                {
-                                        context.AddFailure($"Pets[{index}]", "The array item could not be deserialized.");
-                                }
-                                index++;
-                        }
-                });
+                    context.AddFailure($"Pets[{index}]", "Array items must be objects.");
+                    index++;
+                    continue;
+                }
+                Pet? nestedModel;
+                try
+                {
+                    nestedModel = System.Text.Json.JsonSerializer.Deserialize<Pet>(item.GetRawText(), jsonSerializerOptions);
+                }
+                catch (System.Exception ex) when (ex is System.Text.Json.JsonException or System.NotSupportedException or System.InvalidOperationException)
+                {
+                    // NotSupportedException: an abstract or polymorphic item sent without its type discriminator.
+                    context.AddFailure($"Pets[{index}]", "The array item could not be deserialized.");
+                    index++;
+                    continue;
+                }
+                if (nestedModel is null)
+                {
+                    context.AddFailure($"Pets[{index}]", "Array items must be objects.");
+                }
+                else
+                {
+                    var nestedResult = petValidator.Validate(nestedModel);
+                    foreach (var failure in nestedResult.Errors)
+                        context.AddFailure($"Pets[{index}].{failure.PropertyName}", failure.ErrorMessage);
+                }
+                index++;
+            }
+        });
 
         // Rules added in v2.0
         When(_ => IsAtLeast("v2.0", _apiVersion, _versions), () =>

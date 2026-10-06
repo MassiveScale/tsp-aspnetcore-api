@@ -138,6 +138,10 @@ await repository.SaveAsync(entity);
 
 Both methods use reflection to match each JSON property name to a writable property on `T`. The lookup checks `[JsonPropertyName]` first, then falls back to the CLR property name (case-insensitive), so properties renamed via `@serverName` or an explicit `[JsonPropertyName]` attribute are resolved correctly. Object values merge recursively into the current object; a missing object is created. Arrays and all other non-object values replace the current value. An explicit `null` removes that JSON member before deserialization, so a generated property initializer restores its default (or the property's normal null/default value is used when there is no initializer).
 
+Inside a dictionary (`Record<T>`, emitted as `IDictionary<string, T>`) or a free-form JSON value (`JsonElement`, `JsonNode`, `object`), the keys are data rather than C# properties. Any key is accepted, keys match exactly (case-sensitive), and the same rules apply per key: `{"labels":{"env":"prod","team":null}}` sets `env` and removes `team`, leaving other keys unchanged. Dictionary values that are objects merge recursively.
+
+All supplied properties are applied in a single serialize/merge/deserialize pass, and property lookups are cached per type. Only when that pass fails is each property retried on its own, so a bad value still can't block its valid siblings.
+
 `Patch` keeps its existing non-throwing, in-place signature and ignores the diagnostics returned by `TryPatch`. Use `TryPatch` to detect unknown, read-only, or invalid values. It returns `false` and rejected JSON paths; rejected paths are left unchanged while valid siblings are still applied. Raw exception messages are not included. Pass a `JsonSerializerOptions` instance if custom converters are needed.
 
 `PatchAsync` returns a `ValueTask` (no allocation on the hot path) and checks the cancellation token before starting work. The patch application itself is synchronous — `PatchAsync` exists for seamless composition in async controller actions.

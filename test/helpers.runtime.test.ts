@@ -25,11 +25,18 @@ const SPEC = `
     layout?: WidgetLayout = #{};
   }
   model WidgetSlot { name: string; }
+  @discriminator("kind")
+  model Gadget { kind: string; }
+  model Gear extends Gadget { kind: "gear"; teeth?: int32; }
   model Widget {
     name?: string;
     appearance?: WidgetAppearance = #{ label: "default", layout: #{} };
     values?: int32[];
     slots?: WidgetSlot[];
+    gadgets?: Gadget[];
+    labels?: Record<string>;
+    groups?: Record<Record<string>>;
+    extra?: unknown;
   }
   model WidgetPatch is MergePatchUpdate<Widget>;
 
@@ -66,7 +73,7 @@ async function runGeneratedHelper(style: "generic" | "typed"): Promise<void> {
 
     await writeFile(
       join(directory, "Runtime.csproj"),
-      `<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup><ItemGroup><PackageReference Include="FluentValidation" Version="12.1.1" /></ItemGroup></Project>`,
+      `<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup><ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /><PackageReference Include="FluentValidation" Version="12.1.1" /></ItemGroup></Project>`,
       "utf8",
     );
     const patchFactory =
@@ -135,7 +142,38 @@ var appliedInvalidShape = invalidShape.TryPatch(widget, out var invalidShapePath
 Check(!appliedInvalidShape && invalidShapePaths.Any(path => path.Contains("appearance", StringComparison.OrdinalIgnoreCase)), "TryPatch must report a non-object model value");
 Check(widget.Appearance.FontSize == 99, "a non-object nested value must leave its target unchanged");
 
-var widgetValidator = new WidgetPatchValidator(new WidgetAppearancePatchValidator(new WidgetLayoutPatchValidator()), new WidgetSlotValidator());
+widget.Labels = new Dictionary<string, string> { ["env"] = "dev", ["Team"] = "core" };
+Patch(widget, """{"labels":{"env":"prod","owner":"ops","Team":null}}""");
+Check(widget.Labels is { Count: 2 } && widget.Labels["env"] == "prod" && widget.Labels["owner"] == "ops", "dictionary keys must merge, and a null value must remove the key");
+
+widget.Groups = new Dictionary<string, IDictionary<string, string>> { ["a"] = new Dictionary<string, string> { ["x"] = "1" } };
+var groupsApplied = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("""{"groups":{"a":{"y":"2"},"b":{"z":"3"}}}""").TryPatch(widget, out var groupsRejected);
+Check(groupsApplied && groupsRejected.Count == 0, "nested dictionary keys must not be rejected as unknown members");
+Check(widget.Groups["a"]["x"] == "1" && widget.Groups["a"]["y"] == "2" && widget.Groups["b"]["z"] == "3", "nested dictionaries must merge recursively");
+
+Patch(widget, """{"extra":{"a":1}}""");
+var extraApplied = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("""{"extra":{"b":{"c":2}}}""").TryPatch(widget, out var extraRejected);
+var extra = (System.Text.Json.JsonElement)widget.Extra!;
+Check(extraApplied && extraRejected.Count == 0 && extra.GetProperty("a").GetInt32() == 1 && extra.GetProperty("b").GetProperty("c").GetInt32() == 2, "free-form JSON values must accept and merge any key");
+
+widget.Name = "before";
+Patch(widget, """{"name":"after","values":[7],"appearance":{"label":"both"}}""");
+Check(widget.Name == "after" && widget.Values is [7] && widget.Appearance.Label == "both", "several properties must apply together");
+
+var jsonOptions = Microsoft.Extensions.Options.Options.Create(new Microsoft.AspNetCore.Mvc.JsonOptions());
+var widgetValidator = new WidgetPatchValidator(
+    jsonOptions,
+    new WidgetAppearancePatchValidator(jsonOptions, new WidgetLayoutPatchValidator()),
+    new WidgetSlotValidator(),
+    new GadgetValidator(new GearValidator()));
+
+var abstractItem = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("""{"gadgets":[{"teeth":3}]}""");
+var abstractResult = widgetValidator.Validate(abstractItem);
+Check(abstractResult.Errors.Any(failure => failure.PropertyName == "Gadgets[0]"), "an abstract array item without a discriminator must fail validation instead of throwing");
+
+var webCasing = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("""{"slots":[{"Name":"upper"}]}""");
+var webCasingResult = widgetValidator.Validate(webCasing);
+Check(webCasingResult.IsValid, "array items must be read with the application's JSON options (case-insensitive names)");
 var invalidEnum = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("""{"appearance":{"theme":"neon"}}""");
 var enumResult = widgetValidator.Validate(invalidEnum);
 Check(enumResult.Errors.Any(failure => failure.PropertyName == "Appearance.Theme"), "invalid nested enum must fail at its dotted path");

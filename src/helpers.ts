@@ -137,12 +137,14 @@ async function emitMergePatch(
  */
 async function emitEntityMergePatches(
   program: Program,
-  patchModels: Map<Model, string>,
+  patchModels: Map<Model, Set<string>>,
   renderer: Renderer,
   options: ResolvedOptions,
 ): Promise<void> {
-  for (const [model, rawTypeName] of patchModels) {
-    if (!rawTypeName.startsWith("MergePatch<")) continue;
+  for (const [model, rawTypeNames] of patchModels) {
+    if (![...rawTypeNames].some((name) => name.startsWith("MergePatch<"))) {
+      continue;
+    }
     const modelName = csharpModelName(program, model);
     const qualifiedModelName = computeModelTypeName(program, model, options);
     const fileName = `${modelName}MergePatchUpdate${options.fileExtension}`;

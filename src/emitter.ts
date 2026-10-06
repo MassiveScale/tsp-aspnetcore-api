@@ -51,7 +51,7 @@ import {
   shouldEmitEnum,
 } from "./models.js";
 import { emitHelpers } from "./helpers.js";
-import { csharpModelName } from "./naming.js";
+import { csharpModelName, qualifyTypeName } from "./naming.js";
 import { analyzePayloadModels } from "./payloads.js";
 import { emitValidators } from "./validators.js";
 import { cleanOutputDirectories } from "./clean.js";
@@ -314,9 +314,11 @@ export function computeModelTypeName(
   model: Model,
   options: ResolvedOptions,
 ): string {
-  return options.fullyQualifiedTypes
-    ? computeModelFqName(program, model, options)
-    : csharpModelName(program, model);
+  return qualifyTypeName(
+    options.modelsNamespace,
+    csharpModelName(program, model),
+    options,
+  );
 }
 
 /**

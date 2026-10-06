@@ -4,11 +4,12 @@ When `emit-validators: true`, the emitter generates [FluentValidation](https://d
 
 ## Generated files
 
-| File                         | Content                                                                                                                                  |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `{Model}Validator.g.cs`      | `AbstractValidator<{Model}>` with rules for POST bodies.                                                                                 |
-| `{Model}PatchValidator.g.cs` | Patch-aware `AbstractValidator<MergePatch<{Model}>>` whose rules fire only when the corresponding property is present in the patch body. |
-| `ValidatorsInitializer.g.cs` | Static `AddGeneratedValidators(this IServiceCollection)` extension method for DI setup.                                                  |
+| File                              | Content                                                                                                                                                     |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{Model}Validator.g.cs`           | `AbstractValidator<{Model}>` with rules for POST bodies.                                                                                                    |
+| `{Model}PatchValidator.g.cs`      | Patch-aware `AbstractValidator<MergePatch<{Model}>>` whose rules fire only when the corresponding property is present in the patch body.                    |
+| `{Model}MergePatchValidator.g.cs` | Only when a model is validated both as a plain PATCH body and as a MergePatch body. See [One model, two PATCH body types](#one-model-two-patch-body-types). |
+| `ValidatorsInitializer.g.cs`      | Static `AddGeneratedValidators(this IServiceCollection)` extension method for DI setup.                                                                     |
 
 ## Setup
 
@@ -95,9 +96,34 @@ Nested-model rules account for property nullability so the generated code compil
 - The property access uses the null-forgiving operator (`x.Prop!`) so the emitted `IValidator<T>` type argument matches, avoiding a nullable-reference-type build warning.
 - The rule adds `.When(x => x.Prop is not null)` so it is skipped at runtime when the property is `null`. This applies to POST validators and to PATCH validators over a plain body.
 - PATCH validators over a `MergePatchUpdate<T>` body inspect the raw JSON value. A supplied nested object is passed to its injected child PATCH validator, and child failures are prefixed with the parent path (for example, `Appearance.Theme`). Non-object values are rejected at the parent property. Nested validators recurse to further model levels and keep their own constraints, required-null checks, enum checks, and read-only/create-only rules.
-- A model array in a MergePatch body is a whole-value replacement under RFC 7396. Every supplied element must be an object and is validated as a complete model using its injected POST validator; failures use paths such as `Items[0].Name`. Arrays are not interpreted as collections of partial item patches.
+- A model array in a MergePatch body is a whole-value replacement under RFC 7396. Every supplied element must be an object and is validated as a complete model using its injected POST validator; failures use paths such as `Items[0].Name`. Arrays are not interpreted as collections of partial item patches. An element that can't be deserialized, for example an item of an abstract `@discriminator` base type sent without its discriminator, fails validation with "The array item could not be deserialized." instead of throwing.
 
-Nested-only validators are emitted and registered when reachable through a PATCH body's model properties. Constructor injection is used throughout. Arbitrarily deep acyclic model shapes are supported; self-referential and mutually recursive model graphs are not supported because they can create constructor-injection cycles.
+Nested-only validators are emitted and registered when reachable through a PATCH body's model properties, including properties that only a derived model declares. Derived models of a nested `@discriminator` base get POST validators too, because the base validator injects them. Constructor injection is used throughout. Arbitrarily deep acyclic model shapes are supported.
+
+#### JSON options
+
+A MergePatch validator that validates nested values reads them with the application's JSON settings, so it accepts the same payloads as model binding (case-insensitive property names, numbers sent as strings, custom converters). Its constructor takes `IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>`, which `AddControllers()` registers, and passes `JsonSerializerOptions` to every nested deserialization. Configure it the usual way:
+
+```csharp
+builder.Services.AddControllers().AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new MyConverter()));
+```
+
+Validators without nested model properties keep their existing constructor.
+
+#### Recursive models
+
+Recursive nested MergePatch validation is not supported. When a writable object property leads back to a model already on the path (`model Node { child?: Node; }`, or `A → B → A`), the emitter reports a **`merge-patch-recursive-reference`** error on the property that closes the loop: the generated validators would need each other in their constructors and could not be resolved from dependency injection. Break the loop by excluding the property from updates (for example `@visibility(Lifecycle.Read, Lifecycle.Create)`), or emit only POST validators with `validators: "post"`. Arrays (`children?: Node[]`) don't form a loop, because array items are validated by POST validators.
+
+#### One model, two PATCH body types
+
+A model can be validated as a plain PATCH body (its own `@patch` route takes the model directly) and as a MergePatch body (it is nested inside another route's `MergePatchUpdate<T>`). Both validators are emitted and registered:
+
+| Validator                    | Validates             |
+| ---------------------------- | --------------------- |
+| `{Model}PatchValidator`      | `{Model}`             |
+| `{Model}MergePatchValidator` | `MergePatch<{Model}>` |
+
+When a model only needs one of them, it is always called `{Model}PatchValidator`.
 
 Version-aware child patch validators retain their `IsAtLeast` guards. Therefore, a nested member introduced in a later version is validated only when that version is active, just like a top-level member.
 

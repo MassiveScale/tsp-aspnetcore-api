@@ -53,7 +53,7 @@ import { fileURLToPath } from "node:url";
 import { getServerName } from "./decorators.js";
 import { computeModelTypeName, ResolvedOptions } from "./emitter.js";
 import { reportDiagnostic } from "./lib.js";
-import { csharpModelName } from "./naming.js";
+import { csharpModelName, qualifyTypeName } from "./naming.js";
 import { classProperties } from "./payloads.js";
 import { pascalCase } from "./utils.js";
 
@@ -73,7 +73,23 @@ let _compiledValidatorPatchVersionAwareTemplate:
 let _compiledValidatorInitializerTemplate:
   Handlebars.TemplateDelegate | undefined;
 
+/** Name of the shared partial that renders nested MergePatch property rules. */
+const MERGE_PATCH_NESTED_PARTIAL = "mergePatchNestedRules";
+
+/**
+ * Compiles a validator template, first registering the partials that the
+ * built-in templates share so custom templates can include them too.
+ */
 function loadValidatorTemplate(path: string): Handlebars.TemplateDelegate {
+  if (!Handlebars.partials[MERGE_PATCH_NESTED_PARTIAL]) {
+    Handlebars.registerPartial(
+      MERGE_PATCH_NESTED_PARTIAL,
+      readFileSync(
+        resolve(TEMPLATES_DIR, "validator-merge-patch-nested.hbs"),
+        "utf-8",
+      ),
+    );
+  }
   return Handlebars.compile(readFileSync(path, "utf-8"));
 }
 
@@ -213,6 +229,13 @@ interface ValidatorTemplateData {
   qualifiedPatchBodyTypeName?: string;
   /** True when the PATCH body is a `MergePatch<T>` — suppresses property-accessor-based rules that won't compile. */
   isMergePatchBody?: boolean;
+  /** C# class name of the PATCH validator (e.g. `PetPatchValidator`). Only set for patch validators. */
+  validatorName?: string;
+  /**
+   * True when a MergePatch validator deserializes nested values and so takes the
+   * application's `IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>` in its constructor.
+   */
+  usesJsonOptions?: boolean;
   properties: PropertyData[];
   referencedValidators?: ReferencedValidator[];
   /** Derived type validators for polymorphic dispatch (SetInheritanceValidator). */
@@ -241,6 +264,13 @@ interface VersionAwareValidatorTemplateData {
   qualifiedPatchBodyTypeName?: string;
   /** True when the PATCH body is a `MergePatch<T>` — suppresses property-accessor-based rules that won't compile. */
   isMergePatchBody?: boolean;
+  /** C# class name of the PATCH validator (e.g. `PetPatchValidator`). Only set for patch validators. */
+  validatorName?: string;
+  /**
+   * True when a MergePatch validator deserializes nested values and so takes the
+   * application's `IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>` in its constructor.
+   */
+  usesJsonOptions?: boolean;
   allVersions: string[];
   defaultVersion: string;
   baseProperties: PropertyData[];
@@ -270,7 +300,8 @@ interface InitializerTemplateData {
 
 interface ValidatorRouteModels {
   postModels: Set<Model>;
-  patchModels: Map<Model, string>;
+  /** Raw PATCH body type names per model; see {@link collectValidatorModelsFromRoutes}. */
+  patchModels: Map<Model, Set<string>>;
   nestedPostModels: Set<Model>;
 }
 
@@ -471,9 +502,11 @@ function buildSinglePropertyData(
 
   const isInEnum = prop.type.kind === "Enum";
   const enumTypeName = isInEnum
-    ? options.fullyQualifiedTypes
-      ? `${options.modelsNamespace}.${pascalCase((prop.type as Enum).name)}`
-      : pascalCase((prop.type as Enum).name)
+    ? qualifyTypeName(
+        options.modelsNamespace,
+        pascalCase((prop.type as Enum).name),
+        options,
+      )
     : undefined;
 
   const rawMin = getMinValue(program, prop) ?? getMinValue(program, prop.type);
@@ -809,23 +842,33 @@ function buildDerivedTypeValidators(
 /**
  * BFS from `initialModels` following model-typed properties, returning the full
  * transitive closure of reachable user-defined models.
+ *
+ * Models derived from a reachable model are included too: a discriminated base
+ * validator injects one validator per derived type, and a derived type can
+ * declare references of its own.
  */
 function collectValidatorTransitiveDeps(
   program: Program,
+  allModels: Model[],
   initialModels: Set<Model>,
   versionFilter?: (prop: ModelProperty) => boolean,
 ): Set<Model> {
-  const all = new Set<Model>(initialModels);
-  const queue = [...initialModels];
+  const all = new Set<Model>();
+  const queue: Model[] = [];
+  const add = (model: Model) => {
+    for (const candidate of [model, ...getAllDescendants(allModels, model)]) {
+      if (all.has(candidate)) continue;
+      all.add(candidate);
+      queue.push(candidate);
+    }
+  };
+  initialModels.forEach(add);
   while (queue.length > 0) {
     const model = queue.shift()!;
     for (const prop of classProperties(program, model)) {
       if (versionFilter && !versionFilter(prop)) continue;
       const ref = getValidatorModelReference(prop.type);
-      if (ref && !all.has(ref.model)) {
-        all.add(ref.model);
-        queue.push(ref.model);
-      }
+      if (ref) add(ref.model);
     }
   }
   return all;
@@ -864,9 +907,16 @@ function addModelWithDescendants(
  * across all HTTP services. Returns `undefined` when no HTTP operations exist,
  * signalling the caller to fall back to all models.
  *
- * For PATCH, `patchModels` maps each source model to the C# name of the actual
- * PATCH body type (e.g. `Pet` → `"PetMergePatchUpdate"` for a MergePatch body,
- * or `"Pet"` for a plain PATCH body).
+ * For PATCH, `patchModels` maps each source model to the raw C# names of every
+ * PATCH body type it is validated as: `"MergePatch<Pet>"` for a MergePatch body
+ * (or a model nested inside one), `"Pet"` for a plain PATCH body. A model can
+ * need both, for example when it has its own plain PATCH route and is also
+ * nested inside another route's MergePatch body. Use {@link patchValidatorsFor}
+ * to read the entries in a stable order with their validator class names.
+ *
+ * Nested references are followed from the body model and from every model
+ * derived from it, because a derived type's validator also validates the
+ * properties only that derived type declares.
  */
 export function collectValidatorModelsFromRoutes(
   program: Program,
@@ -877,7 +927,7 @@ export function collectValidatorModelsFromRoutes(
   if (!hasAnyOperations) return undefined;
 
   const postModels = new Set<Model>();
-  const patchModels = new Map<Model, string>();
+  const patchModels = new Map<Model, Set<string>>();
   const nestedPostModels = new Set<Model>();
 
   for (const service of services) {
@@ -890,50 +940,103 @@ export function collectValidatorModelsFromRoutes(
       const bodyModel = bodyType as Model;
       if (op.verb === "post") {
         addModelWithDescendants(allModels, bodyModel, postModels);
-      } else {
-        const isMergePatchBody = isMergePatch(program, bodyModel);
-        const sourceModel = isMergePatchBody
-          ? getMergePatchSource(program, bodyModel)
-          : bodyModel;
-        if (sourceModel) {
-          const sourceName = csharpModelName(program, sourceModel);
-          const bodyTypeName = isMergePatchBody
-            ? `MergePatch<${sourceName}>`
-            : sourceName;
-          patchModels.set(sourceModel, bodyTypeName);
-          // Also register transitive descendants, deriving their patch body type name.
-          for (const candidate of getAllDescendants(allModels, sourceModel)) {
-            const candidateName = csharpModelName(program, candidate);
-            const descBodyTypeName = isMergePatchBody
-              ? `MergePatch<${candidateName}>`
-              : candidateName;
-            patchModels.set(candidate, descBodyTypeName);
-          }
+        continue;
+      }
 
-          const pending = [sourceModel];
-          const visited = new Set<Model>();
-          while (pending.length > 0) {
-            const current = pending.shift()!;
-            if (visited.has(current)) continue;
-            visited.add(current);
-            for (const prop of classProperties(program, current)) {
-              const reference = getValidatorModelReference(prop.type);
-              if (!reference) continue;
-              if (!isMergePatchBody || reference.isCollection) {
-                nestedPostModels.add(reference.model);
-                continue;
-              }
+      const isMergePatchBody = isMergePatch(program, bodyModel);
+      const sourceModel = isMergePatchBody
+        ? getMergePatchSource(program, bodyModel)
+        : bodyModel;
+      if (!sourceModel) continue;
 
-              const nestedName = csharpModelName(program, reference.model);
-              patchModels.set(reference.model, `MergePatch<${nestedName}>`);
-              pending.push(reference.model);
-            }
+      const routeModels = [
+        sourceModel,
+        ...getAllDescendants(allModels, sourceModel),
+      ];
+      for (const model of routeModels) {
+        addPatchBody(program, patchModels, model, isMergePatchBody);
+      }
+
+      const pending = [...routeModels];
+      const visited = new Set<Model>();
+      while (pending.length > 0) {
+        const current = pending.shift()!;
+        if (visited.has(current)) continue;
+        visited.add(current);
+        for (const prop of classProperties(program, current)) {
+          const reference = getValidatorModelReference(prop.type);
+          if (!reference) continue;
+          if (!isMergePatchBody || reference.isCollection) {
+            nestedPostModels.add(reference.model);
+            continue;
           }
+          addPatchBody(program, patchModels, reference.model, true);
+          pending.push(reference.model);
         }
       }
     }
   }
   return { postModels, patchModels, nestedPostModels };
+}
+
+/** Records that `model` is validated as a MergePatch body or as a plain PATCH body. */
+function addPatchBody(
+  program: Program,
+  patchModels: Map<Model, Set<string>>,
+  model: Model,
+  isMergePatchBody: boolean,
+): void {
+  const modelName = csharpModelName(program, model);
+  const bodies = patchModels.get(model) ?? new Set<string>();
+  bodies.add(isMergePatchBody ? `MergePatch<${modelName}>` : modelName);
+  patchModels.set(model, bodies);
+}
+
+/** One PATCH validator to emit for a model. */
+interface PatchValidatorEntry {
+  /** Raw body type name, e.g. `"MergePatch<Pet>"` or `"Pet"`. */
+  rawBodyTypeName: string;
+  /** C# validator class name, e.g. `"PetPatchValidator"`. */
+  validatorName: string;
+}
+
+/**
+ * Lists the PATCH validators to emit for `model`, plain body first.
+ *
+ * A model normally gets a single `{Model}PatchValidator`. When it is validated
+ * both as a plain PATCH body and as a MergePatch body, the plain one keeps
+ * `{Model}PatchValidator` and the MergePatch one is named
+ * `{Model}MergePatchValidator`, so both classes can live side by side.
+ *
+ * Returns an empty list when the model is not a PATCH body. When no HTTP
+ * operations exist (`routeModels` is `undefined`), every model gets one plain
+ * PATCH validator.
+ */
+function patchValidatorsFor(
+  program: Program,
+  model: Model,
+  routeModels: ValidatorRouteModels | undefined,
+): PatchValidatorEntry[] {
+  const modelName = csharpModelName(program, model);
+  const bodies = routeModels
+    ? routeModels.patchModels.get(model)
+    : new Set([modelName]);
+  if (!bodies || bodies.size === 0) return [];
+
+  const hasPlainBody = bodies.has(modelName);
+  return [...bodies]
+    .sort((a, b) => Number(isMergePatchName(a)) - Number(isMergePatchName(b)))
+    .map((rawBodyTypeName) => ({
+      rawBodyTypeName,
+      validatorName:
+        hasPlainBody && isMergePatchName(rawBodyTypeName)
+          ? `${modelName}MergePatchValidator`
+          : `${modelName}PatchValidator`,
+    }));
+}
+
+function isMergePatchName(rawBodyTypeName: string): boolean {
+  return rawBodyTypeName.startsWith("MergePatch<");
 }
 
 /**
@@ -965,19 +1068,18 @@ function resolvePatchBodyInfo(
   }
   if (options.mergePatchStyle === "typed") {
     const typedName = `${modelName}MergePatchUpdate`;
-    const fullyQualified = options.fullyQualifiedTypes
-      ? `${options.modelsNamespace}.${modelName}MergePatchUpdate`
-      : `${modelName}MergePatchUpdate`;
+    const fullyQualified = qualifyTypeName(
+      options.modelsNamespace,
+      typedName,
+      options,
+    );
     return {
       patchBodyTypeName: typedName,
       qualifiedPatchBodyTypeName: fullyQualified,
       fullyQualifiedTypeName: fullyQualified,
     };
   }
-  // Generic style
-  const fullyQualified = options.fullyQualifiedTypes
-    ? `${options.helpersNamespace}.MergePatch<${qualifiedModelName}>`
-    : `MergePatch<${qualifiedModelName}>`;
+  const fullyQualified = `${qualifyTypeName(options.helpersNamespace, "MergePatch", options)}<${qualifiedModelName}>`;
   return {
     patchBodyTypeName: rawBodyTypeName,
     qualifiedPatchBodyTypeName: fullyQualified,
@@ -1029,9 +1131,9 @@ async function emitValidatorModels(
       (emitPost &&
         (routeModels === undefined || routeModels.postModels.has(model))) ||
       (emitPatch && routeModels?.nestedPostModels.has(model));
-    const doPatch =
-      emitPatch &&
-      (routeModels === undefined || routeModels.patchModels.has(model));
+    const patchValidators = emitPatch
+      ? patchValidatorsFor(program, model, routeModels)
+      : [];
 
     const qualifiedModelName = computeModelTypeName(program, model, options);
     const modelName = csharpModelName(program, model);
@@ -1075,19 +1177,15 @@ async function emitValidatorModels(
       });
     }
 
-    if (doPatch) {
-      const rawBodyTypeName = routeModels?.patchModels.get(model) ?? modelName;
-      const {
-        patchBodyTypeName,
-        qualifiedPatchBodyTypeName,
-        fullyQualifiedTypeName: _fqt,
-      } = resolvePatchBodyInfo(
-        rawBodyTypeName,
-        modelName,
-        qualifiedModelName,
-        options,
-      );
-      const isMergePatchBody = rawBodyTypeName.startsWith("MergePatch<");
+    for (const { rawBodyTypeName, validatorName } of patchValidators) {
+      const { patchBodyTypeName, qualifiedPatchBodyTypeName } =
+        resolvePatchBodyInfo(
+          rawBodyTypeName,
+          modelName,
+          qualifiedModelName,
+          options,
+        );
+      const isMergePatchBody = isMergePatchName(rawBodyTypeName);
       const patchProps = buildValidatorProperties(
         program,
         model,
@@ -1110,16 +1208,19 @@ async function emitValidatorModels(
           options.mergePatchStyle === "generic",
         modelName,
         qualifiedModelName,
+        validatorName,
         patchBodyTypeName,
         qualifiedPatchBodyTypeName,
         isMergePatchBody: isMergePatchBody || undefined,
+        usesJsonOptions:
+          (isMergePatchBody && patchRefs.length > 0) || undefined,
         properties: patchProps,
         referencedValidators: patchRefs.length > 0 ? patchRefs : undefined,
       };
       await emitFile(program, {
         path: resolvePath(
           options.validatorsOutputDir,
-          `${versionDir}${modelName}PatchValidator${options.fileExtension}`,
+          `${versionDir}${validatorName}${options.fileExtension}`,
         ),
         content: getValidatorPatchTemplate(
           options.templates["validator-patch"],
@@ -1155,9 +1256,9 @@ async function emitVersionAwareValidatorModels(
       (emitPost &&
         (routeModels === undefined || routeModels.postModels.has(model))) ||
       (emitPatch && routeModels?.nestedPostModels.has(model));
-    const doPatch =
-      emitPatch &&
-      (routeModels === undefined || routeModels.patchModels.has(model));
+    const patchValidators = emitPatch
+      ? patchValidatorsFor(program, model, routeModels)
+      : [];
 
     const qualifiedModelName = computeModelTypeName(program, model, options);
     const modelName = csharpModelName(program, model);
@@ -1210,8 +1311,7 @@ async function emitVersionAwareValidatorModels(
       });
     }
 
-    if (doPatch) {
-      const rawBodyTypeName = routeModels?.patchModels.get(model) ?? modelName;
+    for (const { rawBodyTypeName, validatorName } of patchValidators) {
       const { patchBodyTypeName, qualifiedPatchBodyTypeName } =
         resolvePatchBodyInfo(
           rawBodyTypeName,
@@ -1219,7 +1319,7 @@ async function emitVersionAwareValidatorModels(
           qualifiedModelName,
           options,
         );
-      const isMergePatchBody = rawBodyTypeName.startsWith("MergePatch<");
+      const isMergePatchBody = isMergePatchName(rawBodyTypeName);
       const { baseProperties, versionGroups } =
         buildVersionAwareValidatorProperties(
           program,
@@ -1253,9 +1353,12 @@ async function emitVersionAwareValidatorModels(
           options.mergePatchStyle === "generic",
         modelName,
         qualifiedModelName,
+        validatorName,
         patchBodyTypeName,
         qualifiedPatchBodyTypeName,
         isMergePatchBody: isMergePatchBody || undefined,
+        usesJsonOptions:
+          (isMergePatchBody && patchRefs.length > 0) || undefined,
         allVersions: versionValues,
         defaultVersion,
         baseProperties,
@@ -1265,7 +1368,7 @@ async function emitVersionAwareValidatorModels(
       await emitFile(program, {
         path: resolvePath(
           options.validatorsOutputDir,
-          `${modelName}PatchValidator${options.fileExtension}`,
+          `${validatorName}${options.fileExtension}`,
         ),
         content: getValidatorPatchVersionAwareTemplate(
           options.templates["validator-patch-version-aware"],
@@ -1309,11 +1412,10 @@ async function emitValidatorsInitializer(
         validatorName: `${modelName}Validator`,
       });
     }
-    if (
-      emitPatch &&
-      (routeModels === undefined || routeModels.patchModels.has(model))
-    ) {
-      const rawBodyTypeName = routeModels?.patchModels.get(model) ?? modelName;
+    const patchValidators = emitPatch
+      ? patchValidatorsFor(program, model, routeModels)
+      : [];
+    for (const { rawBodyTypeName, validatorName } of patchValidators) {
       const { patchBodyTypeName, fullyQualifiedTypeName } =
         resolvePatchBodyInfo(
           rawBodyTypeName,
@@ -1324,7 +1426,7 @@ async function emitValidatorsInitializer(
       registrations.push({
         modelTypeName: patchBodyTypeName,
         qualifiedModelTypeName: fullyQualifiedTypeName,
-        validatorName: `${modelName}PatchValidator`,
+        validatorName,
       });
     }
   }
@@ -1383,6 +1485,78 @@ function discriminatorPropertyNameInHierarchy(
 }
 
 /**
+ * Reports `merge-patch-recursive-reference` for every property that closes a
+ * loop of nested MergePatch validators (`Node → Node`, `A → B → A`).
+ *
+ * Each MergePatch validator receives the validators of its nested models
+ * through its constructor, so a loop would make the validators depend on each
+ * other and fail to resolve from dependency injection. Only object-valued
+ * properties that can be written in a PATCH form edges: arrays are validated
+ * by POST validators, and read-only or create-only properties are rejected
+ * without being validated recursively.
+ */
+function reportMergePatchCycles(
+  program: Program,
+  allModels: Model[],
+  patchModels: Map<Model, Set<string>>,
+  createMember: EnumMember | undefined,
+  updateMember: EnumMember | undefined,
+): void {
+  const writeMembers = new Set(
+    [createMember, updateMember].filter(
+      (m): m is EnumMember => m !== undefined,
+    ),
+  );
+  const isMergePatchModel = (model: Model) =>
+    [...(patchModels.get(model) ?? [])].some(isMergePatchName);
+  const isPatchWritable = (prop: ModelProperty) =>
+    (writeMembers.size === 0 ||
+      isVisible(program, prop, { any: writeMembers })) &&
+    (!updateMember ||
+      isVisible(program, prop, { any: new Set([updateMember]) }));
+
+  const edgesFrom = (model: Model) =>
+    classProperties(program, model).flatMap((prop) => {
+      if (!isPatchWritable(prop)) return [];
+      const reference = getValidatorModelReference(prop.type);
+      if (!reference || reference.isCollection) return [];
+      if (!isMergePatchModel(reference.model)) return [];
+      return [{ prop, target: reference.model }];
+    });
+
+  const finished = new Set<Model>();
+  const path: Model[] = [];
+  const visit = (model: Model): void => {
+    path.push(model);
+    for (const { prop, target } of edgesFrom(model)) {
+      if (finished.has(target)) continue;
+      const loopStart = path.indexOf(target);
+      if (loopStart >= 0) {
+        const cycle = [...path.slice(loopStart), target]
+          .map((m) => csharpModelName(program, m))
+          .join(" → ");
+        reportDiagnostic(program, {
+          code: "merge-patch-recursive-reference",
+          target: prop,
+          format: {
+            property: `${csharpModelName(program, model)}.${prop.name}`,
+            cycle,
+          },
+        });
+        continue;
+      }
+      visit(target);
+    }
+    path.pop();
+    finished.add(model);
+  };
+
+  for (const model of allModels) {
+    if (isMergePatchModel(model) && !finished.has(model)) visit(model);
+  }
+}
+
+/**
  * Entry point for validator emission. Called from `$onEmit` when
  * `emit-validators` is `true`.
  *
@@ -1419,6 +1593,16 @@ export async function emitValidators(
   const createMember = lifecycle.members.get("Create");
   const updateMember = lifecycle.members.get("Update");
 
+  if (emitPatch && routeModels) {
+    reportMergePatchCycles(
+      program,
+      allModels,
+      routeModels.patchModels,
+      createMember,
+      updateMember,
+    );
+  }
+
   // Detect versioning.
   let allVersions: Version[] | undefined;
   for (const model of allModels) {
@@ -1454,12 +1638,14 @@ export async function emitValidators(
         ? {
             postModels: collectValidatorTransitiveDeps(
               program,
+              allModels,
               routeModels.postModels,
               vf,
             ),
             patchModels: routeModels.patchModels,
             nestedPostModels: collectValidatorTransitiveDeps(
               program,
+              allModels,
               routeModels.nestedPostModels,
               vf,
             ),
@@ -1496,11 +1682,13 @@ export async function emitValidators(
       ? {
           postModels: collectValidatorTransitiveDeps(
             program,
+            allModels,
             routeModels.postModels,
           ),
           patchModels: routeModels.patchModels,
           nestedPostModels: collectValidatorTransitiveDeps(
             program,
+            allModels,
             routeModels.nestedPostModels,
           ),
         }
@@ -1539,12 +1727,14 @@ export async function emitValidators(
       ? {
           postModels: collectValidatorTransitiveDeps(
             program,
+            allModels,
             routeModels.postModels,
             versionFilter,
           ),
           patchModels: routeModels.patchModels,
           nestedPostModels: collectValidatorTransitiveDeps(
             program,
+            allModels,
             routeModels.nestedPostModels,
             versionFilter,
           ),

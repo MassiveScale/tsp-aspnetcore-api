@@ -51,7 +51,7 @@ import {
   renderDocComment,
 } from "./renderer.js";
 import { getServerName } from "./decorators.js";
-import { csharpModelName } from "./naming.js";
+import { csharpModelName, qualifyTypeName } from "./naming.js";
 import { resolvePayloadType } from "./payloads.js";
 import { ResolvedOptions, sortUsings } from "./emitter.js";
 import { SCALAR_MAP, FORMAT_MAP, pascalCase, camelCase } from "./utils.js";
@@ -501,22 +501,22 @@ function typeRef(
         const source = getMergePatchSource(program, type);
         if (source) {
           const sourceName = csharpModelName(program, source);
-          const modelType = csharpReference(
+          const modelType = qualifyTypeName(
             options.modelsNamespace,
             sourceName,
             options,
           );
           return options.mergePatchStyle === "typed"
-            ? csharpReference(
+            ? qualifyTypeName(
                 options.modelsNamespace,
                 `${sourceName}MergePatchUpdate`,
                 options,
               )
-            : `${csharpReference(options.helpersNamespace, "MergePatch", options)}<${modelType}>`;
+            : `${qualifyTypeName(options.helpersNamespace, "MergePatch", options)}<${modelType}>`;
         }
       }
       return type.name
-        ? csharpReference(
+        ? qualifyTypeName(
             options.modelsNamespace,
             csharpModelName(program, type),
             options,
@@ -524,7 +524,7 @@ function typeRef(
         : "object";
     }
     case "Enum":
-      return csharpReference(
+      return qualifyTypeName(
         options.modelsNamespace,
         pascalCase(type.name),
         options,
@@ -547,14 +547,6 @@ function typeRef(
     default:
       return "object";
   }
-}
-
-function csharpReference(
-  namespace: string,
-  typeName: string,
-  options: ControllerOptions,
-): string {
-  return options.fullyQualifiedTypes ? `${namespace}.${typeName}` : typeName;
 }
 
 /**

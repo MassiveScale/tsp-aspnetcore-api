@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.Http;
 using MarketOnce.Community.Campaign.Api.Models;
 using MarketOnce.Community.Campaign.Api.Helpers;
 
-
 namespace MarketOnce.Community.Campaign.Api.Validators;
 
 /// <summary>
@@ -29,7 +28,7 @@ public partial class CatPatchValidator : AbstractValidator<MergePatch<Cat>>
     /// <summary>
     /// Initializes a new instance of <see cref="CatPatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
-        public CatPatchValidator(IHttpContextAccessor httpContextAccessor)
+    public CatPatchValidator(IHttpContextAccessor httpContextAccessor)
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
