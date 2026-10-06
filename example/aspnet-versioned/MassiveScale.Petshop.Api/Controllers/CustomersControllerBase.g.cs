@@ -12,6 +12,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using MarketOnce.Community.Campaign.Api.Helpers;
+using MarketOnce.Community.Campaign.Api.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MarketOnce.Community.Campaign.Api.Controllers
@@ -42,14 +44,14 @@ namespace MarketOnce.Community.Campaign.Api.Controllers
         /// </summary>
         [HttpPost("/api/v1.0/customers")]
         [HttpPost("/api/v2.0/customers")]
-        public abstract Task<IActionResult> Create([FromBody] MarketOnce.Community.Campaign.Api.Models.Customer body, CancellationToken cancellationToken);
+        public abstract Task<IActionResult> Create([FromBody] Customer body, CancellationToken cancellationToken);
     
         /// <summary>
         /// Updates an existing customer with the provided information. Only the fields included in the request body will be updated.
         /// </summary>
         [HttpPatch("/api/v1.0/customers/{id}")]
         [HttpPatch("/api/v2.0/customers/{id}")]
-        public abstract Task<IActionResult> Update([FromRoute] string id, [FromBody] MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Customer> body, CancellationToken cancellationToken);
+        public abstract Task<IActionResult> Update([FromRoute] string id, [FromBody] MergePatch<Customer> body, CancellationToken cancellationToken);
     
         /// <summary>
         /// Deletes a customer by their unique identifier.

@@ -177,6 +177,61 @@ describe("csharp emitter - models", () => {
   });
 
   describe("type mapping", () => {
+    it("uses short model and enum references by default and qualifies them on request", async () => {
+      const source = `
+        namespace Demo;
+        enum State { active, inactive }
+        model Base { state: State; }
+        model Child extends Base { parent?: Base; }
+      `;
+
+      const shortNames = await emit(source);
+      const child = shortNames["Child.g.cs"];
+      const base = shortNames["Base.g.cs"];
+      ok(
+        child,
+        `expected Child.g.cs, got ${Object.keys(shortNames).join(", ")}`,
+      );
+      ok(base, "expected Base.g.cs");
+      ok(
+        child.includes("public partial class Child : Base") &&
+          child.includes("public Base? Parent { get; set; }") &&
+          !child.includes("Demo.Models.Base"),
+        `expected short model references in:\n${child}`,
+      );
+      ok(
+        base.includes("public State? State { get; set; }") &&
+          !base.includes("Demo.Models.State"),
+        `expected short enum references in:\n${child}`,
+      );
+
+      const qualifiedNames = await emit(source, {
+        "fully-qualified-types": true,
+      });
+      const qualifiedChild = qualifiedNames["Child.g.cs"];
+      const qualifiedBase = qualifiedNames["Base.g.cs"];
+      ok(
+        qualifiedChild,
+        "expected Child.g.cs with fully-qualified-types enabled",
+      );
+      ok(
+        qualifiedBase,
+        "expected Base.g.cs with fully-qualified-types enabled",
+      );
+      ok(
+        qualifiedChild.includes(
+          "public partial class Child : Demo.Models.Base",
+        ) &&
+          qualifiedChild.includes(
+            "public Demo.Models.Base? Parent { get; set; }",
+          ) &&
+          qualifiedBase.includes(
+            "public Demo.Models.State? State { get; set; }",
+          ),
+        `expected fully qualified references when opted in:\n${qualifiedChild}`,
+      );
+    });
+
     it("emits a simple model with primitive properties", async () => {
       const results = await emit(`
         namespace Demo;
@@ -242,7 +297,7 @@ describe("csharp emitter - models", () => {
         `expected Models/Widget.g.cs, got ${Object.keys(results).join(", ")}`,
       );
       ok(
-        widget.includes("public Demo.Models.WidgetColor? Color { get; set; }"),
+        widget.includes("public WidgetColor? Color { get; set; }"),
         `expected WidgetColor in:\n${widget}`,
       );
       ok(
@@ -314,7 +369,7 @@ describe("csharp emitter - models", () => {
       const animal = results["Animal.g.cs"];
       const dog = results["Dog.g.cs"];
       ok(animal.includes("public partial class Animal"));
-      ok(dog.includes("public partial class Dog : Demo.Models.Animal"));
+      ok(dog.includes("public partial class Dog : Animal"));
     });
 
     it("treats nullable unions as nullable C# types", async () => {
@@ -388,7 +443,7 @@ describe("csharp emitter - models", () => {
       ok(file, `expected Widget.g.cs, got ${Object.keys(results).join(", ")}`);
       ok(
         file.includes(
-          "public Demo.Models.Size? Size { get; set; } = Demo.Models.Size.Medium;",
+          "public Size? Size { get; set; } = Demo.Models.Size.Medium;",
         ),
         `expected enum default initializer in:\n${file}`,
       );
@@ -536,7 +591,7 @@ describe("csharp emitter - models", () => {
       ok(file, `expected Widget.g.cs, got ${Object.keys(results).join(", ")}`);
       ok(
         file.includes(
-          "public IList<Demo.Models.Size>? Sizes { get; set; } = new List<Demo.Models.Size> { Demo.Models.Size.Small, Demo.Models.Size.Large };",
+          "public IList<Size>? Sizes { get; set; } = new List<Size> { Size.Small, Size.Large };",
         ),
         `expected enum list initializer in:\n${file}`,
       );
@@ -576,13 +631,13 @@ describe("csharp emitter - models", () => {
       ok(file, `expected Widget.g.cs, got ${Object.keys(results).join(", ")}`);
       ok(
         file.includes(
-          "public Demo.Models.WidgetAppearance? Empty { get; set; } = new Demo.Models.WidgetAppearance();",
+          "public WidgetAppearance? Empty { get; set; } = new WidgetAppearance();",
         ),
         `expected fresh empty model initializer in:\n${file}`,
       );
       ok(
         file.includes(
-          "public Demo.Models.WidgetAppearance? Configured { get; set; } = new Demo.Models.WidgetAppearance { Theme = Demo.Models.Theme.Dark, FontSize = 20 };",
+          "public WidgetAppearance? Configured { get; set; } = new WidgetAppearance { Theme = Demo.Models.Theme.Dark, FontSize = 20 };",
         ),
         `expected populated model initializer in:\n${file}`,
       );
@@ -603,13 +658,13 @@ describe("csharp emitter - models", () => {
       ok(file, `expected Forest.g.cs, got ${Object.keys(results).join(", ")}`);
       ok(
         file.includes(
-          "public Demo.Models.Branch? Root { get; set; } = new Demo.Models.Branch { Leaf = new Demo.Models.Leaf { Value = 8 } };",
+          "public Branch? Root { get; set; } = new Branch { Leaf = new Leaf { Value = 8 } };",
         ),
         `expected recursively nested initializer in:\n${file}`,
       );
       ok(
         file.includes(
-          "public IList<Demo.Models.Branch>? Branches { get; set; } = new List<Demo.Models.Branch> { new Demo.Models.Branch { Leaf = new Demo.Models.Leaf { Value = 5 } } };",
+          "public IList<Branch>? Branches { get; set; } = new List<Branch> { new Branch { Leaf = new Leaf { Value = 5 } } };",
         ),
         `expected object-valued list initializer in:\n${file}`,
       );
@@ -631,7 +686,7 @@ describe("csharp emitter - models", () => {
       const file = results["Widget.g.cs"];
       ok(file, `expected Widget.g.cs, got ${Object.keys(results).join(", ")}`);
       ok(
-        file.includes("new Models.Appearance { TextSize = 18 }"),
+        file.includes("new Appearance { TextSize = 18 }"),
         `expected renamed C# member in the object initializer:\n${file}`,
       );
     });
@@ -705,7 +760,7 @@ describe("csharp emitter - models", () => {
       ok(file, `expected Bag.g.cs, got ${Object.keys(results).join(", ")}`);
       ok(
         file.includes(
-          "public IList<Demo.Models.Item>? Items { get; set; } = new List<Demo.Models.Item> { new Demo.Models.Item { X = 1 } };",
+          "public IList<Item>? Items { get; set; } = new List<Item> { new Item { X = 1 } };",
         ),
         `expected object initializer inside list in:\n${file}`,
       );
@@ -751,7 +806,7 @@ describe("csharp emitter - models", () => {
       `);
       const file = results["B.g.cs"];
       ok(!file.includes("using Demo;"), `unexpected self-using in:\n${file}`);
-      ok(file.includes("public Demo.Models.A? Ref { get; set; }"));
+      ok(file.includes("public A? Ref { get; set; }"));
     });
 
     it("does not add cross-namespace usings when all models share the flat models namespace", async () => {
@@ -769,7 +824,7 @@ describe("csharp emitter - models", () => {
         !file.includes("using App.Common"),
         `unexpected cross-ns using in:\n${file}`,
       );
-      ok(file.includes("public App.Models.Address? Home { get; set; }"));
+      ok(file.includes("public Address? Home { get; set; }"));
     });
 
     it("does not add usings for array and record element types in the models namespace", async () => {
@@ -790,10 +845,10 @@ describe("csharp emitter - models", () => {
         !file.includes("using App.Common"),
         `unexpected cross-ns using in:\n${file}`,
       );
-      ok(file.includes("public IList<App.Models.Tag>? Tags { get; set; }"));
+      ok(file.includes("public IList<Tag>? Tags { get; set; }"));
       ok(
         file.includes(
-          "public IDictionary<string, App.Models.Tag>? ScoresByTag { get; set; }",
+          "public IDictionary<string, Tag>? ScoresByTag { get; set; }",
         ),
       );
     });
@@ -811,7 +866,7 @@ describe("csharp emitter - models", () => {
         !file.includes("using App.Base"),
         `unexpected cross-ns using in:\n${file}`,
       );
-      ok(file.includes("public partial class User : App.Models.Entity"));
+      ok(file.includes("public partial class User : Entity"));
     });
   });
 
@@ -891,7 +946,7 @@ describe("csharp emitter - models", () => {
         !file.includes("using Legacy.Common"),
         `unexpected original using in:\n${file}`,
       );
-      ok(file.includes("public Models.Address? Home { get; set; }"));
+      ok(file.includes("public Address? Home { get; set; }"));
     });
 
     it("places models in folders derived from the mapped namespace when namespace-from-path is disabled", async () => {
@@ -931,7 +986,7 @@ describe("csharp emitter - models", () => {
         !file.includes("using App.Users;"),
         `unexpected self-using in:\n${file}`,
       );
-      ok(file.includes("public Models.Address? Home { get; set; }"));
+      ok(file.includes("public Address? Home { get; set; }"));
     });
   });
 
@@ -950,7 +1005,7 @@ describe("csharp emitter - models", () => {
       ok(cls, "expected User.g.cs");
       ok(iface, "expected IUser.g.cs");
 
-      ok(cls.includes("public partial class User : Demo.Models.IUser"));
+      ok(cls.includes("public partial class User : IUser"));
       ok(cls.includes("public string? Id { get; set; }"));
 
       ok(iface.includes("public partial interface IUser"));
@@ -975,16 +1030,8 @@ describe("csharp emitter - models", () => {
       const dogClass = results["Dog.g.cs"];
       const dogIface = results["IDog.g.cs"];
 
-      ok(
-        dogClass.includes(
-          "public partial class Dog : Demo.Models.Animal, Demo.Models.IDog",
-        ),
-      );
-      ok(
-        dogIface.includes(
-          "public partial interface IDog : Demo.Models.IAnimal",
-        ),
-      );
+      ok(dogClass.includes("public partial class Dog : Animal, IDog"));
+      ok(dogIface.includes("public partial interface IDog : IAnimal"));
       ok(dogIface.includes("string? Breed { get; set; }"));
     });
 
@@ -1403,11 +1450,11 @@ describe("csharp emitter - models", () => {
         `missing JsonPolymorphic in:\n${pet}`,
       );
       ok(
-        pet.includes('[JsonDerivedType(typeof(Demo.Models.Dog), "dog")]'),
+        pet.includes('[JsonDerivedType(typeof(Dog), "dog")]'),
         `missing Dog JsonDerivedType in:\n${pet}`,
       );
       ok(
-        pet.includes('[JsonDerivedType(typeof(Demo.Models.Cat), "cat")]'),
+        pet.includes('[JsonDerivedType(typeof(Cat), "cat")]'),
         `missing Cat JsonDerivedType in:\n${pet}`,
       );
     });
@@ -1443,7 +1490,7 @@ describe("csharp emitter - models", () => {
         !dog.includes("JsonPolymorphic") && !dog.includes("JsonDerivedType"),
         `unexpected polymorphic attribute on derived class:\n${dog}`,
       );
-      ok(dog.includes("public partial class Dog : Demo.Models.Pet"), dog);
+      ok(dog.includes("public partial class Dog : Pet"), dog);
     });
 
     it("resolves discriminator values through an intermediate model with no own literal value", async () => {
@@ -1456,7 +1503,7 @@ describe("csharp emitter - models", () => {
       `);
       const pet = results["Pet.g.cs"];
       ok(
-        pet.includes('[JsonDerivedType(typeof(Demo.Models.Dog), "dog")]'),
+        pet.includes('[JsonDerivedType(typeof(Dog), "dog")]'),
         `missing recursive Dog JsonDerivedType in:\n${pet}`,
       );
       ok(
@@ -1476,11 +1523,11 @@ describe("csharp emitter - models", () => {
       `);
       const pet = results["Pet.g.cs"];
       ok(
-        pet.includes('[JsonDerivedType(typeof(Demo.Models.Dog), "dog")]'),
+        pet.includes('[JsonDerivedType(typeof(Dog), "dog")]'),
         `missing Dog JsonDerivedType in:\n${pet}`,
       );
       ok(
-        pet.includes('[JsonDerivedType(typeof(Demo.Models.Cat), "cat")]'),
+        pet.includes('[JsonDerivedType(typeof(Cat), "cat")]'),
         `missing Cat JsonDerivedType in:\n${pet}`,
       );
       ok(
@@ -1498,11 +1545,9 @@ describe("csharp emitter - models", () => {
         model Ant extends Pet { kind: "ant"; }
       `);
       const pet = results["Pet.g.cs"];
-      const antIndex = pet.indexOf(
-        '[JsonDerivedType(typeof(Demo.Models.Ant), "ant")]',
-      );
+      const antIndex = pet.indexOf('[JsonDerivedType(typeof(Ant), "ant")]');
       const zebraIndex = pet.indexOf(
-        '[JsonDerivedType(typeof(Demo.Models.Zebra), "zebra")]',
+        '[JsonDerivedType(typeof(Zebra), "zebra")]',
       );
       ok(antIndex !== -1 && zebraIndex !== -1, pet);
       ok(antIndex < zebraIndex, `expected Ant before Zebra in:\n${pet}`);
@@ -1522,7 +1567,7 @@ describe("csharp emitter - models", () => {
         `expected Pet to be abstract:\n${pet}`,
       );
       ok(
-        dog.includes("public partial class Dog : Demo.Models.Pet") &&
+        dog.includes("public partial class Dog : Pet") &&
           !dog.includes("abstract"),
         `expected Dog to stay concrete:\n${dog}`,
       );
@@ -1569,7 +1614,7 @@ public partial class {{className}} : {{bases}}
 
       const cls = results["User.g.cs"];
       ok(cls.includes("[Serializable]"), `expected [Serializable] in:\n${cls}`);
-      ok(cls.includes("public partial class User : Demo.Models.IUser"));
+      ok(cls.includes("public partial class User : IUser"));
       ok(cls.includes("public string? Id { get; set; }"));
       ok(cls.includes("public string? Name { get; set; }"));
       ok(results["IUser.g.cs"].includes("public partial interface IUser"));
@@ -2015,7 +2060,7 @@ namespace {{namespace}}
 
       const file = results["Widget.g.cs"];
       ok(
-        file.includes(": Models.EntityBase"),
+        file.includes(": EntityBase"),
         "expected base class reference to use @serverName",
       );
       ok(
@@ -2059,7 +2104,7 @@ namespace {{namespace}}
 
       const file = results["Widget.g.cs"];
       ok(
-        file.includes("IList<Models.TagResource>?"),
+        file.includes("IList<TagResource>?"),
         "expected array element type to use @serverName",
       );
     });

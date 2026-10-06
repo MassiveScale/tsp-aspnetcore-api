@@ -8,6 +8,10 @@
 
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
+{{#unless fullyQualifiedTypes}}
+using {{{modelsNamespace}}};
+{{#if useHelpersNamespace}}using {{{helpersNamespace}}};
+{{/if}}{{/unless}}
 {{#if isVersionAware}}
 using Microsoft.AspNetCore.Http;
 {{/if}}

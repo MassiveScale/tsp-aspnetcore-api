@@ -8,6 +8,8 @@
 
 using FluentValidation;
 using Microsoft.AspNetCore.Http;
+using MarketOnce.Community.Campaign.Api.Models;
+
 
 namespace MarketOnce.Community.Campaign.Api.Validators;
 
@@ -18,14 +20,14 @@ namespace MarketOnce.Community.Campaign.Api.Validators;
 /// Extend this partial class to add custom validation rules.
 /// </summary>
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial class StoreValidator : AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Store>
+public partial class StoreValidator : AbstractValidator<Store>
 {
     private static readonly string[] _versions = new[] { "v1.0", "v2.0" };
 
     /// <summary>
     /// Initializes a new instance of <see cref="StoreValidator"/> with version-aware auto-generated rules.
     /// </summary>
-    public StoreValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Pet> petValidator)
+    public StoreValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<Pet> petValidator)
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 

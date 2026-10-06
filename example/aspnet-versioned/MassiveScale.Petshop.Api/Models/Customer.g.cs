@@ -18,7 +18,7 @@ namespace MarketOnce.Community.Campaign.Api.Models
     /// Represents a customer of the pet store.
     /// </summary>
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-    public partial class Customer : MarketOnce.Community.Campaign.Api.Models.EntityBase
+    public partial class Customer : EntityBase
     {
         /// <summary>
         /// The first name of the customer.

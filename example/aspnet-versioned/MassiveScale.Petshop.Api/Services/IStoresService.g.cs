@@ -12,6 +12,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using MarketOnce.Community.Campaign.Api.Helpers;
+using MarketOnce.Community.Campaign.Api.Models;
 
 namespace MarketOnce.Community.Campaign.Api.Services
 {
@@ -23,22 +25,22 @@ namespace MarketOnce.Community.Campaign.Api.Services
         /// <summary>
         /// Retrieves a list of all stores.
         /// </summary>
-        Task<MarketOnce.Community.Campaign.Api.Models.PagedResultStore?> ListAsync(CancellationToken cancellationToken);
+        Task<PagedResultStore?> ListAsync(CancellationToken cancellationToken);
     
         /// <summary>
         /// Retrieves a specific store by its unique identifier.
         /// </summary>
-        Task<MarketOnce.Community.Campaign.Api.Models.Store?> ReadAsync(string id, CancellationToken cancellationToken);
+        Task<Store?> ReadAsync(string id, CancellationToken cancellationToken);
     
         /// <summary>
         /// Creates a new store with the provided information.
         /// </summary>
-        Task<MarketOnce.Community.Campaign.Api.Models.Store?> CreateAsync(MarketOnce.Community.Campaign.Api.Models.Store body, CancellationToken cancellationToken);
+        Task<Store?> CreateAsync(Store body, CancellationToken cancellationToken);
     
         /// <summary>
         /// Updates an existing store with the provided information. Only the fields included in the request body will be updated.
         /// </summary>
-        Task UpdateAsync(string id, MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Store> body, CancellationToken cancellationToken);
+        Task UpdateAsync(string id, MergePatch<Store> body, CancellationToken cancellationToken);
     
         /// <summary>
         /// Deletes a store by its unique identifier.

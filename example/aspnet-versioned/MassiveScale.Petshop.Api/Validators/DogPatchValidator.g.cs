@@ -8,6 +8,9 @@
 
 using FluentValidation;
 using Microsoft.AspNetCore.Http;
+using MarketOnce.Community.Campaign.Api.Models;
+using MarketOnce.Community.Campaign.Api.Helpers;
+
 
 namespace MarketOnce.Community.Campaign.Api.Validators;
 
@@ -19,7 +22,7 @@ namespace MarketOnce.Community.Campaign.Api.Validators;
 /// Extend this partial class to add custom validation rules.
 /// </summary>
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial class DogPatchValidator : AbstractValidator<MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Dog>>
+public partial class DogPatchValidator : AbstractValidator<MergePatch<Dog>>
 {
     private static readonly string[] _versions = new[] { "v1.0", "v2.0" };
 

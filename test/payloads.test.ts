@@ -67,17 +67,17 @@ describe("csharp emitter - response and metadata-only models", () => {
       const widgets = results["Services/IWidgetsService.g.cs"];
       assertContains(
         widgets,
-        "Task<Repro.Models.Widget?> ReadAsync(CancellationToken cancellationToken);",
+        "Task<Widget?> ReadAsync(CancellationToken cancellationToken);",
         "IWidgetsService",
       );
       assertContains(
         widgets,
-        "Task UpdateAsync(string? ifMatch, Repro.Models.Widget body, CancellationToken cancellationToken);",
+        "Task UpdateAsync(string? ifMatch, Widget body, CancellationToken cancellationToken);",
         "IWidgetsService",
       );
       assertContains(
         results["Services/IGadgetsService.g.cs"],
-        "Task<Repro.Models.Gadget?> ReadAsync(CancellationToken cancellationToken);",
+        "Task<Gadget?> ReadAsync(CancellationToken cancellationToken);",
         "IGadgetsService",
       );
     });
@@ -86,7 +86,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       const results = await emit(REPRO);
       assertContains(
         results["Controllers/WidgetsControllerBase.g.cs"],
-        'public abstract Task<IActionResult> Update([FromHeader(Name = "If-Match")] string? ifMatch, [FromBody] Repro.Models.Widget body, CancellationToken cancellationToken);',
+        'public abstract Task<IActionResult> Update([FromHeader(Name = "If-Match")] string? ifMatch, [FromBody] Widget body, CancellationToken cancellationToken);',
         "WidgetsControllerBase",
       );
     });
@@ -262,12 +262,12 @@ describe("csharp emitter - response and metadata-only models", () => {
       deepStrictEqual(modelFiles(results), ["Address.g.cs", "Customer.g.cs"]);
       assertContains(
         results["Models/Customer.g.cs"],
-        "public Demo.Models.Address? Address { get; set; }",
+        "public Address? Address { get; set; }",
         "Customer",
       );
       assertContains(
         results["Services/IAddressesService.g.cs"],
-        "Task<Demo.Models.Address?> ReadAsync(",
+        "Task<Address?> ReadAsync(",
         "IAddressesService",
       );
     });
@@ -358,11 +358,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       );
       deepStrictEqual(modelFiles(results), ["IWidget.g.cs", "Widget.g.cs"]);
       const widget = results["Models/Widget.g.cs"];
-      assertContains(
-        widget,
-        "public partial class Widget : Demo.Models.IWidget",
-        "Widget",
-      );
+      assertContains(widget, "public partial class Widget : IWidget", "Widget");
       assertContains(widget, " Id { get; set; }", "Widget");
       assertContains(widget, " Name { get; set; }", "Widget");
       ok(
@@ -392,7 +388,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       deepStrictEqual(modelFiles(results), ["MixedBase.g.cs", "Widget.g.cs"]);
       assertContains(
         results["Models/Widget.g.cs"],
-        "public partial class Widget : Demo.Models.MixedBase",
+        "public partial class Widget : MixedBase",
         "Widget",
       );
       const base = results["Models/MixedBase.g.cs"];
@@ -418,7 +414,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       deepStrictEqual(modelFiles(results), ["Widget.g.cs"]);
       assertContains(
         results["Services/IWidgetsService.g.cs"],
-        "Task<Demo.Models.Widget?> ReadAsync(",
+        "Task<Widget?> ReadAsync(",
         "IWidgetsService",
       );
     });
@@ -436,7 +432,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       deepStrictEqual(modelFiles(results), ["Widget.g.cs"]);
       assertContains(
         results["Services/IWidgetsService.g.cs"],
-        "Task<Demo.Models.Widget?> CreateAsync(",
+        "Task<Widget?> CreateAsync(",
         "IWidgetsService",
       );
     });
@@ -495,7 +491,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       const results = await emit(IMPLICIT);
       assertContains(
         results["Services/IWidgetsService.g.cs"],
-        "Task<Demo.Models.WidgetResult?> ReadAsync(CancellationToken cancellationToken);",
+        "Task<WidgetResult?> ReadAsync(CancellationToken cancellationToken);",
         "IWidgetsService",
       );
     });
@@ -532,11 +528,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       `);
       const node = results["Models/Node.g.cs"];
       assertContains(node, " Value { get; set; }", "Node");
-      assertContains(
-        node,
-        "public Demo.Models.Node? Next { get; set; }",
-        "Node",
-      );
+      assertContains(node, "public Node? Next { get; set; }", "Node");
       ok(!node.includes(" H {"), `expected no H property in:\n${node}`);
     });
 
@@ -605,17 +597,17 @@ describe("csharp emitter - response and metadata-only models", () => {
       ]);
       assertContains(
         results["Models/PagedResultWidget.g.cs"],
-        "public IList<Demo.Models.Widget>? Items { get; set; }",
+        "public IList<Widget>? Items { get; set; }",
         "PagedResultWidget",
       );
       assertContains(
         results["Models/PagedResultGadget.g.cs"],
-        "public IList<Demo.Models.Gadget>? Items { get; set; }",
+        "public IList<Gadget>? Items { get; set; }",
         "PagedResultGadget",
       );
       assertContains(
         results["Models/PagedResultGadgetList.g.cs"],
-        "public IList<IList<Demo.Models.Gadget>>? Items { get; set; }",
+        "public IList<IList<Gadget>>? Items { get; set; }",
         "PagedResultGadgetList",
       );
     });
@@ -624,12 +616,12 @@ describe("csharp emitter - response and metadata-only models", () => {
       const results = await emit(PAGED);
       assertContains(
         results["Services/IWidgetsService.g.cs"],
-        "Task<Demo.Models.PagedResultWidget?> ListAsync(",
+        "Task<PagedResultWidget?> ListAsync(",
         "IWidgetsService",
       );
       assertContains(
         results["Services/IGadgetsService.g.cs"],
-        "Task<Demo.Models.PagedResultGadget?> ListAsync(",
+        "Task<PagedResultGadget?> ListAsync(",
         "IGadgetsService",
       );
     });
@@ -643,7 +635,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       );
       assertContains(
         results["Services/IWidgetsService.g.cs"],
-        "Task<Demo.Models.WidgetList?> AllAsync(",
+        "Task<WidgetList?> AllAsync(",
         "IWidgetsService",
       );
     });
@@ -662,7 +654,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       deepStrictEqual(modelFiles(results), ["Widget.g.cs", "WidgetPage.g.cs"]);
       assertContains(
         results["Services/IWidgetsService.g.cs"],
-        "Task<Demo.Models.WidgetPage?> ListAsync(",
+        "Task<WidgetPage?> ListAsync(",
         "IWidgetsService",
       );
     });
@@ -684,7 +676,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       ]);
       assertContains(
         results["Models/Holder.g.cs"],
-        "public Demo.Models.BoxString? Name { get; set; }",
+        "public BoxString? Name { get; set; }",
         "Holder",
       );
     });
@@ -742,7 +734,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       }
       assertContains(
         results["Models/Holder.g.cs"],
-        "public Demo.Models.BoxCatOrDog? Pet { get; set; }",
+        "public BoxCatOrDog? Pet { get; set; }",
         "Holder",
       );
     });
@@ -787,7 +779,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       deepStrictEqual(modelFiles(results), ["PageWidget.g.cs", "Widget.g.cs"]);
       assertContains(
         results["Services/IWidgetsService.g.cs"],
-        "Models.PageWidget?> ListAsync(",
+        "PageWidget?> ListAsync(",
         "IWidgetsService",
       );
     });
@@ -810,16 +802,8 @@ describe("csharp emitter - response and metadata-only models", () => {
         "Holder.g.cs",
       ]);
       const holder = results["Models/Holder.g.cs"];
-      assertContains(
-        holder,
-        "public Demo.Models.BoxId? A { get; set; }",
-        "Holder",
-      );
-      assertContains(
-        holder,
-        "public Demo.Models.BoxName? B { get; set; }",
-        "Holder",
-      );
+      assertContains(holder, "public BoxId? A { get; set; }", "Holder");
+      assertContains(holder, "public BoxName? B { get; set; }", "Holder");
     });
 
     it("reports duplicate-model-name instead of overwriting a class", async () => {
@@ -891,19 +875,11 @@ describe("csharp emitter - response and metadata-only models", () => {
 
       deepStrictEqual(modelFiles(results), ["Dog.g.cs", "Pet.g.cs"]);
       const pet = results["Models/Pet.g.cs"];
-      assertContains(
-        pet,
-        '[JsonDerivedType(typeof(Demo.Models.Dog), "dog")]',
-        "Pet",
-      );
+      assertContains(pet, '[JsonDerivedType(typeof(Dog), "dog")]', "Pet");
       ok(!pet.includes("Odd"), `expected no Odd reference in:\n${pet}`);
 
       const validator = results["Validators/PetValidator.g.cs"];
-      assertContains(
-        validator,
-        "v.Add<Demo.Models.Dog>(dogValidator);",
-        "PetValidator",
-      );
+      assertContains(validator, "v.Add<Dog>(dogValidator);", "PetValidator");
       ok(
         !validator.includes("Odd"),
         `expected no Odd validator in:\n${validator}`,
@@ -1001,7 +977,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       );
       assertContains(
         service,
-        "Task<Demo.Models.Widget?> BothAsync(CancellationToken cancellationToken);",
+        "Task<Widget?> BothAsync(CancellationToken cancellationToken);",
         "IWidgetsService",
       );
     });
@@ -1105,7 +1081,7 @@ describe("csharp emitter - response and metadata-only models", () => {
       );
       assertContains(
         results["Services/IWidgetsService.g.cs"],
-        "Task<Demo.Models.Widget?> ReadAsync(string id, int? top, string? ifMatch, CancellationToken cancellationToken);",
+        "Task<Widget?> ReadAsync(string id, int? top, string? ifMatch, CancellationToken cancellationToken);",
         "IWidgetsService",
       );
       deepStrictEqual(modelFiles(results), ["Widget.g.cs"]);

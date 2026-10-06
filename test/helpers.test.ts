@@ -157,11 +157,11 @@ describe("csharp emitter - helpers", () => {
       ok(file.includes("IsDefined"), `expected IsDefined in:\n${file}`);
       ok(file.includes("IsNull"), `expected IsNull in:\n${file}`);
       ok(
-        file.includes("public void Patch(Demo.Models.Widget"),
+        file.includes("public void Patch(Widget"),
         `expected Patch method in:\n${file}`,
       );
       ok(
-        file.includes("public ValueTask PatchAsync(Demo.Models.Widget"),
+        file.includes("public ValueTask PatchAsync(Widget"),
         `expected PatchAsync method in:\n${file}`,
       );
       ok(

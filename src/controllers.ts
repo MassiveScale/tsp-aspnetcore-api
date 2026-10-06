@@ -80,10 +80,12 @@ export interface ControllerOptions {
   cancellationToken: boolean;
   /** Whether to use the generic `MergePatch<T>` helper or per-entity typed classes. */
   mergePatchStyle: "generic" | "typed";
-  /** Verbatim C# namespace for all model and enum files, used to fully qualify type references. */
+  /** Verbatim C# namespace for all model and enum files. */
   modelsNamespace: string;
   /** Verbatim C# namespace for all helper files, used to fully qualify `MergePatch<T>` references. */
   helpersNamespace: string;
+  /** Whether generated model/helper references include their namespaces. */
+  fullyQualifiedTypes: boolean;
 }
 
 /**
@@ -393,7 +395,7 @@ function httpParamBinding(
  *
  * @param program - The compiled TypeSpec program.
  * @param op - The HTTP operation to inspect.
- * @param options - Nullability and type-resolution options.
+ * @param options - Qualification and type-resolution options.
  * @returns C# type string for the service method's return type, or `"void"`
  *   when the operation produces no response body.
  */
@@ -438,7 +440,7 @@ function resolveReturnType(
  *
  * @param program - The compiled TypeSpec program.
  * @param prop - The model property to resolve.
- * @param options - Options (currently unused here but kept for consistency).
+ * @param options - Nullability and qualification options for referenced types.
  * @returns C# type string.
  */
 function propTypeRef(
@@ -465,7 +467,7 @@ function propTypeRef(
  *
  * @param program - The compiled TypeSpec program (used for `@format` lookup).
  * @param type - The TypeSpec type node to resolve.
- * @param options - Options (currently unused; kept for future extensibility).
+ * @param options - Qualification options and model/helper namespaces.
  * @returns C# type string.
  */
 function typeRef(
@@ -499,17 +501,34 @@ function typeRef(
         const source = getMergePatchSource(program, type);
         if (source) {
           const sourceName = csharpModelName(program, source);
+          const modelType = csharpReference(
+            options.modelsNamespace,
+            sourceName,
+            options,
+          );
           return options.mergePatchStyle === "typed"
-            ? `${options.modelsNamespace}.${sourceName}MergePatchUpdate`
-            : `${options.helpersNamespace}.MergePatch<${options.modelsNamespace}.${sourceName}>`;
+            ? csharpReference(
+                options.modelsNamespace,
+                `${sourceName}MergePatchUpdate`,
+                options,
+              )
+            : `${csharpReference(options.helpersNamespace, "MergePatch", options)}<${modelType}>`;
         }
       }
       return type.name
-        ? `${options.modelsNamespace}.${csharpModelName(program, type)}`
+        ? csharpReference(
+            options.modelsNamespace,
+            csharpModelName(program, type),
+            options,
+          )
         : "object";
     }
     case "Enum":
-      return `${options.modelsNamespace}.${pascalCase(type.name)}`;
+      return csharpReference(
+        options.modelsNamespace,
+        pascalCase(type.name),
+        options,
+      );
     case "Boolean":
       return "bool";
     case "String":
@@ -528,6 +547,14 @@ function typeRef(
     default:
       return "object";
   }
+}
+
+function csharpReference(
+  namespace: string,
+  typeName: string,
+  options: ControllerOptions,
+): string {
+  return options.fullyQualifiedTypes ? `${namespace}.${typeName}` : typeName;
 }
 
 /**
@@ -550,7 +577,7 @@ export async function emitController(
     content: renderer.renderFile({
       fileName: controllerFileName,
       namespace: options.controllersNamespace,
-      usings: buildControllerUsings(options),
+      usings: buildControllerUsings(options, group),
       body: renderer.renderController(group.controllerView),
     }),
   });
@@ -559,16 +586,34 @@ export async function emitController(
 /**
  * Builds the sorted list of `using` namespaces for a generated controller file.
  *
- * Model, enum, and helper (`MergePatch<T>`) references are always emitted as
- * fully-qualified type names, so this only needs {@link CONTROLLER_USINGS}
- * plus any `additional-usings` from options.
+ * Adds model and helper namespaces when short type names are enabled, plus
+ * {@link CONTROLLER_USINGS} and any `additional-usings` from options.
  *
  * @param options - Resolved emitter options (additional usings).
  * @returns Sorted, deduplicated array of `using` namespace strings.
  */
-function buildControllerUsings(options: ResolvedOptions): string[] {
+function buildControllerUsings(
+  options: ResolvedOptions,
+  group: ControllerGroup,
+): string[] {
   const usings = new Set<string>(CONTROLLER_USINGS);
   if (options.cancellationToken) usings.add("System.Threading");
+  if (!options.fullyQualifiedTypes) {
+    usings.add(options.modelsNamespace);
+    if (
+      options.mergePatchStyle === "generic" &&
+      usesGenericMergePatch(group) &&
+      options.helpersNamespace !== options.controllersNamespace
+    ) {
+      usings.add(options.helpersNamespace);
+    }
+  }
   for (const u of options.additionalUsings) usings.add(u);
   return sortUsings(usings);
+}
+
+function usesGenericMergePatch(group: ControllerGroup): boolean {
+  return group.controllerView.operations.some((operation) =>
+    operation.params.some((param) => param.type.includes("MergePatch<")),
+  );
 }

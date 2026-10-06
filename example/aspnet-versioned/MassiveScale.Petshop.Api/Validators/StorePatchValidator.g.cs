@@ -8,6 +8,9 @@
 
 using FluentValidation;
 using Microsoft.AspNetCore.Http;
+using MarketOnce.Community.Campaign.Api.Models;
+using MarketOnce.Community.Campaign.Api.Helpers;
+
 
 namespace MarketOnce.Community.Campaign.Api.Validators;
 
@@ -19,14 +22,14 @@ namespace MarketOnce.Community.Campaign.Api.Validators;
 /// Extend this partial class to add custom validation rules.
 /// </summary>
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial class StorePatchValidator : AbstractValidator<MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Store>>
+public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
 {
     private static readonly string[] _versions = new[] { "v1.0", "v2.0" };
 
     /// <summary>
     /// Initializes a new instance of <see cref="StorePatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
-        public StorePatchValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Pet> petValidator)
+        public StorePatchValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<Pet> petValidator)
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
@@ -88,7 +91,7 @@ public partial class StorePatchValidator : AbstractValidator<MarketOnce.Communit
                                 }
                                 try
                                 {
-                                        var nestedModel = System.Text.Json.JsonSerializer.Deserialize<MarketOnce.Community.Campaign.Api.Models.Pet>(item.GetRawText());
+                                        var nestedModel = System.Text.Json.JsonSerializer.Deserialize<Pet>(item.GetRawText());
                                         if (nestedModel is null)
                                         {
                                                 context.AddFailure($"Pets[{index}]", "Array items must be objects.");

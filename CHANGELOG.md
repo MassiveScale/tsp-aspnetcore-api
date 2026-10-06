@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Generated references to models, enums, and helpers now use short type names by default and add the required namespace imports. Set `fully-qualified-types: true` to preserve fully qualified references in generated code. This changes generated source text for consumers that compare checked-in output; generated APIs and CLR types are unchanged.
 - **Breaking:** `Patch` now recursively merges nested JSON objects instead of replacing the entire nested value. Explicit `null` removes a value at any depth so the model's default initializer can restore it; arrays still replace as a whole. Callers that relied on nested-object replacement must send the complete object or apply replacement logic themselves.
 - **Breaking:** MergePatch validators now recursively validate nested model objects and complete replacement array elements. Invalid nested enums, constraints, required nulls, lifecycle-restricted members, and non-object values that previously passed can now fail validation. Later-version nested members retain their version guards. See [Validators — PATCH body shapes](docs/validators.md#patch-body-shapes).
 

@@ -18,7 +18,7 @@ namespace MarketOnce.Community.Campaign.Api.Models
     /// Represents a store in the pet store API.
     /// </summary>
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-    public partial class Store : MarketOnce.Community.Campaign.Api.Models.EntityBase
+    public partial class Store : EntityBase
     {
         /// <summary>
         /// The name of the store.
@@ -46,7 +46,7 @@ namespace MarketOnce.Community.Campaign.Api.Models
         /// </summary>
         [JsonPropertyName("pets")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public IList<MarketOnce.Community.Campaign.Api.Models.Pet>? Pets { get; set; }
+        public IList<Pet>? Pets { get; set; }
     
     }
 

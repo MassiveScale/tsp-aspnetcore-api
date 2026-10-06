@@ -12,7 +12,7 @@
 
 import { Model, Program, emitFile, resolvePath } from "@typespec/compiler";
 import {
-  computeModelFqName,
+  computeModelTypeName,
   csharpNamespaceFor,
   folderSegments,
   ResolvedOptions,
@@ -144,7 +144,7 @@ async function emitEntityMergePatches(
   for (const [model, rawTypeName] of patchModels) {
     if (!rawTypeName.startsWith("MergePatch<")) continue;
     const modelName = csharpModelName(program, model);
-    const qualifiedModelName = computeModelFqName(program, model, options);
+    const qualifiedModelName = computeModelTypeName(program, model, options);
     const fileName = `${modelName}MergePatchUpdate${options.fileExtension}`;
     const typespecNs = csharpNamespaceFor(
       model.namespace,

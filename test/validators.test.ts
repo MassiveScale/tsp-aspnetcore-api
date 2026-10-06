@@ -86,24 +86,20 @@ describe("csharp emitter - validators", () => {
         `expected SetInheritanceValidator in base validator:\n${petValidator}`,
       );
       ok(
-        petValidator.includes("v.Add<Demo.Models.Cat>(catValidator)"),
+        petValidator.includes("v.Add<Cat>(catValidator)"),
         `expected Cat dispatch in base validator:\n${petValidator}`,
       );
       ok(
-        petValidator.includes("v.Add<Demo.Models.Dog>(dogValidator)"),
+        petValidator.includes("v.Add<Dog>(dogValidator)"),
         `expected Dog dispatch in base validator:\n${petValidator}`,
       );
       // Constructor should accept derived-type validators
       ok(
-        petValidator.includes(
-          "AbstractValidator<Demo.Models.Cat> catValidator",
-        ),
+        petValidator.includes("AbstractValidator<Cat> catValidator"),
         `expected Cat validator parameter:\n${petValidator}`,
       );
       ok(
-        petValidator.includes(
-          "AbstractValidator<Demo.Models.Dog> dogValidator",
-        ),
+        petValidator.includes("AbstractValidator<Dog> dogValidator"),
         `expected Dog validator parameter:\n${petValidator}`,
       );
     });
@@ -139,9 +135,7 @@ describe("csharp emitter - validators", () => {
       const petValidator = results["Validators/PetValidator.g.cs"];
       ok(petValidator, "expected Validators/PetValidator.g.cs");
       ok(
-        petValidator.includes(
-          "AbstractValidator<Demo.Models.Labrador> labradorValidator",
-        ),
+        petValidator.includes("AbstractValidator<Labrador> labradorValidator"),
         `expected Labrador validator parameter:\n${petValidator}`,
       );
 
@@ -337,6 +331,7 @@ describe("csharp emitter - validators", () => {
           "emit-validators": true,
           "emit-controllers": false,
           "emit-services": false,
+          "fully-qualified-types": true,
         },
       );
 
@@ -417,31 +412,24 @@ describe("csharp emitter - validators", () => {
         `expected Validators/BookPatchValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
       );
       ok(
-        patchValidator.includes(
-          "AbstractValidator<Demo.Helpers.MergePatch<Demo.Models.Book>>",
-        ),
+        patchValidator.includes("AbstractValidator<MergePatch<Book>>"),
         `expected the patch validator to target the MergePatch body in:\n${patchValidator}`,
       );
       ok(
         patchValidator.includes(
-          "AbstractValidator<Demo.Helpers.MergePatch<Demo.Models.Author>> authorPatchValidator",
-        ) &&
-          patchValidator.includes(
-            "AbstractValidator<Demo.Models.Tag> tagValidator",
-          ),
+          "AbstractValidator<MergePatch<Author>> authorPatchValidator",
+        ) && patchValidator.includes("AbstractValidator<Tag> tagValidator"),
         `expected injected nested patch and array-item validators in:\n${patchValidator}`,
       );
       ok(
         patchValidator.includes("'Author' must be an object.") &&
-          patchValidator.includes(
-            "Demo.Helpers.MergePatch<Demo.Models.Author>.FromJson",
-          ) &&
+          patchValidator.includes("MergePatch<Author>.FromJson") &&
           patchValidator.includes('$"Author.{failure.PropertyName}"'),
         `expected nested-object shape validation and dotted failure paths in:\n${patchValidator}`,
       );
       ok(
         patchValidator.includes(
-          "JsonSerializer.Deserialize<Demo.Models.Tag>(item.GetRawText())",
+          "JsonSerializer.Deserialize<Tag>(item.GetRawText())",
         ) && patchValidator.includes('$"Tags[{index}].{failure.PropertyName}"'),
         `expected full-model array-item validation in:\n${patchValidator}`,
       );
@@ -495,7 +483,7 @@ describe("csharp emitter - validators", () => {
           appearancePatch.includes("Leaf.{failure.PropertyName}") &&
             appearancePatch.includes("'Leaf' must be an object.") &&
             appearancePatch.includes('IsNull("Label")') &&
-            appearancePatch.includes("TryGetValue<Demo.Models.Theme?>"),
+            appearancePatch.includes("TryGetValue<Theme?>"),
           `expected second-level object validation in ${style} child patch:\n${appearancePatch}`,
         );
         ok(
@@ -511,9 +499,7 @@ describe("csharp emitter - validators", () => {
         );
         if (style === "typed") {
           ok(
-            widgetPatch.includes(
-              "Demo.Models.AppearanceMergePatchUpdate.FromJson",
-            ),
+            widgetPatch.includes("AppearanceMergePatchUpdate.FromJson"),
             `expected typed nested patch factory in:\n${widgetPatch}`,
           );
         }
@@ -633,9 +619,7 @@ describe("csharp emitter - validators", () => {
         patchValidator.includes("authorPatchValidator") &&
           patchValidator.includes("tagValidator") &&
           patchValidator.includes("Rules added in v2.0") &&
-          patchValidator.includes(
-            "JsonSerializer.Deserialize<Demo.Models.Tag>",
-          ),
+          patchValidator.includes("JsonSerializer.Deserialize<Tag>"),
         `expected nested model and array validators in base and version-aware MergePatch groups:\n${patchValidator}`,
       );
     });
@@ -1232,12 +1216,8 @@ describe("csharp emitter - validators", () => {
         `expected typed nested collection reference rule in:\n${validator}`,
       );
       ok(
-        validator.includes(
-          "AbstractValidator<Demo.Models.Targeting> targetingValidator",
-        ) &&
-          validator.includes(
-            "AbstractValidator<Demo.Models.Segment> segmentValidator",
-          ),
+        validator.includes("AbstractValidator<Targeting> targetingValidator") &&
+          validator.includes("AbstractValidator<Segment> segmentValidator"),
         `expected child validators to be injected in:\n${validator}`,
       );
     });
@@ -1381,9 +1361,7 @@ describe("csharp emitter - validators", () => {
         `expected Validators/WidgetPatchValidator.g.cs, got: ${Object.keys(results).join(", ")}`,
       );
       ok(
-        validator.includes(
-          "AbstractValidator<Demo.Helpers.MergePatch<Demo.Models.Widget>>",
-        ),
+        validator.includes("AbstractValidator<MergePatch<Widget>>"),
         `expected the validator to target the MergePatch body in:\n${validator}`,
       );
       ok(

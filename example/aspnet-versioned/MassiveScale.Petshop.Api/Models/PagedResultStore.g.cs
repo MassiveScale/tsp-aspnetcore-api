@@ -27,7 +27,7 @@ namespace MarketOnce.Community.Campaign.Api.Models
         /// </summary>
         [JsonPropertyName("items")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public IList<MarketOnce.Community.Campaign.Api.Models.Store>? Items { get; set; }
+        public IList<Store>? Items { get; set; }
     
         /// <summary>
         /// The total count of items in the collection, if known.

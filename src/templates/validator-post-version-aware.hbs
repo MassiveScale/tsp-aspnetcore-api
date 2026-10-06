@@ -8,6 +8,10 @@
 
 using FluentValidation;
 using Microsoft.AspNetCore.Http;
+{{#unless fullyQualifiedTypes}}
+using {{{modelsNamespace}}};
+{{#if useHelpersNamespace}}using {{{helpersNamespace}}};
+{{/if}}{{/unless}}
 {{#if namespace}}
 
 namespace {{{namespace}}};

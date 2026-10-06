@@ -8,6 +8,9 @@
 
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
+using MarketOnce.Community.Campaign.Api.Models;
+using MarketOnce.Community.Campaign.Api.Helpers;
+
 using Microsoft.AspNetCore.Http;
 
 namespace MarketOnce.Community.Campaign.Api.Validators;
@@ -33,48 +36,48 @@ public static class ValidatorsInitializer
     public static IServiceCollection AddGeneratedValidators(this IServiceCollection services)
     {
         services.AddScoped<StoreValidator>();
-        services.AddScoped<AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Store>>(sp => sp.GetRequiredService<StoreValidator>());
-        services.AddScoped<IValidator<MarketOnce.Community.Campaign.Api.Models.Store>>(sp => sp.GetRequiredService<StoreValidator>());
+        services.AddScoped<AbstractValidator<Store>>(sp => sp.GetRequiredService<StoreValidator>());
+        services.AddScoped<IValidator<Store>>(sp => sp.GetRequiredService<StoreValidator>());
 
         services.AddScoped<StorePatchValidator>();
-        services.AddScoped<AbstractValidator<MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Store>>>(sp => sp.GetRequiredService<StorePatchValidator>());
-        services.AddScoped<IValidator<MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Store>>>(sp => sp.GetRequiredService<StorePatchValidator>());
+        services.AddScoped<AbstractValidator<MergePatch<Store>>>(sp => sp.GetRequiredService<StorePatchValidator>());
+        services.AddScoped<IValidator<MergePatch<Store>>>(sp => sp.GetRequiredService<StorePatchValidator>());
 
         services.AddScoped<PetValidator>();
-        services.AddScoped<AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Pet>>(sp => sp.GetRequiredService<PetValidator>());
-        services.AddScoped<IValidator<MarketOnce.Community.Campaign.Api.Models.Pet>>(sp => sp.GetRequiredService<PetValidator>());
+        services.AddScoped<AbstractValidator<Pet>>(sp => sp.GetRequiredService<PetValidator>());
+        services.AddScoped<IValidator<Pet>>(sp => sp.GetRequiredService<PetValidator>());
 
         services.AddScoped<PetPatchValidator>();
-        services.AddScoped<AbstractValidator<MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Pet>>>(sp => sp.GetRequiredService<PetPatchValidator>());
-        services.AddScoped<IValidator<MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Pet>>>(sp => sp.GetRequiredService<PetPatchValidator>());
+        services.AddScoped<AbstractValidator<MergePatch<Pet>>>(sp => sp.GetRequiredService<PetPatchValidator>());
+        services.AddScoped<IValidator<MergePatch<Pet>>>(sp => sp.GetRequiredService<PetPatchValidator>());
 
         services.AddScoped<TagValidator>();
-        services.AddScoped<AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Tag>>(sp => sp.GetRequiredService<TagValidator>());
-        services.AddScoped<IValidator<MarketOnce.Community.Campaign.Api.Models.Tag>>(sp => sp.GetRequiredService<TagValidator>());
+        services.AddScoped<AbstractValidator<Tag>>(sp => sp.GetRequiredService<TagValidator>());
+        services.AddScoped<IValidator<Tag>>(sp => sp.GetRequiredService<TagValidator>());
 
         services.AddScoped<CustomerValidator>();
-        services.AddScoped<AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Customer>>(sp => sp.GetRequiredService<CustomerValidator>());
-        services.AddScoped<IValidator<MarketOnce.Community.Campaign.Api.Models.Customer>>(sp => sp.GetRequiredService<CustomerValidator>());
+        services.AddScoped<AbstractValidator<Customer>>(sp => sp.GetRequiredService<CustomerValidator>());
+        services.AddScoped<IValidator<Customer>>(sp => sp.GetRequiredService<CustomerValidator>());
 
         services.AddScoped<CustomerPatchValidator>();
-        services.AddScoped<AbstractValidator<MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Customer>>>(sp => sp.GetRequiredService<CustomerPatchValidator>());
-        services.AddScoped<IValidator<MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Customer>>>(sp => sp.GetRequiredService<CustomerPatchValidator>());
+        services.AddScoped<AbstractValidator<MergePatch<Customer>>>(sp => sp.GetRequiredService<CustomerPatchValidator>());
+        services.AddScoped<IValidator<MergePatch<Customer>>>(sp => sp.GetRequiredService<CustomerPatchValidator>());
 
         services.AddScoped<DogValidator>();
-        services.AddScoped<AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Dog>>(sp => sp.GetRequiredService<DogValidator>());
-        services.AddScoped<IValidator<MarketOnce.Community.Campaign.Api.Models.Dog>>(sp => sp.GetRequiredService<DogValidator>());
+        services.AddScoped<AbstractValidator<Dog>>(sp => sp.GetRequiredService<DogValidator>());
+        services.AddScoped<IValidator<Dog>>(sp => sp.GetRequiredService<DogValidator>());
 
         services.AddScoped<DogPatchValidator>();
-        services.AddScoped<AbstractValidator<MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Dog>>>(sp => sp.GetRequiredService<DogPatchValidator>());
-        services.AddScoped<IValidator<MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Dog>>>(sp => sp.GetRequiredService<DogPatchValidator>());
+        services.AddScoped<AbstractValidator<MergePatch<Dog>>>(sp => sp.GetRequiredService<DogPatchValidator>());
+        services.AddScoped<IValidator<MergePatch<Dog>>>(sp => sp.GetRequiredService<DogPatchValidator>());
 
         services.AddScoped<CatValidator>();
-        services.AddScoped<AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Cat>>(sp => sp.GetRequiredService<CatValidator>());
-        services.AddScoped<IValidator<MarketOnce.Community.Campaign.Api.Models.Cat>>(sp => sp.GetRequiredService<CatValidator>());
+        services.AddScoped<AbstractValidator<Cat>>(sp => sp.GetRequiredService<CatValidator>());
+        services.AddScoped<IValidator<Cat>>(sp => sp.GetRequiredService<CatValidator>());
 
         services.AddScoped<CatPatchValidator>();
-        services.AddScoped<AbstractValidator<MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Cat>>>(sp => sp.GetRequiredService<CatPatchValidator>());
-        services.AddScoped<IValidator<MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Cat>>>(sp => sp.GetRequiredService<CatPatchValidator>());
+        services.AddScoped<AbstractValidator<MergePatch<Cat>>>(sp => sp.GetRequiredService<CatPatchValidator>());
+        services.AddScoped<IValidator<MergePatch<Cat>>>(sp => sp.GetRequiredService<CatPatchValidator>());
 
         return services;
     }

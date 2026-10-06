@@ -8,6 +8,8 @@
 
 using FluentValidation;
 using Microsoft.AspNetCore.Http;
+using MarketOnce.Community.Campaign.Api.Models;
+
 
 namespace MarketOnce.Community.Campaign.Api.Validators;
 
@@ -18,14 +20,14 @@ namespace MarketOnce.Community.Campaign.Api.Validators;
 /// Extend this partial class to add custom validation rules.
 /// </summary>
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial class PetValidator : AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Pet>
+public partial class PetValidator : AbstractValidator<Pet>
 {
     private static readonly string[] _versions = new[] { "v1.0", "v2.0" };
 
     /// <summary>
     /// Initializes a new instance of <see cref="PetValidator"/> with version-aware auto-generated rules.
     /// </summary>
-    public PetValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Tag> tagValidator, AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Cat> catValidator, AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Dog> dogValidator)
+    public PetValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<Tag> tagValidator, AbstractValidator<Cat> catValidator, AbstractValidator<Dog> dogValidator)
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
@@ -55,8 +57,8 @@ public partial class PetValidator : AbstractValidator<MarketOnce.Community.Campa
         // Polymorphic validation — dispatch to derived type validators
         RuleFor(x => x).SetInheritanceValidator(v =>
         {
-            v.Add<MarketOnce.Community.Campaign.Api.Models.Cat>(catValidator);
-            v.Add<MarketOnce.Community.Campaign.Api.Models.Dog>(dogValidator);
+            v.Add<Cat>(catValidator);
+            v.Add<Dog>(dogValidator);
         });
 
         ExtendRules();

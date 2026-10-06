@@ -8,6 +8,9 @@
 
 using FluentValidation;
 using Microsoft.AspNetCore.Http;
+using MarketOnce.Community.Campaign.Api.Models;
+using MarketOnce.Community.Campaign.Api.Helpers;
+
 
 namespace MarketOnce.Community.Campaign.Api.Validators;
 
@@ -19,14 +22,14 @@ namespace MarketOnce.Community.Campaign.Api.Validators;
 /// Extend this partial class to add custom validation rules.
 /// </summary>
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial class PetPatchValidator : AbstractValidator<MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Pet>>
+public partial class PetPatchValidator : AbstractValidator<MergePatch<Pet>>
 {
     private static readonly string[] _versions = new[] { "v1.0", "v2.0" };
 
     /// <summary>
     /// Initializes a new instance of <see cref="PetPatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
-        public PetPatchValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Tag> tagValidator)
+        public PetPatchValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<Tag> tagValidator)
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
@@ -77,7 +80,7 @@ public partial class PetPatchValidator : AbstractValidator<MarketOnce.Community.
                                         }
                                         try
                                         {
-                                                var nestedModel = System.Text.Json.JsonSerializer.Deserialize<MarketOnce.Community.Campaign.Api.Models.Tag>(item.GetRawText());
+                                                var nestedModel = System.Text.Json.JsonSerializer.Deserialize<Tag>(item.GetRawText());
                                                 if (nestedModel is null)
                                                 {
                                                         context.AddFailure($"Tags[{index}]", "Array items must be objects.");

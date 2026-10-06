@@ -12,6 +12,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using MarketOnce.Community.Campaign.Api.Helpers;
+using MarketOnce.Community.Campaign.Api.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MarketOnce.Community.Campaign.Api.Controllers
@@ -42,14 +44,14 @@ namespace MarketOnce.Community.Campaign.Api.Controllers
         /// </summary>
         [HttpPost("/api/v1.0/store")]
         [HttpPost("/api/v2.0/store")]
-        public abstract Task<IActionResult> Create([FromBody] MarketOnce.Community.Campaign.Api.Models.Store body, CancellationToken cancellationToken);
+        public abstract Task<IActionResult> Create([FromBody] Store body, CancellationToken cancellationToken);
     
         /// <summary>
         /// Updates an existing store with the provided information. Only the fields included in the request body will be updated.
         /// </summary>
         [HttpPatch("/api/v1.0/store/{id}")]
         [HttpPatch("/api/v2.0/store/{id}")]
-        public abstract Task<IActionResult> Update([FromRoute] string id, [FromBody] MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Store> body, CancellationToken cancellationToken);
+        public abstract Task<IActionResult> Update([FromRoute] string id, [FromBody] MergePatch<Store> body, CancellationToken cancellationToken);
     
         /// <summary>
         /// Deletes a store by its unique identifier.

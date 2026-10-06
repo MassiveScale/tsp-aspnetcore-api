@@ -18,7 +18,7 @@ namespace MarketOnce.Community.Campaign.Api.Models
     /// Represents a cat in the pet store.
     /// </summary>
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-    public partial class Cat : MarketOnce.Community.Campaign.Api.Models.Pet
+    public partial class Cat : Pet
     {
         /// <summary>
         /// Indicates whether the cat purrs.

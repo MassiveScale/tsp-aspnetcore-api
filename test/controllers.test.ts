@@ -28,8 +28,32 @@ describe("csharp emitter - controllers", () => {
       const ctrl = results["Controllers/WidgetsControllerBase.g.cs"];
       ok(ctrl, "expected controller");
       ok(
-        ctrl.includes("Demo.Helpers.MergePatch<Demo.Models.Widget>"),
-        `expected MergePatch<Widget> in PATCH body in:\n${ctrl}`,
+        ctrl.includes("MergePatch<Widget>") &&
+          ctrl.includes("using Demo.Models;") &&
+          ctrl.includes("using Demo.Helpers;"),
+        `expected short MergePatch and model names with namespace imports in:\n${ctrl}`,
+      );
+
+      const fullyQualified = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+        @service namespace Demo;
+        model Widget { id: string; }
+        model WidgetPatch is MergePatchUpdate<Widget>;
+        @route("/widgets/{id}") interface Widgets {
+          @patch update(@path id: string, @body body: WidgetPatch): Widget;
+        }
+        `,
+        { "fully-qualified-types": true },
+      );
+      const fullyQualifiedController =
+        fullyQualified["Controllers/WidgetsControllerBase.g.cs"];
+      ok(
+        fullyQualifiedController.includes(
+          "Demo.Helpers.MergePatch<Demo.Models.Widget>",
+        ),
+        `expected the opt-in to retain qualified references:\n${fullyQualifiedController}`,
       );
       ok(
         !ctrl.includes("WidgetPatch"),
@@ -97,7 +121,7 @@ describe("csharp emitter - controllers", () => {
       );
       ok(
         ctrl.includes(
-          "public abstract Task<IActionResult> Create([FromBody] Demo.Models.Item body, CancellationToken cancellationToken);",
+          "public abstract Task<IActionResult> Create([FromBody] Item body, CancellationToken cancellationToken);",
         ),
         `missing Create in controller:\n${ctrl}`,
       );
@@ -889,7 +913,7 @@ describe("csharp emitter - controllers", () => {
         ];
       ok(ctrl, "expected controller file to be emitted");
       ok(
-        ctrl.includes("[FromBody] Models.PetResource body"),
+        ctrl.includes("[FromBody] PetResource body"),
         "expected controller body parameter type to use @serverName",
       );
       ok(

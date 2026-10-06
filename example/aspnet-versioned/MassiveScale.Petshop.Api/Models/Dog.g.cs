@@ -18,7 +18,7 @@ namespace MarketOnce.Community.Campaign.Api.Models
     /// Represents a dog in the pet store.
     /// </summary>
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-    public partial class Dog : MarketOnce.Community.Campaign.Api.Models.Pet
+    public partial class Dog : Pet
     {
         /// <summary>
         /// Indicates whether the dog barks.

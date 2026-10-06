@@ -106,6 +106,8 @@ export interface ResolvedOptions {
   routePrefix: string;
   /** Extra `using` namespaces appended to every file. */
   additionalUsings: string[];
+  /** Whether generated model/helper references retain namespace qualification. */
+  fullyQualifiedTypes: boolean;
   /** Whether to emit all properties as nullable C# types. */
   nullableProperties: boolean;
   /** Suffix appended to generated abstract class names. */
@@ -199,6 +201,7 @@ export async function $onEmit(
     mergePatchStyle: options.mergePatchStyle,
     modelsNamespace: options.modelsNamespace,
     helpersNamespace: options.helpersNamespace,
+    fullyQualifiedTypes: options.fullyQualifiedTypes,
   };
 
   const groups = collectControllers(
@@ -303,6 +306,17 @@ export function computeModelFqName(
   const classNs = options.modelsNamespace;
   const className = csharpModelName(program, model);
   return classNs ? `${classNs}.${className}` : className;
+}
+
+/** Returns a generated model identifier using the configured qualification style. */
+export function computeModelTypeName(
+  program: Program,
+  model: Model,
+  options: ResolvedOptions,
+): string {
+  return options.fullyQualifiedTypes
+    ? computeModelFqName(program, model, options)
+    : csharpModelName(program, model);
 }
 
 /**
@@ -433,6 +447,7 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     routePrefix: raw["route-prefix"] ?? "api/{version}",
     namespaceFromPath: useNamespaceFromPath,
     additionalUsings: raw["additional-usings"] ?? [],
+    fullyQualifiedTypes: raw["fully-qualified-types"] ?? false,
     nullableProperties: raw["nullable-properties"] ?? true,
     abstractSuffix: raw["abstract-suffix"] ?? "Base",
     cancellationToken: raw["cancellation-token"] ?? true,

@@ -26,12 +26,16 @@ describe("csharp emitter - services", () => {
       const svc = results["Services/IItemsService.g.cs"];
       ok(svc, "expected service interface");
       ok(
+        svc.includes("using Demo.Models;"),
+        `missing model namespace import in service:\n${svc}`,
+      );
+      ok(
         svc.includes("using System.Threading;"),
         `missing 'using System.Threading;' in service:\n${svc}`,
       );
       ok(
         svc.includes(
-          "Task<IList<Demo.Models.Item>?> ListAsync(CancellationToken cancellationToken);",
+          "Task<IList<Item>?> ListAsync(CancellationToken cancellationToken);",
         ),
         `missing ListAsync in service:\n${svc}`,
       );
@@ -45,20 +49,43 @@ describe("csharp emitter - services", () => {
       const svc = results["Services/IItemsService.g.cs"];
       ok(svc, "expected service interface");
       ok(
+        svc.includes("using Demo.Models;"),
+        `missing model namespace import in service:\n${svc}`,
+      );
+      ok(
         svc.includes("using System.Threading;"),
         `missing 'using System.Threading;' in service:\n${svc}`,
       );
       ok(
         svc.includes(
-          "Task<IList<Demo.Models.Item>?> ListAsync(CancellationToken cancellationToken);",
+          "Task<IList<Item>?> ListAsync(CancellationToken cancellationToken);",
         ),
         `missing ListAsync in service:\n${svc}`,
       );
       ok(
         svc.includes(
-          "Task CreateAsync(Demo.Models.Item body, CancellationToken cancellationToken);",
+          "Task CreateAsync(Item body, CancellationToken cancellationToken);",
         ),
         `missing CreateAsync in service:\n${svc}`,
+      );
+    });
+
+    it("keeps fully qualified model references when requested", async () => {
+      const results = await emit(cancellationTokenSpec, {
+        "fully-qualified-types": true,
+      });
+
+      const service = results["Services/IItemsService.g.cs"];
+      ok(service, "expected service interface");
+      ok(
+        service.includes(
+          "Task<IList<Demo.Models.Item>?> ListAsync(CancellationToken cancellationToken);",
+        ) && service.includes("Task CreateAsync(Demo.Models.Item body,"),
+        `expected fully qualified service signatures:\n${service}`,
+      );
+      ok(
+        !service.includes("using Demo.Models;"),
+        `did not expect a model using when references are qualified:\n${service}`,
       );
     });
 
@@ -235,13 +262,10 @@ describe("csharp emitter - services", () => {
       const svc = results["Services/IWidgetsService.g.cs"];
       ok(svc, `expected Services/IWidgetsService.g.cs`);
       ok(
-        svc.includes("Task<IList<Demo.Models.Widget>?>"),
+        svc.includes("Task<IList<Widget>?>"),
         `expected IList<Widget> return in:\n${svc}`,
       );
-      ok(
-        svc.includes("Task<Demo.Models.Widget?>"),
-        `expected Widget return in:\n${svc}`,
-      );
+      ok(svc.includes("Task<Widget?>"), `expected Widget return in:\n${svc}`);
       ok(
         svc.includes("Task RemoveAsync("),
         `expected plain Task for void|error response in:\n${svc}`,
@@ -275,7 +299,7 @@ describe("csharp emitter - services", () => {
       const svc = results["Services/IWidgetsService.g.cs"];
       ok(svc, `expected Services/IWidgetsService.g.cs`);
       ok(
-        svc.includes("Task<Demo.Models.Widget?>"),
+        svc.includes("Task<Widget?>"),
         `expected Task<Widget?> for @body response in:\n${svc}`,
       );
     });
@@ -427,9 +451,7 @@ describe("csharp emitter - services", () => {
         ];
       ok(svc, "expected service interface file to be emitted");
       ok(
-        svc.includes(
-          "Task<Models.PetResource?> CreateAsync(Models.PetResource body",
-        ),
+        svc.includes("Task<PetResource?> CreateAsync(PetResource body"),
         "expected service method signature to use @serverName for parameter and return type",
       );
       ok(

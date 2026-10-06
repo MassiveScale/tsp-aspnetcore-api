@@ -18,8 +18,8 @@ namespace MarketOnce.Community.Campaign.Api.Models
     /// Represents a pet in the pet store.
     /// </summary>
     [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
-    [JsonDerivedType(typeof(MarketOnce.Community.Campaign.Api.Models.Cat), "cat")]
-    [JsonDerivedType(typeof(MarketOnce.Community.Campaign.Api.Models.Dog), "dog")]
+    [JsonDerivedType(typeof(Cat), "cat")]
+    [JsonDerivedType(typeof(Dog), "dog")]
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     public abstract partial class Pet
     {
@@ -63,14 +63,14 @@ namespace MarketOnce.Community.Campaign.Api.Models
         /// </summary>
         [JsonPropertyName("tags")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public IList<MarketOnce.Community.Campaign.Api.Models.Tag>? Tags { get; set; }
+        public IList<Tag>? Tags { get; set; }
     
         /// <summary>
         /// The status of the pet in the store, e.g. available, pending, sold.
         /// </summary>
         [JsonPropertyName("status")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public MarketOnce.Community.Campaign.Api.Models.PetStatus? Status { get; set; } = MarketOnce.Community.Campaign.Api.Models.PetStatus.Available;
+        public PetStatus? Status { get; set; } = PetStatus.Available;
     
     }
 

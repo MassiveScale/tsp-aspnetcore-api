@@ -103,22 +103,24 @@ Every model class shares the `models-namespace`, so two different models that ma
 
 ## Default property values
 
+Generated C# references use short type names by default, with namespaces supplied by `using` directives in the generated file. Set `fully-qualified-types: true` to include the namespace on model, enum, and helper references. An enum value initializer is fully qualified when its generated property name shadows the enum type name (for example, a `Theme` property of type `Theme`) so C# resolves the enum rather than the property.
+
 When a TypeSpec model property carries a default value, the emitter assigns it as a C# property initializer. The following value kinds are supported:
 
-| TypeSpec default                        | C# initializer                                |
-| --------------------------------------- | --------------------------------------------- |
-| Enum member (`Size.medium`)             | `Size.Medium`                                 |
-| String literal (`"production"`)         | `"production"`                                |
-| String with control chars (`"a\nb"`)    | `"a\nb"` (escaped)                            |
-| Numeric literal (`20`)                  | `20`                                          |
-| Numeric literal on `decimal` (`9.99`)   | `9.99m`                                       |
-| Numeric literal on `float32` (`0.5`)    | `0.5f`                                        |
-| Boolean literal (`true`)                | `true`                                        |
-| Array value (`#[1000, 2500]`)           | `new List<int> { 1000, 2500 }`                |
-| Empty array value (`#[]`)               | `new List<int>()`                             |
-| Nested array value (`#[#[1, 2], #[3]]`) | `new List<IList<int>> { ... }`                |
-| Empty object value (`#{}`)              | `new WidgetAppearance()`                      |
-| Object value (`#{ theme: Theme.dark }`) | `new WidgetAppearance { Theme = Theme.Dark }` |
+| TypeSpec default                        | C# initializer                                            |
+| --------------------------------------- | --------------------------------------------------------- |
+| Enum member (`Size.medium`)             | `Size.Medium`                                             |
+| String literal (`"production"`)         | `"production"`                                            |
+| String with control chars (`"a\nb"`)    | `"a\nb"` (escaped)                                        |
+| Numeric literal (`20`)                  | `20`                                                      |
+| Numeric literal on `decimal` (`9.99`)   | `9.99m`                                                   |
+| Numeric literal on `float32` (`0.5`)    | `0.5f`                                                    |
+| Boolean literal (`true`)                | `true`                                                    |
+| Array value (`#[1000, 2500]`)           | `new List<int> { 1000, 2500 }`                            |
+| Empty array value (`#[]`)               | `new List<int>()`                                         |
+| Nested array value (`#[#[1, 2], #[3]]`) | `new List<IList<int>> { ... }`                            |
+| Empty object value (`#{}`)              | `new WidgetAppearance()`                                  |
+| Object value (`#{ theme: Theme.dark }`) | `new WidgetAppearance { Theme = Demo.Models.Theme.Dark }` |
 
 ```typespec
 enum Size { small, medium, large }

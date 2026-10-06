@@ -12,6 +12,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using MarketOnce.Community.Campaign.Api.Helpers;
+using MarketOnce.Community.Campaign.Api.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MarketOnce.Community.Campaign.Api.Controllers
@@ -35,13 +37,13 @@ namespace MarketOnce.Community.Campaign.Api.Controllers
         /// </summary>
         [HttpPost("/api/v1.0/{storeId}/pets")]
         [HttpPost("/api/v2.0/{storeId}/pets")]
-        public abstract Task<IActionResult> Create([FromRoute] string storeId, [FromBody] MarketOnce.Community.Campaign.Api.Models.Pet body, CancellationToken cancellationToken);
+        public abstract Task<IActionResult> Create([FromRoute] string storeId, [FromBody] Pet body, CancellationToken cancellationToken);
     
         /// <summary>
         /// Updates an existing pet in the specified store. Only the fields included in the request body will be updated.
         /// </summary>
         [HttpPatch("/api/v2.0/{storeId}/pets/{petId}")]
-        public abstract Task<IActionResult> Update([FromRoute] string storeId, [FromRoute] string petId, [FromBody] MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Pet> body, CancellationToken cancellationToken);
+        public abstract Task<IActionResult> Update([FromRoute] string storeId, [FromRoute] string petId, [FromBody] MergePatch<Pet> body, CancellationToken cancellationToken);
     
         /// <summary>
         /// Removes a pet from the specified store.

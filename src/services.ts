@@ -40,7 +40,7 @@ export async function emitService(
     content: renderer.renderFile({
       fileName: serviceInterfaceFileName,
       namespace: options.servicesNamespace,
-      usings: buildServiceUsings(options),
+      usings: buildServiceUsings(options, group),
       body: renderer.renderServiceInterface(group.serviceView),
     }),
   });
@@ -49,16 +49,30 @@ export async function emitService(
 /**
  * Builds the sorted list of `using` namespaces for a generated service interface file.
  *
- * Model, enum, and helper (`MergePatch<T>`) references are always emitted as
- * fully-qualified type names, so this only needs {@link SERVICE_USINGS} plus
- * any `additional-usings` from options.
+ * Adds model and helper namespaces when short type names are enabled, plus
+ * {@link SERVICE_USINGS} and any `additional-usings` from options.
  *
  * @param options - Resolved emitter options (additional usings).
  * @returns Sorted, deduplicated array of `using` namespace strings.
  */
-function buildServiceUsings(options: ResolvedOptions): string[] {
+function buildServiceUsings(
+  options: ResolvedOptions,
+  group: ControllerGroup,
+): string[] {
   const usings = new Set<string>(SERVICE_USINGS);
   if (options.cancellationToken) usings.add("System.Threading");
+  if (!options.fullyQualifiedTypes) {
+    usings.add(options.modelsNamespace);
+    if (
+      options.mergePatchStyle === "generic" &&
+      group.serviceView.operations.some((operation) =>
+        operation.params.some((param) => param.type.includes("MergePatch<")),
+      ) &&
+      options.helpersNamespace !== options.servicesNamespace
+    ) {
+      usings.add(options.helpersNamespace);
+    }
+  }
   for (const u of options.additionalUsings) usings.add(u);
   return sortUsings(usings);
 }

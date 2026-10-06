@@ -200,6 +200,13 @@ export interface EmitterOptions {
   "additional-usings"?: string[];
 
   /**
+   * When `true`, generated references to models, enums, and helpers include
+   * their namespace. When `false` (the default), short names are emitted and
+   * the required namespaces are added as `using` directives.
+   */
+  "fully-qualified-types"?: boolean;
+
+  /**
    * When `true` (the default), every property is emitted as a nullable type
    * regardless of whether it is marked optional in TypeSpec.
    * Set to `false` to emit non-optional properties as non-nullable.
@@ -311,6 +318,7 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
       nullable: true,
       items: { type: "string" },
     },
+    "fully-qualified-types": { type: "boolean", nullable: true },
     "nullable-properties": { type: "boolean", nullable: true },
     "abstract-suffix": { type: "string", nullable: true },
     "cancellation-token": { type: "boolean", nullable: true },

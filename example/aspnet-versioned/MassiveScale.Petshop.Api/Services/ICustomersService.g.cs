@@ -12,6 +12,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using MarketOnce.Community.Campaign.Api.Helpers;
+using MarketOnce.Community.Campaign.Api.Models;
 
 namespace MarketOnce.Community.Campaign.Api.Services
 {
@@ -23,22 +25,22 @@ namespace MarketOnce.Community.Campaign.Api.Services
         /// <summary>
         /// Retrieves a list of all customers.
         /// </summary>
-        Task<IList<MarketOnce.Community.Campaign.Api.Models.Customer>?> ListAsync(CancellationToken cancellationToken);
+        Task<IList<Customer>?> ListAsync(CancellationToken cancellationToken);
     
         /// <summary>
         /// Retrieves a specific customer by their unique identifier.
         /// </summary>
-        Task<MarketOnce.Community.Campaign.Api.Models.Customer?> ReadAsync(string id, CancellationToken cancellationToken);
+        Task<Customer?> ReadAsync(string id, CancellationToken cancellationToken);
     
         /// <summary>
         /// Creates a new customer with the provided information.
         /// </summary>
-        Task<MarketOnce.Community.Campaign.Api.Models.Customer?> CreateAsync(MarketOnce.Community.Campaign.Api.Models.Customer body, CancellationToken cancellationToken);
+        Task<Customer?> CreateAsync(Customer body, CancellationToken cancellationToken);
     
         /// <summary>
         /// Updates an existing customer with the provided information. Only the fields included in the request body will be updated.
         /// </summary>
-        Task<MarketOnce.Community.Campaign.Api.Models.Customer?> UpdateAsync(string id, MarketOnce.Community.Campaign.Api.Helpers.MergePatch<MarketOnce.Community.Campaign.Api.Models.Customer> body, CancellationToken cancellationToken);
+        Task<Customer?> UpdateAsync(string id, MergePatch<Customer> body, CancellationToken cancellationToken);
     
         /// <summary>
         /// Deletes a customer by their unique identifier.

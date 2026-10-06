@@ -51,7 +51,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getServerName } from "./decorators.js";
-import { computeModelFqName, ResolvedOptions } from "./emitter.js";
+import { computeModelTypeName, ResolvedOptions } from "./emitter.js";
 import { reportDiagnostic } from "./lib.js";
 import { csharpModelName } from "./naming.js";
 import { classProperties } from "./payloads.js";
@@ -200,6 +200,10 @@ interface DerivedTypeValidator {
 /** Data passed to the Handlebars POST / PATCH validator template. */
 interface ValidatorTemplateData {
   namespace?: string;
+  modelsNamespace: string;
+  helpersNamespace: string;
+  fullyQualifiedTypes: boolean;
+  useHelpersNamespace: boolean;
   modelName: string;
   /** Fully-qualified C# type name of the validated model (e.g. `MyApp.Models.Pet`). */
   qualifiedModelName: string;
@@ -224,6 +228,10 @@ interface VersionGroup {
 /** Data passed to the version-aware Handlebars validator templates. */
 interface VersionAwareValidatorTemplateData {
   namespace?: string;
+  modelsNamespace: string;
+  helpersNamespace: string;
+  fullyQualifiedTypes: boolean;
+  useHelpersNamespace: boolean;
   modelName: string;
   /** Fully-qualified C# type name of the validated model (e.g. `MyApp.Models.Pet`). */
   qualifiedModelName: string;
@@ -252,6 +260,10 @@ interface ValidatorRegistration {
 /** Data passed to the `ValidatorsInitializer` Handlebars template. */
 interface InitializerTemplateData {
   namespace?: string;
+  modelsNamespace: string;
+  helpersNamespace: string;
+  fullyQualifiedTypes: boolean;
+  useHelpersNamespace: boolean;
   registrations: ValidatorRegistration[];
   isVersionAware: boolean;
 }
@@ -459,7 +471,9 @@ function buildSinglePropertyData(
 
   const isInEnum = prop.type.kind === "Enum";
   const enumTypeName = isInEnum
-    ? `${options.modelsNamespace}.${pascalCase((prop.type as Enum).name)}`
+    ? options.fullyQualifiedTypes
+      ? `${options.modelsNamespace}.${pascalCase((prop.type as Enum).name)}`
+      : pascalCase((prop.type as Enum).name)
     : undefined;
 
   const rawMin = getMinValue(program, prop) ?? getMinValue(program, prop.type);
@@ -484,7 +498,7 @@ function buildSinglePropertyData(
     : undefined;
   const isCollectionReference = modelRef?.isCollection;
   const referencedQualifiedModelName = modelRef
-    ? computeModelFqName(program, modelRef.model, options)
+    ? computeModelTypeName(program, modelRef.model, options)
     : undefined;
   const mergePatchValidator = modelRef
     ? isCollectionReference
@@ -706,7 +720,7 @@ function deriveReferencedValidators(
       if (p.referencedModelName && !seen.has(p.referencedModelName)) {
         seen.add(p.referencedModelName);
         const qualifiedModelName = p.referencedModel
-          ? computeModelFqName(program, p.referencedModel, options)
+          ? computeModelTypeName(program, p.referencedModel, options)
           : p.referencedModelName;
         result.push({
           modelName: p.referencedModelName,
@@ -742,7 +756,7 @@ function deriveMergePatchReferencedValidators(
       seen.add(prop.mergePatchValidatorTypeName);
       result.push({
         modelName: prop.referencedModelName,
-        qualifiedModelName: computeModelFqName(
+        qualifiedModelName: computeModelTypeName(
           program,
           prop.referencedModel,
           options,
@@ -779,7 +793,7 @@ function buildDerivedTypeValidators(
   for (const [, derivedModel] of union.variants) {
     if (!validatedModels.includes(derivedModel)) continue;
     const typeName = csharpModelName(program, derivedModel);
-    const qualifiedTypeName = computeModelFqName(
+    const qualifiedTypeName = computeModelTypeName(
       program,
       derivedModel,
       options,
@@ -951,7 +965,9 @@ function resolvePatchBodyInfo(
   }
   if (options.mergePatchStyle === "typed") {
     const typedName = `${modelName}MergePatchUpdate`;
-    const fullyQualified = `${options.modelsNamespace}.${modelName}MergePatchUpdate`;
+    const fullyQualified = options.fullyQualifiedTypes
+      ? `${options.modelsNamespace}.${modelName}MergePatchUpdate`
+      : `${modelName}MergePatchUpdate`;
     return {
       patchBodyTypeName: typedName,
       qualifiedPatchBodyTypeName: fullyQualified,
@@ -959,7 +975,9 @@ function resolvePatchBodyInfo(
     };
   }
   // Generic style
-  const fullyQualified = `${options.helpersNamespace}.MergePatch<${qualifiedModelName}>`;
+  const fullyQualified = options.fullyQualifiedTypes
+    ? `${options.helpersNamespace}.MergePatch<${qualifiedModelName}>`
+    : `MergePatch<${qualifiedModelName}>`;
   return {
     patchBodyTypeName: rawBodyTypeName,
     qualifiedPatchBodyTypeName: fullyQualified,
@@ -1015,7 +1033,7 @@ async function emitValidatorModels(
       emitPatch &&
       (routeModels === undefined || routeModels.patchModels.has(model));
 
-    const qualifiedModelName = computeModelFqName(program, model, options);
+    const qualifiedModelName = computeModelTypeName(program, model, options);
     const modelName = csharpModelName(program, model);
 
     if (doPost) {
@@ -1036,6 +1054,10 @@ async function emitValidatorModels(
       );
       const data: ValidatorTemplateData = {
         namespace,
+        modelsNamespace: options.modelsNamespace,
+        helpersNamespace: options.helpersNamespace,
+        fullyQualifiedTypes: options.fullyQualifiedTypes,
+        useHelpersNamespace: false,
         modelName,
         qualifiedModelName,
         properties: postProps,
@@ -1079,6 +1101,13 @@ async function emitValidatorModels(
         : deriveReferencedValidators(program, options, patchProps);
       const data: ValidatorTemplateData = {
         namespace,
+        modelsNamespace: options.modelsNamespace,
+        helpersNamespace: options.helpersNamespace,
+        fullyQualifiedTypes: options.fullyQualifiedTypes,
+        useHelpersNamespace:
+          !options.fullyQualifiedTypes &&
+          isMergePatchBody &&
+          options.mergePatchStyle === "generic",
         modelName,
         qualifiedModelName,
         patchBodyTypeName,
@@ -1130,7 +1159,7 @@ async function emitVersionAwareValidatorModels(
       emitPatch &&
       (routeModels === undefined || routeModels.patchModels.has(model));
 
-    const qualifiedModelName = computeModelFqName(program, model, options);
+    const qualifiedModelName = computeModelTypeName(program, model, options);
     const modelName = csharpModelName(program, model);
 
     if (doPost) {
@@ -1157,6 +1186,10 @@ async function emitVersionAwareValidatorModels(
       );
       const data: VersionAwareValidatorTemplateData = {
         namespace,
+        modelsNamespace: options.modelsNamespace,
+        helpersNamespace: options.helpersNamespace,
+        fullyQualifiedTypes: options.fullyQualifiedTypes,
+        useHelpersNamespace: false,
         modelName,
         qualifiedModelName,
         allVersions: versionValues,
@@ -1211,6 +1244,13 @@ async function emitVersionAwareValidatorModels(
           );
       const data: VersionAwareValidatorTemplateData = {
         namespace,
+        modelsNamespace: options.modelsNamespace,
+        helpersNamespace: options.helpersNamespace,
+        fullyQualifiedTypes: options.fullyQualifiedTypes,
+        useHelpersNamespace:
+          !options.fullyQualifiedTypes &&
+          isMergePatchBody &&
+          options.mergePatchStyle === "generic",
         modelName,
         qualifiedModelName,
         patchBodyTypeName,
@@ -1255,7 +1295,7 @@ async function emitValidatorsInitializer(
 
   const registrations: ValidatorRegistration[] = [];
   for (const model of allModels) {
-    const qualifiedModelName = computeModelFqName(program, model, options);
+    const qualifiedModelName = computeModelTypeName(program, model, options);
     const modelName = csharpModelName(program, model);
 
     if (
@@ -1300,6 +1340,15 @@ async function emitValidatorsInitializer(
 
   const data: InitializerTemplateData = {
     namespace,
+    modelsNamespace: options.modelsNamespace,
+    helpersNamespace: options.helpersNamespace,
+    fullyQualifiedTypes: options.fullyQualifiedTypes,
+    useHelpersNamespace:
+      !options.fullyQualifiedTypes &&
+      registrations.some((registration) =>
+        registration.qualifiedModelTypeName.startsWith("MergePatch<"),
+      ) &&
+      options.mergePatchStyle === "generic",
     registrations,
     isVersionAware,
   };
