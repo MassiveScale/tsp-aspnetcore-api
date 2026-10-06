@@ -26,7 +26,7 @@ public partial class CatPatchValidator : AbstractValidator<MarketOnce.Community.
     /// <summary>
     /// Initializes a new instance of <see cref="CatPatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
-    public CatPatchValidator(IHttpContextAccessor httpContextAccessor)
+        public CatPatchValidator(IHttpContextAccessor httpContextAccessor)
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 

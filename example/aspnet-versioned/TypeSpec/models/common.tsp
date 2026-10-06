@@ -41,7 +41,7 @@ model ErrorResponse {
     trace: string;
 
     @doc("An optional array of inner errors that provide more details about the error.")
-    innererror?: ErrorResponse[];
+    innererror?: ErrorResponse[] = #[];
 }
 
 /**

@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Object-value defaults (`= #{...}`) now generate fresh nested model initializers, including nested objects and object values inside arrays. See [Model Generation — Default property values](docs/models.md#default-property-values).
+- `TryPatch` optionally reports rejected JSON paths while preserving the existing non-throwing `Patch` API. Valid sibling properties continue to apply when another path is rejected. See [RFC 7396 Merge Patch](docs/merge-patch.md).
+
 ### Changed
+
+- **Breaking:** `Patch` now recursively merges nested JSON objects instead of replacing the entire nested value. Explicit `null` removes a value at any depth so the model's default initializer can restore it; arrays still replace as a whole. Callers that relied on nested-object replacement must send the complete object or apply replacement logic themselves.
+- **Breaking:** MergePatch validators now recursively validate nested model objects and complete replacement array elements. Invalid nested enums, constraints, required nulls, lifecycle-restricted members, and non-object values that previously passed can now fail validation. Later-version nested members retain their version guards. See [Validators — PATCH body shapes](docs/validators.md#patch-body-shapes).
 
 - **Breaking:** validators now treat required and lifecycle-restricted properties the same way for every type, not just strings. Requests that previously passed may now be rejected. See [Validators — Extracted rules](docs/validators.md#extracted-rules).
   - **Required non-string properties** (numbers, booleans, dates, enums, models, arrays) get `NotNull()` in POST validators. Previously only required strings were checked (`NotEmpty()`).

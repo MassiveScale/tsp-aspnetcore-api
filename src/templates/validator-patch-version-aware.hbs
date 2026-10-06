@@ -28,7 +28,7 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
     /// <summary>
     /// Initializes a new instance of <see cref="{{{modelName}}}PatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
-    public {{{modelName}}}PatchValidator(IHttpContextAccessor httpContextAccessor{{#each referencedValidators}}, AbstractValidator<{{{qualifiedModelName}}}> {{{paramName}}}{{/each}})
+        public {{{modelName}}}PatchValidator(IHttpContextAccessor httpContextAccessor{{#each referencedValidators}}, AbstractValidator<{{{qualifiedValidatorTypeName}}}> {{{paramName}}}{{/each}})
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "{{{defaultVersion}}}");
 
@@ -114,6 +114,64 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
             .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
             .WithName("{{{name}}}");
 
+{{/if}}
+{{#if referencedModelName}}
+{{#if isCollectionReference}}
+                this.RuleFor(x => x).Custom((patch, context) =>
+                {
+                        if (!patch.Properties.TryGetValue("{{{name}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+                        if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
+                        {
+                                context.AddFailure("{{{name}}}", "'{{{name}}}' must be an array.");
+                                return;
+                        }
+                        var index = 0;
+                        foreach (var item in element.EnumerateArray())
+                        {
+                                if (item.ValueKind != System.Text.Json.JsonValueKind.Object)
+                                {
+                                        context.AddFailure($"{{{name}}}[{index}]", "Array items must be objects.");
+                                        index++;
+                                        continue;
+                                }
+                                try
+                                {
+                                        var nestedModel = System.Text.Json.JsonSerializer.Deserialize<{{{referencedQualifiedModelName}}}>(item.GetRawText());
+                                        if (nestedModel is null)
+                                        {
+                                                context.AddFailure($"{{{name}}}[{index}]", "Array items must be objects.");
+                                        }
+                                        else
+                                        {
+                                                var nestedResult = {{{mergePatchValidatorParamName}}}.Validate(nestedModel);
+                                                foreach (var failure in nestedResult.Errors)
+                                                        context.AddFailure($"{{{name}}}[{index}].{failure.PropertyName}", failure.ErrorMessage);
+                                        }
+                                }
+                                catch (System.Text.Json.JsonException)
+                                {
+                                        context.AddFailure($"{{{name}}}[{index}]", "The array item could not be deserialized.");
+                                }
+                                index++;
+                        }
+                });
+
+{{else}}
+                this.RuleFor(x => x).Custom((patch, context) =>
+                {
+                        if (!patch.Properties.TryGetValue("{{{name}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+                        if (element.ValueKind != System.Text.Json.JsonValueKind.Object)
+                        {
+                                context.AddFailure("{{{name}}}", "'{{{name}}}' must be an object.");
+                                return;
+                        }
+                        var nestedPatch = {{{mergePatchFactoryTypeName}}}.FromJson(element.GetRawText());
+                        var nestedResult = {{{mergePatchValidatorParamName}}}.Validate(nestedPatch);
+                        foreach (var failure in nestedResult.Errors)
+                                context.AddFailure($"{{{name}}}.{failure.PropertyName}", failure.ErrorMessage);
+                });
+
+{{/if}}
 {{/if}}
 {{/if}}
 {{else}}
@@ -264,6 +322,64 @@ public partial class {{{modelName}}}PatchValidator : AbstractValidator<{{{qualif
                 .When(x => x.IsDefined("{{{name}}}") && !x.IsNull("{{{name}}}"))
                 .WithName("{{{name}}}");
 
+{{/if}}
+{{#if referencedModelName}}
+{{#if isCollectionReference}}
+                        this.RuleFor(x => x).Custom((patch, context) =>
+                        {
+                                if (!patch.Properties.TryGetValue("{{{name}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+                                if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
+                                {
+                                        context.AddFailure("{{{name}}}", "'{{{name}}}' must be an array.");
+                                        return;
+                                }
+                                var index = 0;
+                                foreach (var item in element.EnumerateArray())
+                                {
+                                        if (item.ValueKind != System.Text.Json.JsonValueKind.Object)
+                                        {
+                                                context.AddFailure($"{{{name}}}[{index}]", "Array items must be objects.");
+                                                index++;
+                                                continue;
+                                        }
+                                        try
+                                        {
+                                                var nestedModel = System.Text.Json.JsonSerializer.Deserialize<{{{referencedQualifiedModelName}}}>(item.GetRawText());
+                                                if (nestedModel is null)
+                                                {
+                                                        context.AddFailure($"{{{name}}}[{index}]", "Array items must be objects.");
+                                                }
+                                                else
+                                                {
+                                                        var nestedResult = {{{mergePatchValidatorParamName}}}.Validate(nestedModel);
+                                                        foreach (var failure in nestedResult.Errors)
+                                                                context.AddFailure($"{{{name}}}[{index}].{failure.PropertyName}", failure.ErrorMessage);
+                                                }
+                                        }
+                                        catch (System.Text.Json.JsonException)
+                                        {
+                                                context.AddFailure($"{{{name}}}[{index}]", "The array item could not be deserialized.");
+                                        }
+                                        index++;
+                                }
+                        });
+
+{{else}}
+                        this.RuleFor(x => x).Custom((patch, context) =>
+                        {
+                                if (!patch.Properties.TryGetValue("{{{name}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+                                if (element.ValueKind != System.Text.Json.JsonValueKind.Object)
+                                {
+                                        context.AddFailure("{{{name}}}", "'{{{name}}}' must be an object.");
+                                        return;
+                                }
+                                var nestedPatch = {{{mergePatchFactoryTypeName}}}.FromJson(element.GetRawText());
+                                var nestedResult = {{{mergePatchValidatorParamName}}}.Validate(nestedPatch);
+                                foreach (var failure in nestedResult.Errors)
+                                        context.AddFailure($"{{{name}}}.{failure.PropertyName}", failure.ErrorMessage);
+                        });
+
+{{/if}}
 {{/if}}
 {{/if}}
 {{else}}

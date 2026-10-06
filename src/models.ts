@@ -14,6 +14,7 @@ import {
   Model,
   ModelProperty,
   Namespace,
+  ObjectValue,
   Program,
   type Type,
   Value,
@@ -477,20 +478,24 @@ function buildEnumView(program: Program, en: Enum): EnumView {
  * - `BooleanValue` → `true` | `false`
  * - `NullValue`    → `null`
  * - `ArrayValue`   → `new List<T> { ... }` (see {@link arrayInitializer})
+ * - `ObjectValue`  → `new Model { ... }` (see {@link objectInitializer})
  *
- * Returns `undefined` for complex value kinds (objects, scalar constructors)
- * that cannot be represented as a simple C# literal.
+ * Returns `undefined` for unsupported values such as scalar constructors.
  *
  * @param value - The TypeSpec default value from `ModelProperty.defaultValue`.
  * @param targetType - The C# type the initializer is assigned to, e.g.
  *   `"IList<int>?"`. Used to pick numeric literal suffixes and the list element type.
+ * @param targetSpecType - The declared TypeSpec type used to resolve object members.
  * @param options - Resolved options (namespace used to qualify the enum type).
+ * @param program - The compiled TypeSpec program used for model/member resolution.
  * @returns A C# initializer expression string, or `undefined` if unsupported.
  */
 function defaultValueInitializer(
   value: Value,
   targetType: string,
+  targetSpecType: Type | undefined,
   options: ResolvedOptions,
+  program: Program,
 ): string | undefined {
   switch (value.valueKind) {
     case "EnumValue": {
@@ -506,7 +511,15 @@ function defaultValueInitializer(
     case "NullValue":
       return "null";
     case "ArrayValue":
-      return arrayInitializer(value, targetType, options);
+      return arrayInitializer(
+        value,
+        targetType,
+        targetSpecType,
+        options,
+        program,
+      );
+    case "ObjectValue":
+      return objectInitializer(value, targetSpecType, options, program);
     default:
       return undefined;
   }
@@ -597,19 +610,102 @@ const LIST_TYPE_PATTERN = /^IList<(.+)>\??$/;
 function arrayInitializer(
   value: ArrayValue,
   targetType: string,
+  targetSpecType: Type | undefined,
   options: ResolvedOptions,
+  program: Program,
 ): string | undefined {
   const elementType = LIST_TYPE_PATTERN.exec(targetType)?.[1];
   if (!elementType) return undefined;
   if (value.values.length === 0) return `new List<${elementType}>()`;
+  const elementSpecType =
+    targetSpecType?.kind === "Model" && isArrayModelType(targetSpecType)
+      ? targetSpecType.indexer.value
+      : undefined;
 
   const elements: string[] = [];
   for (const element of value.values) {
-    const initializer = defaultValueInitializer(element, elementType, options);
+    const initializer = defaultValueInitializer(
+      element,
+      elementType,
+      elementSpecType,
+      options,
+      program,
+    );
     if (initializer === undefined) return undefined;
     elements.push(initializer);
   }
   return `new List<${elementType}> { ${elements.join(", ")} }`;
+}
+
+/** Converts an object value to a C# object initializer for its concrete model. */
+function objectInitializer(
+  value: ObjectValue,
+  targetSpecType: Type | undefined,
+  options: ResolvedOptions,
+  program: Program,
+): string | undefined {
+  const model = modelTypeForInitializer(targetSpecType);
+  if (!model) return undefined;
+  if (isArrayModelType(model) || isRecordModelType(model)) return undefined;
+  if (getDiscriminator(program, model)) return undefined;
+
+  const modelType = typeReference(model, options, program);
+  const properties = classProperties(program, model);
+  const assignments: string[] = [];
+
+  for (const descriptor of value.properties.values()) {
+    const prop = properties.find(
+      (candidate) => candidate.name === descriptor.name,
+    );
+    if (!prop) return undefined;
+
+    const encoding = resolvePropertyEncoding(program, prop, options);
+    const targetType = propertyTypeName(
+      program,
+      model,
+      prop,
+      options,
+      encoding.typeOverride,
+    );
+    const inferredEnumType = inferredEnumTypeNameForProperty(
+      program,
+      model,
+      prop,
+    );
+    const qualifiedInferredEnumType = inferredEnumType
+      ? `${options.modelsNamespace}.${inferredEnumType}`
+      : undefined;
+    const initializer = resolveInitializer(
+      descriptor.value,
+      targetType,
+      prop.type,
+      qualifiedInferredEnumType,
+      options,
+      program,
+    );
+    if (initializer === undefined) return undefined;
+
+    const memberName = getServerName(program, prop) ?? pascalCase(prop.name);
+    assignments.push(`${memberName} = ${initializer}`);
+  }
+
+  return assignments.length === 0
+    ? `new ${modelType}()`
+    : `new ${modelType} { ${assignments.join(", ")} }`;
+}
+
+/** Resolves a model type from a property type, including a nullable union. */
+function modelTypeForInitializer(type: Type | undefined): Model | undefined {
+  if (type?.kind === "Model") return type;
+  if (type?.kind !== "Union") return undefined;
+  const nonNullTypes = [...type.variants.values()]
+    .map((variant) => variant.type)
+    .filter(
+      (variant) => !(variant.kind === "Intrinsic" && variant.name === "null"),
+    );
+  return nonNullTypes.length === 1
+    ? modelTypeForInitializer(nonNullTypes[0])
+    : undefined;
 }
 
 /**
@@ -661,8 +757,10 @@ function buildPropertyViews(
         initializer: resolveInitializer(
           prop.defaultValue,
           type,
+          prop.type,
           qualifiedInferredEnumType,
           options,
+          program,
         ),
       };
     });
@@ -683,14 +781,22 @@ function buildPropertyViews(
 function resolveInitializer(
   value: Value | undefined,
   targetType: string,
+  targetSpecType: Type | undefined,
   qualifiedInferredEnumType: string | undefined,
   options: ResolvedOptions,
+  program: Program,
 ): string | undefined {
   if (value === undefined) return undefined;
   if (qualifiedInferredEnumType && value.valueKind === "StringValue") {
     return `${qualifiedInferredEnumType}.${pascalCase(value.value)}`;
   }
-  return defaultValueInitializer(value, targetType, options);
+  return defaultValueInitializer(
+    value,
+    targetType,
+    targetSpecType,
+    options,
+    program,
+  );
 }
 
 /**

@@ -26,7 +26,7 @@ public partial class CustomerPatchValidator : AbstractValidator<MarketOnce.Commu
     /// <summary>
     /// Initializes a new instance of <see cref="CustomerPatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
-    public CustomerPatchValidator(IHttpContextAccessor httpContextAccessor)
+        public CustomerPatchValidator(IHttpContextAccessor httpContextAccessor)
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 

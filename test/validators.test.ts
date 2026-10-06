@@ -411,8 +411,6 @@ describe("csharp emitter - validators", () => {
         `expected nullable collection reference rule in:\n${postValidator}`,
       );
 
-      // A MergePatch body carries no strongly-typed Author/Tags members — only the
-      // raw JsonElement bag — so nested-model rules are suppressed there entirely.
       const patchValidator = results["Validators/BookPatchValidator.g.cs"];
       ok(
         patchValidator,
@@ -425,11 +423,101 @@ describe("csharp emitter - validators", () => {
         `expected the patch validator to target the MergePatch body in:\n${patchValidator}`,
       );
       ok(
-        !patchValidator.includes("SetValidator") &&
-          !patchValidator.includes("authorValidator") &&
-          !patchValidator.includes("tagValidator"),
-        `expected nested-model rules to be suppressed for a MergePatch body in:\n${patchValidator}`,
+        patchValidator.includes(
+          "AbstractValidator<Demo.Helpers.MergePatch<Demo.Models.Author>> authorPatchValidator",
+        ) &&
+          patchValidator.includes(
+            "AbstractValidator<Demo.Models.Tag> tagValidator",
+          ),
+        `expected injected nested patch and array-item validators in:\n${patchValidator}`,
       );
+      ok(
+        patchValidator.includes("'Author' must be an object.") &&
+          patchValidator.includes(
+            "Demo.Helpers.MergePatch<Demo.Models.Author>.FromJson",
+          ) &&
+          patchValidator.includes('$"Author.{failure.PropertyName}"'),
+        `expected nested-object shape validation and dotted failure paths in:\n${patchValidator}`,
+      );
+      ok(
+        patchValidator.includes(
+          "JsonSerializer.Deserialize<Demo.Models.Tag>(item.GetRawText())",
+        ) && patchValidator.includes('$"Tags[{index}].{failure.PropertyName}"'),
+        `expected full-model array-item validation in:\n${patchValidator}`,
+      );
+    });
+
+    it("emits recursive nested MergePatch validators for children reachable only from PATCH", async () => {
+      const source = `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service namespace Demo;
+
+        enum Theme { light, dark }
+        model Leaf { @minValue(8) @maxValue(72) fontSize?: int32; }
+        model Appearance { label: string; theme?: Theme; leaf?: Leaf; }
+        model Widget { appearance?: Appearance; }
+        model WidgetPatch is MergePatchUpdate<Widget>;
+
+        @route("/widgets") interface Widgets {
+          @patch update(@body body: WidgetPatch): void;
+        }
+      `;
+
+      for (const style of ["generic", "typed"] as const) {
+        const results = await emit(source, {
+          "emit-validators": true,
+          "emit-controllers": false,
+          "emit-services": false,
+          "emit-interfaces": false,
+          "merge-patch-style": style,
+        });
+        const widgetPatch = results["Validators/WidgetPatchValidator.g.cs"];
+        const appearancePatch =
+          results["Validators/AppearancePatchValidator.g.cs"];
+        const leafPatch = results["Validators/LeafPatchValidator.g.cs"];
+        const registrations = results["Validators/ValidatorsInitializer.g.cs"];
+
+        ok(widgetPatch, `expected Widget patch validator for ${style}`);
+        ok(
+          appearancePatch,
+          `expected nested Appearance patch validator for ${style}`,
+        );
+        ok(leafPatch, `expected deep Leaf patch validator for ${style}`);
+        ok(registrations, `expected validator registrations for ${style}`);
+        ok(
+          widgetPatch.includes("Appearance.{failure.PropertyName}") &&
+            widgetPatch.includes("'Appearance' must be an object."),
+          `expected recursive object validation in ${style} root patch:\n${widgetPatch}`,
+        );
+        ok(
+          appearancePatch.includes("Leaf.{failure.PropertyName}") &&
+            appearancePatch.includes("'Leaf' must be an object.") &&
+            appearancePatch.includes('IsNull("Label")') &&
+            appearancePatch.includes("TryGetValue<Demo.Models.Theme?>"),
+          `expected second-level object validation in ${style} child patch:\n${appearancePatch}`,
+        );
+        ok(
+          leafPatch.includes("decimal.TryParse") &&
+            leafPatch.includes("n >= 8m") &&
+            leafPatch.includes("n <= 72m"),
+          `expected nested numeric bounds in ${style} deep patch:\n${leafPatch}`,
+        );
+        ok(
+          registrations.includes("AppearancePatchValidator") &&
+            registrations.includes("LeafPatchValidator"),
+          `expected nested-only validators to be registered for ${style}:\n${registrations}`,
+        );
+        if (style === "typed") {
+          ok(
+            widgetPatch.includes(
+              "Demo.Models.AppearanceMergePatchUpdate.FromJson",
+            ),
+            `expected typed nested patch factory in:\n${widgetPatch}`,
+          );
+        }
+      }
     });
 
     // Model/array-typed properties are always treated as nullable by the validator
@@ -542,10 +630,62 @@ describe("csharp emitter - validators", () => {
         `expected the version-aware PATCH template to be used:\n${patchValidator}`,
       );
       ok(
-        !patchValidator.includes("SetValidator") &&
-          !patchValidator.includes("authorValidator") &&
-          !patchValidator.includes("tagValidator"),
-        `expected nested-model rules to be suppressed for a MergePatch body in both the base and per-version blocks of:\n${patchValidator}`,
+        patchValidator.includes("authorPatchValidator") &&
+          patchValidator.includes("tagValidator") &&
+          patchValidator.includes("Rules added in v2.0") &&
+          patchValidator.includes(
+            "JsonSerializer.Deserialize<Demo.Models.Tag>",
+          ),
+        `expected nested model and array validators in base and version-aware MergePatch groups:\n${patchValidator}`,
+      );
+    });
+
+    it("keeps later-version guards on members nested inside a MergePatch model", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+
+        @versioned(Versions)
+        @service namespace Demo;
+        enum Versions { v1: "v1", v2: "v2" }
+
+        model Appearance {
+          @added(Versions.v2)
+          @minValue(8)
+          fontSize?: int32;
+        }
+        model Widget { appearance?: Appearance; }
+        model WidgetPatch is MergePatchUpdate<Widget>;
+
+        @route("/widgets") interface Widgets {
+          @patch update(@body body: WidgetPatch): void;
+        }
+        `,
+        {
+          "emit-validators": true,
+          "emit-controllers": false,
+          "emit-services": false,
+          "emit-interfaces": false,
+        },
+      );
+      const parent = results["Validators/WidgetPatchValidator.g.cs"];
+      const child = results["Validators/AppearancePatchValidator.g.cs"];
+      ok(
+        parent && child,
+        "expected parent and child version-aware patch validators",
+      );
+      ok(
+        parent.includes("Appearance.{failure.PropertyName}"),
+        `expected nested dispatch:\n${parent}`,
+      );
+      ok(
+        child.includes("Rules added in v2") &&
+          child.includes('IsAtLeast("v2"') &&
+          child.includes('GetString("FontSize")'),
+        `expected nested later-version constraint to remain guarded:\n${child}`,
       );
     });
   });

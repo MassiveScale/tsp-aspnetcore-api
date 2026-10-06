@@ -36,6 +36,20 @@ describe("csharp emitter - helpers", () => {
       ok(helper.includes("IsNull"), `expected IsNull in:\n${helper}`);
       ok(helper.includes("GetString"), `expected GetString in:\n${helper}`);
       ok(helper.includes("TryGetValue"), `expected TryGetValue in:\n${helper}`);
+      ok(
+        helper.includes("public bool TryPatch("),
+        `expected TryPatch diagnostics in:\n${helper}`,
+      );
+      ok(
+        helper.includes("private static void MergeObject("),
+        `expected recursive merge in:\n${helper}`,
+      );
+      ok(
+        !helper
+          .split(/\r?\n/)
+          .some((line) => line.length > 0 && line.trim().length === 0),
+        "generated generic helper should not contain whitespace-only lines",
+      );
     });
   });
 
@@ -149,6 +163,20 @@ describe("csharp emitter - helpers", () => {
       ok(
         file.includes("public ValueTask PatchAsync(Demo.Models.Widget"),
         `expected PatchAsync method in:\n${file}`,
+      );
+      ok(
+        file.includes("public bool TryPatch("),
+        `expected TryPatch in:\n${file}`,
+      );
+      ok(
+        file.includes("private static void MergeObject("),
+        `expected recursive merge in:\n${file}`,
+      );
+      ok(
+        !file
+          .split(/\r?\n/)
+          .some((line) => line.length > 0 && line.trim().length === 0),
+        "generated typed helper should not contain whitespace-only lines",
       );
     });
 

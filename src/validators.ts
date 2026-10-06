@@ -171,14 +171,19 @@ interface PropertyData {
   referencedModelName?: string;
   /** Kept for FQ name computation; not serialized to Handlebars templates. */
   referencedModel?: Model;
+  referencedQualifiedModelName?: string;
   referencedParamName?: string;
   isCollectionReference?: boolean;
+  mergePatchValidatorTypeName?: string;
+  mergePatchValidatorParamName?: string;
+  mergePatchFactoryTypeName?: string;
 }
 
 /** Validator for a referenced child model (injected as constructor parameter). */
 interface ReferencedValidator {
   modelName: string;
   qualifiedModelName: string;
+  qualifiedValidatorTypeName: string;
   paramName: string;
 }
 
@@ -249,6 +254,12 @@ interface InitializerTemplateData {
   namespace?: string;
   registrations: ValidatorRegistration[];
   isVersionAware: boolean;
+}
+
+interface ValidatorRouteModels {
+  postModels: Set<Model>;
+  patchModels: Map<Model, string>;
+  nestedPostModels: Set<Model>;
 }
 
 /**
@@ -385,10 +396,13 @@ function shouldSkipValidatorModel(model: Model): boolean {
 function getValidatorModelReference(
   type: Type,
 ): { model: Model; isCollection: boolean } | undefined {
-  if (type.kind !== "Model") return undefined;
-  const m = type as Model;
+  const nonNullType = getNonNullType(type);
+  if (nonNullType?.kind !== "Model") return undefined;
+  const m = nonNullType as Model;
   if (m.indexer !== undefined) {
-    const elemType = m.indexer.value;
+    const elemType = m.indexer.value
+      ? getNonNullType(m.indexer.value)
+      : undefined;
     if (!elemType || elemType.kind !== "Model") return undefined;
     const elemModel = elemType as Model;
     if (shouldSkipValidatorModel(elemModel)) return undefined;
@@ -396,6 +410,17 @@ function getValidatorModelReference(
   }
   if (shouldSkipValidatorModel(m)) return undefined;
   return { model: m, isCollection: false };
+}
+
+/** Unwraps a nullable union containing exactly one non-null type. */
+function getNonNullType(type: Type): Type | undefined {
+  if (type.kind !== "Union") return type;
+  const nonNullTypes = [...(type as Union).variants.values()]
+    .map((variant) => variant.type)
+    .filter(
+      (variant) => !(variant.kind === "Intrinsic" && variant.name === "null"),
+    );
+  return nonNullTypes.length === 1 ? nonNullTypes[0] : undefined;
 }
 
 /**
@@ -458,6 +483,30 @@ function buildSinglePropertyData(
       "Validator"
     : undefined;
   const isCollectionReference = modelRef?.isCollection;
+  const referencedQualifiedModelName = modelRef
+    ? computeModelFqName(program, modelRef.model, options)
+    : undefined;
+  const mergePatchValidator = modelRef
+    ? isCollectionReference
+      ? {
+          typeName: referencedQualifiedModelName!,
+          paramName: `${referencedModelName!.charAt(0).toLowerCase()}${referencedModelName!.slice(1)}Validator`,
+          factoryTypeName: undefined,
+        }
+      : (() => {
+          const bodyInfo = resolvePatchBodyInfo(
+            `MergePatch<${referencedModelName}>`,
+            referencedModelName!,
+            referencedQualifiedModelName!,
+            options,
+          );
+          return {
+            typeName: bodyInfo.qualifiedPatchBodyTypeName,
+            paramName: `${referencedModelName!.charAt(0).toLowerCase()}${referencedModelName!.slice(1)}PatchValidator`,
+            factoryTypeName: bodyInfo.qualifiedPatchBodyTypeName,
+          };
+        })()
+    : undefined;
 
   const hasRules =
     isReadOnly ||
@@ -490,8 +539,20 @@ function buildSinglePropertyData(
     maxValue: isReadOnly ? undefined : maxValue,
     referencedModelName: isReadOnly ? undefined : referencedModelName,
     referencedModel: isReadOnly ? undefined : modelRef?.model,
+    referencedQualifiedModelName: isReadOnly
+      ? undefined
+      : referencedQualifiedModelName,
     referencedParamName: isReadOnly ? undefined : referencedParamName,
     isCollectionReference: isReadOnly ? undefined : isCollectionReference,
+    mergePatchValidatorTypeName: isReadOnly
+      ? undefined
+      : mergePatchValidator?.typeName,
+    mergePatchValidatorParamName: isReadOnly
+      ? undefined
+      : mergePatchValidator?.paramName,
+    mergePatchFactoryTypeName: isReadOnly
+      ? undefined
+      : mergePatchValidator?.factoryTypeName,
   };
 }
 
@@ -650,9 +711,45 @@ function deriveReferencedValidators(
         result.push({
           modelName: p.referencedModelName,
           qualifiedModelName,
+          qualifiedValidatorTypeName: qualifiedModelName,
           paramName: p.referencedParamName!,
         });
       }
+    }
+  }
+  return result;
+}
+
+/** Builds injected validator references for raw MergePatch nested properties. */
+function deriveMergePatchReferencedValidators(
+  program: Program,
+  options: ResolvedOptions,
+  ...propertyGroups: PropertyData[][]
+): ReferencedValidator[] {
+  const seen = new Set<string>();
+  const result: ReferencedValidator[] = [];
+  for (const props of propertyGroups) {
+    for (const prop of props) {
+      if (
+        !prop.referencedModelName ||
+        !prop.referencedModel ||
+        !prop.mergePatchValidatorTypeName ||
+        !prop.mergePatchValidatorParamName ||
+        seen.has(prop.mergePatchValidatorTypeName)
+      ) {
+        continue;
+      }
+      seen.add(prop.mergePatchValidatorTypeName);
+      result.push({
+        modelName: prop.referencedModelName,
+        qualifiedModelName: computeModelFqName(
+          program,
+          prop.referencedModel,
+          options,
+        ),
+        qualifiedValidatorTypeName: prop.mergePatchValidatorTypeName,
+        paramName: prop.mergePatchValidatorParamName,
+      });
     }
   }
   return result;
@@ -760,13 +857,14 @@ function addModelWithDescendants(
 export function collectValidatorModelsFromRoutes(
   program: Program,
   allModels: Model[],
-): { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined {
+): ValidatorRouteModels | undefined {
   const [services] = getAllHttpServices(program);
   const hasAnyOperations = services.some((s) => s.operations.length > 0);
   if (!hasAnyOperations) return undefined;
 
   const postModels = new Set<Model>();
   const patchModels = new Map<Model, string>();
+  const nestedPostModels = new Set<Model>();
 
   for (const service of services) {
     for (const op of service.operations) {
@@ -797,11 +895,31 @@ export function collectValidatorModelsFromRoutes(
               : candidateName;
             patchModels.set(candidate, descBodyTypeName);
           }
+
+          const pending = [sourceModel];
+          const visited = new Set<Model>();
+          while (pending.length > 0) {
+            const current = pending.shift()!;
+            if (visited.has(current)) continue;
+            visited.add(current);
+            for (const prop of classProperties(program, current)) {
+              const reference = getValidatorModelReference(prop.type);
+              if (!reference) continue;
+              if (!isMergePatchBody || reference.isCollection) {
+                nestedPostModels.add(reference.model);
+                continue;
+              }
+
+              const nestedName = csharpModelName(program, reference.model);
+              patchModels.set(reference.model, `MergePatch<${nestedName}>`);
+              pending.push(reference.model);
+            }
+          }
         }
       }
     }
   }
-  return { postModels, patchModels };
+  return { postModels, patchModels, nestedPostModels };
 }
 
 /**
@@ -870,8 +988,7 @@ function resolveValidatorNamespace(
 async function emitValidatorModels(
   program: Program,
   allModels: Model[],
-  routeModels:
-    { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined,
+  routeModels: ValidatorRouteModels | undefined,
   createMember: EnumMember | undefined,
   updateMember: EnumMember | undefined,
   options: ResolvedOptions,
@@ -891,8 +1008,9 @@ async function emitValidatorModels(
     const versionDir = versionDirName ? `${versionDirName}/` : "";
 
     const doPost =
-      emitPost &&
-      (routeModels === undefined || routeModels.postModels.has(model));
+      (emitPost &&
+        (routeModels === undefined || routeModels.postModels.has(model))) ||
+      (emitPatch && routeModels?.nestedPostModels.has(model));
     const doPatch =
       emitPatch &&
       (routeModels === undefined || routeModels.patchModels.has(model));
@@ -957,7 +1075,7 @@ async function emitValidatorModels(
         versionFilter,
       );
       const patchRefs = isMergePatchBody
-        ? []
+        ? deriveMergePatchReferencedValidators(program, options, patchProps)
         : deriveReferencedValidators(program, options, patchProps);
       const data: ValidatorTemplateData = {
         namespace,
@@ -986,8 +1104,7 @@ async function emitValidatorModels(
 async function emitVersionAwareValidatorModels(
   program: Program,
   allModels: Model[],
-  routeModels:
-    { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined,
+  routeModels: ValidatorRouteModels | undefined,
   createMember: EnumMember | undefined,
   updateMember: EnumMember | undefined,
   options: ResolvedOptions,
@@ -1006,8 +1123,9 @@ async function emitVersionAwareValidatorModels(
 
   for (const model of allModels) {
     const doPost =
-      emitPost &&
-      (routeModels === undefined || routeModels.postModels.has(model));
+      (emitPost &&
+        (routeModels === undefined || routeModels.postModels.has(model))) ||
+      (emitPatch && routeModels?.nestedPostModels.has(model));
     const doPatch =
       emitPatch &&
       (routeModels === undefined || routeModels.patchModels.has(model));
@@ -1079,7 +1197,12 @@ async function emitVersionAwareValidatorModels(
           options,
         );
       const patchRefs = isMergePatchBody
-        ? []
+        ? deriveMergePatchReferencedValidators(
+            program,
+            options,
+            baseProperties,
+            ...versionGroups.map((g) => g.properties),
+          )
         : deriveReferencedValidators(
             program,
             options,
@@ -1121,8 +1244,7 @@ interface EmitValidatorInitializerOptions {
 async function emitValidatorsInitializer(
   program: Program,
   allModels: Model[],
-  routeModels:
-    { postModels: Set<Model>; patchModels: Map<Model, string> } | undefined,
+  routeModels: ValidatorRouteModels | undefined,
   options: ResolvedOptions,
   emitPost: boolean,
   emitPatch: boolean,
@@ -1137,8 +1259,9 @@ async function emitValidatorsInitializer(
     const modelName = csharpModelName(program, model);
 
     if (
-      emitPost &&
-      (routeModels === undefined || routeModels.postModels.has(model))
+      (emitPost &&
+        (routeModels === undefined || routeModels.postModels.has(model))) ||
+      (emitPatch && routeModels?.nestedPostModels.has(model))
     ) {
       registrations.push({
         modelTypeName: modelName,
@@ -1286,6 +1409,11 @@ export async function emitValidators(
               vf,
             ),
             patchModels: routeModels.patchModels,
+            nestedPostModels: collectValidatorTransitiveDeps(
+              program,
+              routeModels.nestedPostModels,
+              vf,
+            ),
           }
         : undefined;
       await emitValidatorModels(
@@ -1322,6 +1450,10 @@ export async function emitValidators(
             routeModels.postModels,
           ),
           patchModels: routeModels.patchModels,
+          nestedPostModels: collectValidatorTransitiveDeps(
+            program,
+            routeModels.nestedPostModels,
+          ),
         }
       : undefined;
     await emitVersionAwareValidatorModels(
@@ -1362,6 +1494,11 @@ export async function emitValidators(
             versionFilter,
           ),
           patchModels: routeModels.patchModels,
+          nestedPostModels: collectValidatorTransitiveDeps(
+            program,
+            routeModels.nestedPostModels,
+            versionFilter,
+          ),
         }
       : undefined;
     await emitValidatorModels(

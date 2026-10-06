@@ -94,7 +94,12 @@ Nested-model rules account for property nullability so the generated code compil
 
 - The property access uses the null-forgiving operator (`x.Prop!`) so the emitted `IValidator<T>` type argument matches, avoiding a nullable-reference-type build warning.
 - The rule adds `.When(x => x.Prop is not null)` so it is skipped at runtime when the property is `null`. This applies to POST validators and to PATCH validators over a plain body.
-- PATCH validators over a `MergePatchUpdate<T>` body emit no nested-model rules at all, because the container holds raw JSON rather than a typed child instance.
+- PATCH validators over a `MergePatchUpdate<T>` body inspect the raw JSON value. A supplied nested object is passed to its injected child PATCH validator, and child failures are prefixed with the parent path (for example, `Appearance.Theme`). Non-object values are rejected at the parent property. Nested validators recurse to further model levels and keep their own constraints, required-null checks, enum checks, and read-only/create-only rules.
+- A model array in a MergePatch body is a whole-value replacement under RFC 7396. Every supplied element must be an object and is validated as a complete model using its injected POST validator; failures use paths such as `Items[0].Name`. Arrays are not interpreted as collections of partial item patches.
+
+Nested-only validators are emitted and registered when reachable through a PATCH body's model properties. Constructor injection is used throughout. Arbitrarily deep acyclic model shapes are supported; self-referential and mutually recursive model graphs are not supported because they can create constructor-injection cycles.
+
+Version-aware child patch validators retain their `IsAtLeast` guards. Therefore, a nested member introduced in a later version is validated only when that version is active, just like a top-level member.
 
 For discriminated hierarchies (`@discriminator("...")`), the discriminator property itself is excluded from generated validators for both base and derived models. This avoids invalid rules against a wire-level polymorphism marker and prevents false validation failures for discriminator values supplied by polymorphic serialization.
 

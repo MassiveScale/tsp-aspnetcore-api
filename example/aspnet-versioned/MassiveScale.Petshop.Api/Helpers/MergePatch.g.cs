@@ -12,6 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,30 +28,27 @@ namespace MarketOnce.Community.Campaign.Api.Helpers
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     public class MergePatch<T>
     {
-        private static readonly PropertyInfo[] _typeProperties =
-            typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
-    
         /// <summary>
         /// Raw JSON properties received in the patch payload, keyed by property name.
         /// Populated automatically by <c>System.Text.Json</c> via <c>[JsonExtensionData]</c>.
         /// </summary>
         [JsonExtensionData]
         public Dictionary<string, JsonElement> Properties { get; init; } = new(StringComparer.OrdinalIgnoreCase);
-    
+
         /// <summary>
         /// Returns <see langword="true"/> if <paramref name="propertyName"/> was explicitly
         /// included in the patch payload (even if its value is <see langword="null"/>).
         /// </summary>
         public bool IsDefined(string propertyName) =>
             Properties.ContainsKey(propertyName);
-    
+
         /// <summary>
         /// Returns <see langword="true"/> if <paramref name="propertyName"/> is present in the
         /// patch and its JSON value is <c>null</c> (RFC 7396 "clear field" signal).
         /// </summary>
         public bool IsNull(string propertyName) =>
             Properties.TryGetValue(propertyName, out var el) && el.ValueKind == JsonValueKind.Null;
-    
+
         /// <summary>
         /// Returns the string value of <paramref name="propertyName"/>, or
         /// <see langword="null"/> when the property is absent or its JSON value is null.
@@ -61,7 +59,7 @@ namespace MarketOnce.Community.Campaign.Api.Helpers
             if (element.ValueKind == JsonValueKind.Null) return null;
             return element.ValueKind == JsonValueKind.String ? element.GetString() : element.ToString();
         }
-    
+
         /// <summary>
         /// Attempts to deserialize <paramref name="propertyName"/> to <typeparamref name="TValue"/>.
         /// Returns <see langword="true"/> when the property is present (even if null);
@@ -82,16 +80,16 @@ namespace MarketOnce.Community.Campaign.Api.Helpers
                 return false;
             }
         }
-    
+
         /// <summary>Returns the names of all properties explicitly provided in this patch.</summary>
         public IEnumerable<string> DefinedProperties => Properties.Keys;
-    
+
         /// <summary>
         /// Returns the names of all properties that have been modified (i.e. explicitly
         /// provided) in this patch.
         /// </summary>
         public IEnumerable<string> GetChangedPropertyNames() => Properties.Keys;
-    
+
         /// <summary>
         /// Attempts to get the declared <see cref="Type"/> of the property named
         /// <paramref name="name"/> on <typeparamref name="T"/>.
@@ -103,7 +101,7 @@ namespace MarketOnce.Community.Campaign.Api.Helpers
             type = prop?.PropertyType;
             return prop is not null;
         }
-    
+
         /// <summary>
         /// Attempts to get the patch value for the property named <paramref name="name"/>,
         /// deserialized to the declared property type on <typeparamref name="T"/>.
@@ -127,7 +125,7 @@ namespace MarketOnce.Community.Campaign.Api.Helpers
                 return false;
             }
         }
-    
+
         /// <summary>
         /// Serializes <paramref name="value"/> and stores it as a patch entry for the
         /// property named <paramref name="name"/>. Pass <see langword="null"/> to mark
@@ -147,7 +145,7 @@ namespace MarketOnce.Community.Campaign.Api.Helpers
                 return false;
             }
         }
-    
+
         /// <summary>
         /// Constructs a <see cref="MergePatch{T}"/> from a JSON string, treating every
         /// property present in the JSON as explicitly defined in the patch.
@@ -160,7 +158,7 @@ namespace MarketOnce.Community.Campaign.Api.Helpers
         /// </remarks>
         public static MergePatch<T> FromJson(string json, JsonSerializerOptions? options = null) =>
             JsonSerializer.Deserialize<MergePatch<T>>(json, options) ?? new MergePatch<T>();
-    
+
         /// <summary>
         /// Constructs a <see cref="MergePatch{T}"/> from an existing <typeparamref name="T"/>
         /// instance by serializing it to JSON. Every property that is included in the serialized
@@ -173,31 +171,129 @@ namespace MarketOnce.Community.Campaign.Api.Helpers
         /// </remarks>
         public static MergePatch<T> From(T entity, JsonSerializerOptions? options = null) =>
             FromJson(JsonSerializer.Serialize(entity, options), options);
-    
+
         /// <summary>
-        /// Applies all properties defined in this patch to <paramref name="original"/> using
-        /// reflection. Each defined property is deserialized to the target property's declared
-        /// type and written back. Properties absent from <typeparamref name="T"/>, that cannot
-        /// be deserialized, or that are read-only are silently skipped.
+        /// Applies defined properties recursively to <paramref name="original"/> in place.
+        /// Use <see cref="TryPatch"/> when rejected-path diagnostics are needed.
         /// </summary>
         public void Patch(T original, JsonSerializerOptions? options = null)
         {
-            if (original is null) return;
+            TryPatch(original, out _, options);
+        }
+
+        /// <summary>
+        /// Applies each defined patch property recursively to <paramref name="original"/>.
+        /// Invalid, unknown, and read-only properties are reported and skipped; valid
+        /// sibling properties are still applied. The root instance is never replaced.
+        /// </summary>
+        /// <param name="original">The entity to mutate.</param>
+        /// <param name="rejectedPaths">JSON property paths that could not be applied.</param>
+        /// <param name="options">Serializer options used for the entity and patch values.</param>
+        /// <returns><see langword="true"/> when every supplied property was applied.</returns>
+        public bool TryPatch(T original, out IReadOnlyList<string> rejectedPaths, JsonSerializerOptions? options = null)
+        {
+            var rejected = new List<string>();
+            rejectedPaths = rejected;
+            if (original is null)
+            {
+                rejected.Add("$");
+                return false;
+            }
+
             foreach (var (name, element) in Properties)
             {
                 var prop = FindProperty(name);
-                if (prop is null || !prop.CanWrite) continue;
+                if (prop is null || !prop.CanWrite)
+                {
+                    rejected.Add(name);
+                    continue;
+                }
                 try
                 {
-                    object? value = element.ValueKind == JsonValueKind.Null
-                        ? null
-                        : JsonSerializer.Deserialize(element.GetRawText(), prop.PropertyType, options);
-                    prop.SetValue(original, value);
+                    var target = JsonSerializer.SerializeToNode(original, options) as JsonObject;
+                    if (target is null)
+                    {
+                        rejected.Add(name);
+                        continue;
+                    }
+
+                    var patch = new JsonObject
+                    {
+                        [name] = JsonNode.Parse(element.GetRawText()),
+                    };
+                    MergeObject(target, patch, typeof(T), rejected, string.Empty);
+                    var updated = target.Deserialize<T>(options);
+                    if (updated is null)
+                    {
+                        rejected.Add(name);
+                        continue;
+                    }
+                    prop.SetValue(original, prop.GetValue(updated));
                 }
-                catch { }
+                catch (JsonException ex)
+                {
+                    var path = ex.Path;
+                    rejected.Add(path is { Length: > 1 } && path.StartsWith("$.", StringComparison.Ordinal)
+                        ? path[2..]
+                        : path is { Length: > 1 } && path[0] == '$'
+                            ? path[1..]
+                            : name);
+                }
+                catch
+                {
+                    rejected.Add(name);
+                }
+            }
+
+            return rejected.Count == 0;
+        }
+
+        private static void MergeObject(JsonObject target, JsonObject patch, Type targetType, List<string> rejected, string prefix)
+        {
+            foreach (var (patchName, patchValue) in patch)
+            {
+                var property = FindProperty(targetType, patchName);
+                var wireName = property?.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property?.Name ?? patchName;
+                var path = prefix.Length == 0 ? wireName : $"{prefix}.{wireName}";
+                if (property is null && targetType != typeof(object))
+                {
+                    rejected.Add(path);
+                    continue;
+                }
+                string? targetName = null;
+                foreach (var targetEntry in target)
+                {
+                    if (string.Equals(targetEntry.Key, wireName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        targetName = targetEntry.Key;
+                        break;
+                    }
+                }
+                if (patchValue is null)
+                {
+                    if (targetName is not null) target.Remove(targetName);
+                    continue;
+                }
+
+                if (patchValue is JsonObject patchChild)
+                {
+                    if (targetName is not null && target[targetName] is JsonObject existingChild)
+                    {
+                        MergeObject(existingChild, patchChild, property?.PropertyType ?? typeof(object), rejected, path);
+                    }
+                    else
+                    {
+                        var targetChild = new JsonObject();
+                        MergeObject(targetChild, patchChild, property?.PropertyType ?? typeof(object), rejected, path);
+                        target[targetName ?? wireName] = targetChild;
+                    }
+                    continue;
+                }
+
+                target[targetName ?? wireName] = patchValue.DeepClone();
             }
         }
-    
+
         /// <summary>
         /// Asynchronous variant of <see cref="Patch(T, JsonSerializerOptions?)"/>.
         /// Applies all properties defined in this patch to <paramref name="original"/> using
@@ -211,9 +307,11 @@ namespace MarketOnce.Community.Campaign.Api.Helpers
             Patch(original, options);
             return ValueTask.CompletedTask;
         }
-    
-        private static PropertyInfo? FindProperty(string name) =>
-            Array.Find(_typeProperties, p =>
+
+        private static PropertyInfo? FindProperty(string name) => FindProperty(typeof(T), name);
+
+        private static PropertyInfo? FindProperty(Type type, string name) =>
+            Array.Find(type.GetProperties(BindingFlags.Public | BindingFlags.Instance), p =>
             {
                 var wireName = p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name;
                 return string.Equals(wireName, name, StringComparison.OrdinalIgnoreCase);

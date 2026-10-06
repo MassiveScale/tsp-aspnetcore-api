@@ -26,7 +26,7 @@ public partial class PetPatchValidator : AbstractValidator<MarketOnce.Community.
     /// <summary>
     /// Initializes a new instance of <see cref="PetPatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
-    public PetPatchValidator(IHttpContextAccessor httpContextAccessor)
+        public PetPatchValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<MarketOnce.Community.Campaign.Api.Models.Tag> tagValidator)
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 
@@ -58,6 +58,45 @@ public partial class PetPatchValidator : AbstractValidator<MarketOnce.Community.
         // Rules added in v2.0
         When(_ => IsAtLeast("v2.0", _apiVersion, _versions), () =>
         {
+                        this.RuleFor(x => x).Custom((patch, context) =>
+                        {
+                                if (!patch.Properties.TryGetValue("Tags", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+                                if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
+                                {
+                                        context.AddFailure("Tags", "'Tags' must be an array.");
+                                        return;
+                                }
+                                var index = 0;
+                                foreach (var item in element.EnumerateArray())
+                                {
+                                        if (item.ValueKind != System.Text.Json.JsonValueKind.Object)
+                                        {
+                                                context.AddFailure($"Tags[{index}]", "Array items must be objects.");
+                                                index++;
+                                                continue;
+                                        }
+                                        try
+                                        {
+                                                var nestedModel = System.Text.Json.JsonSerializer.Deserialize<MarketOnce.Community.Campaign.Api.Models.Tag>(item.GetRawText());
+                                                if (nestedModel is null)
+                                                {
+                                                        context.AddFailure($"Tags[{index}]", "Array items must be objects.");
+                                                }
+                                                else
+                                                {
+                                                        var nestedResult = tagValidator.Validate(nestedModel);
+                                                        foreach (var failure in nestedResult.Errors)
+                                                                context.AddFailure($"Tags[{index}].{failure.PropertyName}", failure.ErrorMessage);
+                                                }
+                                        }
+                                        catch (System.Text.Json.JsonException)
+                                        {
+                                                context.AddFailure($"Tags[{index}]", "The array item could not be deserialized.");
+                                        }
+                                        index++;
+                                }
+                        });
+
         });
 
         ExtendRules();

@@ -46,7 +46,7 @@ namespace MarketOnce.Community.Campaign.Api.Models
         /// </summary>
         [JsonPropertyName("innererror")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public IList<MarketOnce.Community.Campaign.Api.Models.ErrorResponseBase>? Innererror { get; set; }
+        public IList<MarketOnce.Community.Campaign.Api.Models.ErrorResponseBase>? Innererror { get; set; } = new List<MarketOnce.Community.Campaign.Api.Models.ErrorResponseBase>();
     
     }
 

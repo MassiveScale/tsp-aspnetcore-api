@@ -26,7 +26,7 @@ public partial class DogPatchValidator : AbstractValidator<MarketOnce.Community.
     /// <summary>
     /// Initializes a new instance of <see cref="DogPatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
-    public DogPatchValidator(IHttpContextAccessor httpContextAccessor)
+        public DogPatchValidator(IHttpContextAccessor httpContextAccessor)
     {
         var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
 

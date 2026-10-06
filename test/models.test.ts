@@ -558,6 +558,84 @@ describe("csharp emitter - models", () => {
       );
     });
 
+    it("assigns empty and populated object defaults as fresh model initializers", async () => {
+      const results = await emit(`
+        namespace Demo;
+        enum Theme { light, dark }
+        model WidgetAppearance {
+          theme?: Theme = Theme.light;
+          fontSize?: int32 = 14;
+        }
+        model Widget {
+          empty?: WidgetAppearance = #{};
+          configured?: WidgetAppearance = #{ theme: Theme.dark, fontSize: 20 };
+        }
+      `);
+
+      const file = results["Widget.g.cs"];
+      ok(file, `expected Widget.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes(
+          "public Demo.Models.WidgetAppearance? Empty { get; set; } = new Demo.Models.WidgetAppearance();",
+        ),
+        `expected fresh empty model initializer in:\n${file}`,
+      );
+      ok(
+        file.includes(
+          "public Demo.Models.WidgetAppearance? Configured { get; set; } = new Demo.Models.WidgetAppearance { Theme = Demo.Models.Theme.Dark, FontSize = 20 };",
+        ),
+        `expected populated model initializer in:\n${file}`,
+      );
+    });
+
+    it("recursively renders nested object values and object values in arrays", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Leaf { value: int32; }
+        model Branch { leaf?: Leaf = #{ value: 3 }; }
+        model Forest {
+          root?: Branch = #{ leaf: #{ value: 8 } };
+          branches: Branch[] = #[#{ leaf: #{ value: 5 } }];
+        }
+      `);
+
+      const file = results["Forest.g.cs"];
+      ok(file, `expected Forest.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes(
+          "public Demo.Models.Branch? Root { get; set; } = new Demo.Models.Branch { Leaf = new Demo.Models.Leaf { Value = 8 } };",
+        ),
+        `expected recursively nested initializer in:\n${file}`,
+      );
+      ok(
+        file.includes(
+          "public IList<Demo.Models.Branch>? Branches { get; set; } = new List<Demo.Models.Branch> { new Demo.Models.Branch { Leaf = new Demo.Models.Leaf { Value = 5 } } };",
+        ),
+        `expected object-valued list initializer in:\n${file}`,
+      );
+    });
+
+    it("uses @serverName identifiers inside object defaults", async () => {
+      const results = await emit(`
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+
+        namespace Demo;
+        model Appearance {
+          @serverName("TextSize")
+          fontSize?: int32;
+        }
+        model Widget { appearance?: Appearance = #{ fontSize: 18 }; }
+      `);
+
+      const file = results["Widget.g.cs"];
+      ok(file, `expected Widget.g.cs, got ${Object.keys(results).join(", ")}`);
+      ok(
+        file.includes("new Models.Appearance { TextSize = 18 }"),
+        `expected renamed C# member in the object initializer:\n${file}`,
+      );
+    });
+
     it("supports null elements in an array of nullable values", async () => {
       const results = await emit(`
         namespace Demo;
@@ -616,7 +694,7 @@ describe("csharp emitter - models", () => {
       );
     });
 
-    it("omits the initializer when an array element is unsupported", async () => {
+    it("renders object values in array defaults", async () => {
       const results = await emit(`
         namespace Demo;
         model Item { x: int32; }
@@ -626,9 +704,10 @@ describe("csharp emitter - models", () => {
       const file = results["Bag.g.cs"];
       ok(file, `expected Bag.g.cs, got ${Object.keys(results).join(", ")}`);
       ok(
-        file.includes("public IList<Demo.Models.Item>? Items { get; set; }") &&
-          !file.includes("Items { get; set; } ="),
-        `expected no initializer for unsupported element in:\n${file}`,
+        file.includes(
+          "public IList<Demo.Models.Item>? Items { get; set; } = new List<Demo.Models.Item> { new Demo.Models.Item { X = 1 } };",
+        ),
+        `expected object initializer inside list in:\n${file}`,
       );
     });
 

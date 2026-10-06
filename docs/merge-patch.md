@@ -107,11 +107,14 @@ public class MergePatch<T>
     public static MergePatch<T> From(T entity,
         JsonSerializerOptions? options = null);
 
-    // Applies all defined patch properties to original via reflection.
-    // Each property is deserialized to T's declared type and written back.
-    // Properties absent from T, that cannot be deserialized, or that are
-    // read-only are silently skipped.
+    // Applies defined properties recursively in place; invalid, unknown, and
+    // read-only paths are skipped for compatibility.
     public void Patch(T original, JsonSerializerOptions? options = null);
+
+    // Same best-effort application, returning false and rejected JSON paths
+    // when any supplied value cannot be applied.
+    public bool TryPatch(T original, out IReadOnlyList<string> rejectedPaths,
+        JsonSerializerOptions? options = null);
 
     // Async variant of Patch. Applies the patch synchronously, then returns
     // ValueTask.CompletedTask. Throws OperationCanceledException if
@@ -133,7 +136,9 @@ await body.PatchAsync(entity, cancellationToken: cancellationToken);
 await repository.SaveAsync(entity);
 ```
 
-Both methods use reflection to match each JSON property name to a writable property on `T`. The lookup checks `[JsonPropertyName]` first, then falls back to the CLR property name (case-insensitive), so properties renamed via `@serverName` or an explicit `[JsonPropertyName]` attribute are resolved correctly. Properties absent from `T`, read-only, or that cannot be deserialized are silently skipped. Pass a `JsonSerializerOptions` instance if custom converters are needed.
+Both methods use reflection to match each JSON property name to a writable property on `T`. The lookup checks `[JsonPropertyName]` first, then falls back to the CLR property name (case-insensitive), so properties renamed via `@serverName` or an explicit `[JsonPropertyName]` attribute are resolved correctly. Object values merge recursively into the current object; a missing object is created. Arrays and all other non-object values replace the current value. An explicit `null` removes that JSON member before deserialization, so a generated property initializer restores its default (or the property's normal null/default value is used when there is no initializer).
+
+`Patch` keeps its existing non-throwing, in-place signature and ignores the diagnostics returned by `TryPatch`. Use `TryPatch` to detect unknown, read-only, or invalid values. It returns `false` and rejected JSON paths; rejected paths are left unchanged while valid siblings are still applied. Raw exception messages are not included. Pass a `JsonSerializerOptions` instance if custom converters are needed.
 
 `PatchAsync` returns a `ValueTask` (no allocation on the hot path) and checks the cancellation token before starting work. The patch application itself is synchronous — `PatchAsync` exists for seamless composition in async controller actions.
 

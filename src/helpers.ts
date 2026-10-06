@@ -29,6 +29,7 @@ const MERGE_PATCH_USINGS = [
   "System.Collections.Generic",
   "System.Reflection",
   "System.Text.Json",
+  "System.Text.Json.Nodes",
   "System.Text.Json.Serialization",
   "System.Threading",
   "System.Threading.Tasks",
@@ -120,7 +121,7 @@ async function emitMergePatch(
       fileName: mergePatchFileName,
       namespace: options.helpersNamespace,
       usings: sortUsings(new Set(MERGE_PATCH_USINGS)),
-      body: renderer.renderMergePatch(),
+      body: renderer.renderMergePatch().replace(/\r\n/g, "\n"),
     }),
   });
 }
@@ -159,10 +160,9 @@ async function emitEntityMergePatches(
         fileName,
         namespace: options.modelsNamespace,
         usings: sortUsings(new Set(MERGE_PATCH_USINGS)),
-        body: renderer.renderEntityMergePatch({
-          modelName,
-          qualifiedModelName,
-        }),
+        body: renderer
+          .renderEntityMergePatch({ modelName, qualifiedModelName })
+          .replace(/\r\n/g, "\n"),
       }),
     });
   }

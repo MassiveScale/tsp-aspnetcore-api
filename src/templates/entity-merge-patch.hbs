@@ -22,9 +22,6 @@
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public class {{{modelName}}}MergePatchUpdate
 {
-    private static readonly PropertyInfo[] _typeProperties =
-        typeof({{{qualifiedModelName}}}).GetProperties(BindingFlags.Public | BindingFlags.Instance);
-
     /// <summary>
     /// Raw JSON properties received in the patch payload, keyed by property name.
     /// Populated automatically by <c>System.Text.Json</c> via <c>[JsonExtensionData]</c>.
@@ -171,26 +168,124 @@ public class {{{modelName}}}MergePatchUpdate
         FromJson(JsonSerializer.Serialize(entity, options), options);
 
     /// <summary>
-    /// Applies all properties defined in this patch to <paramref name="original"/> using
-    /// reflection. Each defined property is deserialized to the target property's declared
-    /// type and written back. Properties absent from <see cref="{{{qualifiedModelName}}}"/>, that
-    /// cannot be deserialized, or that are read-only are silently skipped.
+    /// Applies defined properties recursively to <paramref name="original"/> in place.
+    /// Use <see cref="TryPatch"/> when rejected-path diagnostics are needed.
     /// </summary>
     public void Patch({{{qualifiedModelName}}} original, JsonSerializerOptions? options = null)
     {
-        if (original is null) return;
+        TryPatch(original, out _, options);
+    }
+
+    /// <summary>
+    /// Applies each defined patch property recursively to <paramref name="original"/>.
+    /// Invalid, unknown, and read-only properties are reported and skipped; valid
+    /// sibling properties are still applied. The root instance is never replaced.
+    /// </summary>
+    /// <param name="original">The entity to mutate.</param>
+    /// <param name="rejectedPaths">JSON property paths that could not be applied.</param>
+    /// <param name="options">Serializer options used for the entity and patch values.</param>
+    /// <returns><see langword="true"/> when every supplied property was applied.</returns>
+    public bool TryPatch({{{qualifiedModelName}}} original, out IReadOnlyList<string> rejectedPaths, JsonSerializerOptions? options = null)
+    {
+        var rejected = new List<string>();
+        rejectedPaths = rejected;
+        if (original is null)
+        {
+            rejected.Add("$");
+            return false;
+        }
+
         foreach (var (name, element) in Properties)
         {
             var prop = FindProperty(name);
-            if (prop is null || !prop.CanWrite) continue;
+            if (prop is null || !prop.CanWrite)
+            {
+                rejected.Add(name);
+                continue;
+            }
             try
             {
-                object? value = element.ValueKind == JsonValueKind.Null
-                    ? null
-                    : JsonSerializer.Deserialize(element.GetRawText(), prop.PropertyType, options);
-                prop.SetValue(original, value);
+                var target = JsonSerializer.SerializeToNode(original, options) as JsonObject;
+                if (target is null)
+                {
+                    rejected.Add(name);
+                    continue;
+                }
+
+                var patch = new JsonObject
+                {
+                    [name] = JsonNode.Parse(element.GetRawText()),
+                };
+                MergeObject(target, patch, typeof({{{qualifiedModelName}}}), rejected, string.Empty);
+                var updated = target.Deserialize<{{{qualifiedModelName}}}>(options);
+                if (updated is null)
+                {
+                    rejected.Add(name);
+                    continue;
+                }
+                prop.SetValue(original, prop.GetValue(updated));
             }
-            catch { }
+            catch (JsonException ex)
+            {
+                var path = ex.Path;
+                rejected.Add(path is { Length: > 1 } && path.StartsWith("$.", StringComparison.Ordinal)
+                    ? path[2..]
+                    : path is { Length: > 1 } && path[0] == '$'
+                        ? path[1..]
+                        : name);
+            }
+            catch
+            {
+                rejected.Add(name);
+            }
+        }
+
+        return rejected.Count == 0;
+    }
+
+    private static void MergeObject(JsonObject target, JsonObject patch, Type targetType, List<string> rejected, string prefix)
+    {
+        foreach (var (patchName, patchValue) in patch)
+        {
+            var property = FindProperty(targetType, patchName);
+            var wireName = property?.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property?.Name ?? patchName;
+            var path = prefix.Length == 0 ? wireName : $"{prefix}.{wireName}";
+            if (property is null && targetType != typeof(object))
+            {
+                rejected.Add(path);
+                continue;
+            }
+            string? targetName = null;
+            foreach (var targetEntry in target)
+            {
+                if (string.Equals(targetEntry.Key, wireName, StringComparison.OrdinalIgnoreCase))
+                {
+                    targetName = targetEntry.Key;
+                    break;
+                }
+            }
+            if (patchValue is null)
+            {
+                if (targetName is not null) target.Remove(targetName);
+                continue;
+            }
+
+            if (patchValue is JsonObject patchChild)
+            {
+                if (targetName is not null && target[targetName] is JsonObject existingChild)
+                {
+                    MergeObject(existingChild, patchChild, property?.PropertyType ?? typeof(object), rejected, path);
+                }
+                else
+                {
+                    var targetChild = new JsonObject();
+                    MergeObject(targetChild, patchChild, property?.PropertyType ?? typeof(object), rejected, path);
+                    target[targetName ?? wireName] = targetChild;
+                }
+                continue;
+            }
+
+            target[targetName ?? wireName] = patchValue.DeepClone();
         }
     }
 
@@ -208,8 +303,10 @@ public class {{{modelName}}}MergePatchUpdate
         return ValueTask.CompletedTask;
     }
 
-    private static PropertyInfo? FindProperty(string name) =>
-        Array.Find(_typeProperties, p =>
+    private static PropertyInfo? FindProperty(string name) => FindProperty(typeof({{{qualifiedModelName}}}), name);
+
+    private static PropertyInfo? FindProperty(Type type, string name) =>
+        Array.Find(type.GetProperties(BindingFlags.Public | BindingFlags.Instance), p =>
         {
             var wireName = p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name;
             return string.Equals(wireName, name, StringComparison.OrdinalIgnoreCase);

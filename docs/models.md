@@ -105,18 +105,20 @@ Every model class shares the `models-namespace`, so two different models that ma
 
 When a TypeSpec model property carries a default value, the emitter assigns it as a C# property initializer. The following value kinds are supported:
 
-| TypeSpec default                        | C# initializer                 |
-| --------------------------------------- | ------------------------------ |
-| Enum member (`Size.medium`)             | `Size.Medium`                  |
-| String literal (`"production"`)         | `"production"`                 |
-| String with control chars (`"a\nb"`)    | `"a\nb"` (escaped)             |
-| Numeric literal (`20`)                  | `20`                           |
-| Numeric literal on `decimal` (`9.99`)   | `9.99m`                        |
-| Numeric literal on `float32` (`0.5`)    | `0.5f`                         |
-| Boolean literal (`true`)                | `true`                         |
-| Array value (`#[1000, 2500]`)           | `new List<int> { 1000, 2500 }` |
-| Empty array value (`#[]`)               | `new List<int>()`              |
-| Nested array value (`#[#[1, 2], #[3]]`) | `new List<IList<int>> { ... }` |
+| TypeSpec default                        | C# initializer                                |
+| --------------------------------------- | --------------------------------------------- |
+| Enum member (`Size.medium`)             | `Size.Medium`                                 |
+| String literal (`"production"`)         | `"production"`                                |
+| String with control chars (`"a\nb"`)    | `"a\nb"` (escaped)                            |
+| Numeric literal (`20`)                  | `20`                                          |
+| Numeric literal on `decimal` (`9.99`)   | `9.99m`                                       |
+| Numeric literal on `float32` (`0.5`)    | `0.5f`                                        |
+| Boolean literal (`true`)                | `true`                                        |
+| Array value (`#[1000, 2500]`)           | `new List<int> { 1000, 2500 }`                |
+| Empty array value (`#[]`)               | `new List<int>()`                             |
+| Nested array value (`#[#[1, 2], #[3]]`) | `new List<IList<int>> { ... }`                |
+| Empty object value (`#{}`)              | `new WidgetAppearance()`                      |
+| Object value (`#{ theme: Theme.dark }`) | `new WidgetAppearance { Theme = Theme.Dark }` |
 
 ```typespec
 enum Size { small, medium, large }
@@ -127,6 +129,16 @@ model Widget {
   env: string = "production";
   enabled: boolean = true;
   buckets?: int32[] = #[1000, 2500, 5000];
+}
+
+model WidgetAppearance {
+  theme?: Size = Size.small;
+  fontSize?: int32 = 14;
+}
+
+model Screen {
+  appearance?: WidgetAppearance = #{ theme: Size.medium, fontSize: 20 };
+  emptyAppearance?: WidgetAppearance = #{};
 }
 ```
 
@@ -155,9 +167,11 @@ public partial class Widget : IWidget
 }
 ```
 
+Object-value members are resolved against the declared model, so nested object values, enum members, and arrays of objects use the same type-aware rendering as ordinary defaults. The emitter uses each property's effective C# name, including `@serverName` overrides. Unsupported or unknown members suppress the complete initializer rather than emitting a partial value. An explicit `#{}` default creates a new object for each containing instance; model-typed properties without an explicit default remain uninitialized.
+
 Array defaults must use TypeSpec's array-value syntax `#[...]`. A bare `[...]` is a tuple _type_, and the TypeSpec compiler rejects it as a default with `expect-value: Is a tuple type, but is being used as a value here`. Array elements may be any supported value kind, including enum members, `null` (for nullable element types), and nested arrays.
 
-Object values (`#{...}`), scalar constructors, and arrays containing either are not supported and produce no initializer.
+Scalar constructors remain unsupported and produce no initializer. Arrays containing unsupported scalar constructors likewise produce no initializer.
 
 ## Enums
 
