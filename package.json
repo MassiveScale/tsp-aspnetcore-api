@@ -1,6 +1,7 @@
 {
   "name": "@massivescale/tsp-aspnetcore-api",
-  "version": "0.15.0",
+  "version": "1.0.0-beta.1",
+  "description": "TypeSpec emitter that generates C# models, ASP.NET Core controllers, service interfaces, and FluentValidation validators.",
   "type": "module",
   "main": "dist/src/index.js",
   "tspMain": "lib/main.tsp",
@@ -11,20 +12,55 @@
       "default": "./dist/src/index.js"
     }
   },
+  "files": [
+    "dist/src/",
+    "dist/templates/",
+    "docs/",
+    "lib/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "typespec",
+    "emitter",
+    "csharp",
+    "dotnet",
+    "aspnetcore",
+    "fluentvalidation",
+    "merge-patch",
+    "codegen"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MassiveScale/tsp-aspnetcore-api.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MassiveScale/tsp-aspnetcore-api/issues"
+  },
+  "homepage": "https://github.com/MassiveScale/tsp-aspnetcore-api#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "peerDependencies": {
     "@typespec/compiler": "^1.15.0",
     "@typespec/http": "^1.15.0",
     "@typespec/versioning": ">=0.85.0 <1.0.0"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
-    "@typespec/compiler": "^1.15.0",
-    "@typespec/http": "^1.15.0",
-    "@typespec/versioning": "^0.85.0",
-    "eslint": "^9.39.4",
-    "prettier": "^3.9.6",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.5",
+    "@typespec/compiler": "^1.17.0",
+    "@typespec/http": "^1.17.0",
+    "@typespec/versioning": "^0.87.0",
+    "eslint": "^10.12.0",
+    "prettier": "^3.9.10",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.70.0"
+    "typescript-eslint": "^8.71.2"
   },
   "scripts": {
     "prepare": "tsc && tsc -p tsconfig.test.json && node scripts/copy-templates.mjs",
@@ -38,9 +74,8 @@
     "format": "prettier .  --write",
     "format:check": "prettier --check ."
   },
-  "private": true,
   "packageManager": "npm@11.13.0+sha512.7119a16a0843580d65160977520e3f5710c974f04afd4fad36d9eb97d917ba716a856c35c78c4be6dc64367eeaccfb957ef5ce997ca31e9330b2e936ba2b1b92",
   "dependencies": {
-    "handlebars": "^4.7.9"
+    "handlebars": "^4.7.10"
   }
 }

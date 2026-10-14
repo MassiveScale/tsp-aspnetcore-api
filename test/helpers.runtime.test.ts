@@ -209,6 +209,7 @@ Check(arrayResult.Errors.Any(failure => failure.PropertyName == "Slots[0].Name")
       const result = error as { stdout?: Buffer; stderr?: Buffer };
       throw new Error(
         `${result.stdout?.toString() ?? ""}${result.stderr?.toString() ?? ""}`,
+        { cause: error },
       );
     }
   } finally {
