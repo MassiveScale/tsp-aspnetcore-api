@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0-beta.1] - 2026-10-14
+
+### Changed
+
+- Releases are now published to npm by the GitHub release workflow, with npm provenance attestations that link each published version to the commit and workflow run that built it. No changes to generated code.
+
 ## [1.0.0-beta.0] - 2026-10-14
 
 ### Added
