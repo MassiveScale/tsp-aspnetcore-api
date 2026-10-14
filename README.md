@@ -16,6 +16,18 @@ When HTTP operations are present the emitter generates ASP.NET Core controllers 
 npm install --save-dev @massivescale/tsp-aspnetcore-api
 ```
 
+Prerelease versions are published under the `beta` tag:
+
+```bash
+npm install --save-dev @massivescale/tsp-aspnetcore-api@beta
+```
+
+The emitter requires Node.js 22 or later and these peer dependencies:
+
+```bash
+npm install --save-dev @typespec/compiler @typespec/http @typespec/versioning
+```
+
 ## Quick start
 
 Add the emitter to `tspconfig.yaml` and run the compiler:

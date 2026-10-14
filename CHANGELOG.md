@@ -4,8 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0-beta.1] - 2026-10-14
+
 ### Added
 
+- The package is now published to the public npm registry as `@massivescale/tsp-aspnetcore-api`. Prerelease versions are published under the `beta` dist-tag, so install them with `npm install --save-dev @massivescale/tsp-aspnetcore-api@beta`.
 - Object-value defaults (`= #{...}`) now generate fresh nested model initializers, including nested objects and object values inside arrays. See [Model Generation — Default property values](docs/models.md#default-property-values).
 - `TryPatch` optionally reports rejected JSON paths while preserving the existing non-throwing `Patch` API. Valid sibling properties continue to apply when another path is rejected. See [RFC 7396 Merge Patch](docs/merge-patch.md).
 - `merge-patch-recursive-reference` error diagnostic, reported on a property that makes nested MergePatch validation recursive (`model Node { child?: Node; }`, or `A → B → A`). Such validators would need each other in their constructors and couldn't be resolved from dependency injection. See [Validators — Recursive models](docs/validators.md#recursive-models).
@@ -28,6 +31,9 @@ All notable changes to this project will be documented in this file.
   - **Update-only properties** (`@visibility(Lifecycle.Update, Lifecycle.Read)`) are rejected by POST validators with "can only be set by an update". Previously they were silently skipped.
   - Properties whose declared type explicitly allows `null` (`string | null`, `int32 | null`) still accept `null` even when required: they get no `NotNull()` or reject-null rule.
   - Rules that can't be checked are still skipped: a non-nullable value type under `nullable-properties: false` can't be told apart from "not supplied", and neither can a `null` in a plain (non-MergePatch) PATCH body.
+
+- Updated the `handlebars` runtime dependency to `^4.7.10`.
+- The package now declares `engines.node >=22.0.0`, matching `@typespec/compiler`.
 
 ### Fixed
 
