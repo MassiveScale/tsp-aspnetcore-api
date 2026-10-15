@@ -119,8 +119,14 @@ const classPropertiesCache = new WeakMap<
  * Returns the cached value for `model` in `program`, computing and storing it
  * on first use. HTTP metadata is fixed once the program is checked, so the
  * results stay valid for the program's lifetime.
+ *
+ * @param cache - The per-program cache to read and fill.
+ * @param program - The compiled TypeSpec program.
+ * @param model - The model the value belongs to.
+ * @param compute - Computes the value on a cache miss.
+ * @returns The cached or newly computed value.
  */
-function memoize<T>(
+export function memoize<T>(
   cache: WeakMap<Program, WeakMap<Model, T>>,
   program: Program,
   model: Model,

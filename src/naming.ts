@@ -21,7 +21,7 @@ import {
   isTemplateInstance,
 } from "@typespec/compiler";
 import { CSHARP_RESERVED_KEYWORDS, getServerName } from "./decorators.js";
-import { classProperties } from "./payloads.js";
+import { classProperties, memoize } from "./payloads.js";
 import { pascalCase } from "./utils.js";
 
 /**
@@ -364,6 +364,21 @@ export function enumMemberIdentifier(member: EnumMember): string {
 export function propertyIdentifiers(
   program: Program,
   model: Model,
+): ReadonlyMap<ModelProperty, string> {
+  return memoize(propertyIdentifiersCache, program, model, () =>
+    computePropertyIdentifiers(program, model),
+  );
+}
+
+/** Per-program cache of {@link propertyIdentifiers} results. */
+const propertyIdentifiersCache = new WeakMap<
+  Program,
+  WeakMap<Model, ReadonlyMap<ModelProperty, string>>
+>();
+
+function computePropertyIdentifiers(
+  program: Program,
+  model: Model,
 ): Map<ModelProperty, string> {
   const className = csharpModelName(program, model).replace(/^@/, "");
   const properties = classProperties(program, model);
@@ -388,12 +403,14 @@ export function propertyIdentifiers(
 }
 
 /**
- * Returns the C# property identifier of one class property of `model`,
- * consistent with {@link propertyIdentifiers}.
+ * Returns the C# property identifier of a property of `model`, consistent with
+ * {@link propertyIdentifiers}. An inherited property is looked up on the base
+ * class that declares it, so a derived validator references the identifier the
+ * base class actually declares (e.g. `ItemValue`, `UserId2`).
  *
  * @param program - The compiled TypeSpec program.
- * @param model - The model that owns the class.
- * @param prop - A class property of `model`.
+ * @param model - The model whose class (or an ancestor's) declares `prop`.
+ * @param prop - A class property of `model` or of one of its base models.
  * @returns The property's C# identifier.
  */
 export function propertyIdentifier(
@@ -401,11 +418,15 @@ export function propertyIdentifier(
   model: Model,
   prop: ModelProperty,
 ): string {
-  return (
-    propertyIdentifiers(program, model).get(prop) ??
-    getServerName(program, prop) ??
-    csharpIdentifier(prop.name)
-  );
+  for (
+    let current: Model | undefined = model;
+    current;
+    current = current.baseModel
+  ) {
+    const identifier = propertyIdentifiers(program, current).get(prop);
+    if (identifier) return identifier;
+  }
+  return getServerName(program, prop) ?? csharpIdentifier(prop.name);
 }
 
 /**

@@ -595,9 +595,15 @@ function validatorProperties(program: Program, model: Model): ModelProperty[] {
   return [...byName.values()];
 }
 
-/** Lower-cases the first character, for parameter and field names. */
+/**
+ * Lower-cases the first character, for parameter and field names built from an
+ * identifier. A leading `@` (an escaped keyword such as `@class`) is dropped,
+ * since the result always gets a prefix or suffix (`_classPattern`,
+ * `classValidator`) that makes it a valid identifier on its own.
+ */
 function camelFirst(name: string): string {
-  return name.charAt(0).toLowerCase() + name.slice(1);
+  const bare = name.replace(/^@/, "");
+  return bare.charAt(0).toLowerCase() + bare.slice(1);
 }
 
 /**

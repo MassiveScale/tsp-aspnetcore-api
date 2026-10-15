@@ -44,7 +44,8 @@ this.RuleFor(x => x)
     .WithMessage("'{{{name}}}' must be at least {{minLength}} characters.");
 
 {{/if}}
-{{#if maxLength}}
+{{!-- isDefined, not a plain #if: a zero maximum is still a limit. --}}
+{{#if (isDefined maxLength)}}
 // {{{name}}} cannot exceed a MaxLength of {{maxLength}} when provided
 this.RuleFor(x => x)
     .Must(x => (x.GetString("{{{jsonName}}}")?.Length ?? 0) <= {{maxLength}})
@@ -116,7 +117,7 @@ this.RuleFor(x => x)
     .WithMessage("'{{{name}}}' must be an array with at least {{minItems}} items.");
 
 {{/if}}
-{{#if maxItems}}
+{{#if (isDefined maxItems)}}
 // {{{name}}} cannot contain more than {{maxItems}} items when provided
 this.RuleFor(x => x)
     .Must(x => x.Properties.TryGetValue("{{{jsonName}}}", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() <= {{maxItems}})

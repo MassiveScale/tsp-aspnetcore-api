@@ -44,7 +44,8 @@ RuleFor(x => x.{{{name}}}).NotNull();
 RuleFor(x => x.{{{name}}}).MinimumLength({{minLength}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
 
 {{/if}}
-{{#if maxLength}}
+{{!-- isDefined, not a plain #if: a zero maximum is still a limit. --}}
+{{#if (isDefined maxLength)}}
 // {{{name}}} cannot exceed a MaxLength of {{maxLength}}{{#if @root.isPatch}} when provided{{/if}}
 RuleFor(x => x.{{{name}}}).MaximumLength({{maxLength}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
 
@@ -84,7 +85,7 @@ RuleFor(x => x.{{{name}}}).LessThan({{{maxValueExclusive.formatted}}}){{#if @roo
 RuleFor(x => x.{{{name}}}).Must(value => value is null || value.Count >= {{minItems}}).WithMessage("'{PropertyName}' must contain at least {{minItems}} items.");
 
 {{/if}}
-{{#if maxItems}}
+{{#if (isDefined maxItems)}}
 // {{{name}}} cannot contain more than {{maxItems}} items{{#if @root.isPatch}} when provided{{/if}}
 RuleFor(x => x.{{{name}}}).Must(value => value is null || value.Count <= {{maxItems}}).WithMessage("'{PropertyName}' must not contain more than {{maxItems}} items.");
 

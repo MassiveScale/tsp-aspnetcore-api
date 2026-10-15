@@ -2587,5 +2587,126 @@ describe("csharp emitter - validators", () => {
         ]);
       }
     });
+
+    it("rejects a read-only property before merging into its nested object", async () => {
+      for (const style of ["generic", "typed"]) {
+        const results = await emit(
+          `
+          import "@typespec/http";
+          using TypeSpec.Http;
+          @service namespace Demo;
+
+          model Widget { name?: string; }
+          @route("/widgets") interface Widgets { @patch update(@body body: MergePatchUpdate<Widget>): void; }
+          `,
+          { ...OPTIONS, "merge-patch-style": style },
+        );
+        const helper =
+          style === "generic"
+            ? results["Helpers/MergePatch.g.cs"]
+            : results["WidgetMergePatchUpdate.g.cs"];
+        ok(helper, `expected the ${style} helper`);
+        const canWrite = helper.indexOf("if (!property.CanWrite)");
+        const merge = helper.indexOf("IsModelType(property.PropertyType)");
+        ok(
+          canWrite >= 0 && merge > canWrite,
+          `expected the CanWrite rejection before the nested merge in the ${style} helper:\n${helper}`,
+        );
+      }
+    });
+
+    it("uses the base class's identifiers for inherited properties in a derived validator", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+        @service namespace Demo;
+
+        model Item { item: string; user_id: string; userId: string; }
+        model SpecialItem extends Item { extra?: string; }
+
+        @route("/special") interface Special { @post create(@body body: SpecialItem): void; }
+        `,
+        { ...OPTIONS, validators: "post" },
+      );
+      const model = results["Models/Item.g.cs"];
+      expectAll(model, "Item", [
+        "public string? ItemValue { get; set; }",
+        "public string? UserId { get; set; }",
+        "public string? UserId2 { get; set; }",
+      ]);
+      const validator = results["Validators/SpecialItemValidator.g.cs"];
+      expectAll(validator, "SpecialItemValidator", [
+        "RuleFor(x => x.ItemValue).NotEmpty();",
+        "RuleFor(x => x.UserId).NotEmpty();",
+        "RuleFor(x => x.UserId2).NotEmpty();",
+      ]);
+      expectNone(validator, "SpecialItemValidator", ["RuleFor(x => x.Item)."]);
+    });
+
+    it("drops the @ of an escaped keyword from the pattern field name", async () => {
+      const results = await emit(
+        `
+        import "@massivescale/tsp-aspnetcore-api";
+        import "@typespec/http";
+        using MassiveScale.AspNetCoreApi;
+        using TypeSpec.Http;
+        @service namespace Demo;
+
+        model Keyed { @serverName("@class") @pattern("^[a-z]+$") klass?: string; }
+
+        interface Keys {
+          @route("/keys") @post create(@body body: Keyed): void;
+          @route("/keys") @patch update(@body body: MergePatchUpdate<Keyed>): void;
+        }
+        `,
+        OPTIONS,
+      );
+      expectAll(results["Validators/KeyedValidator.g.cs"], "KeyedValidator", [
+        "System.Text.RegularExpressions.Regex _classPattern = new(",
+        "RuleFor(x => x.@class).Must(value => IsMatch(_classPattern, value))",
+      ]);
+      expectAll(
+        results["Validators/KeyedPatchValidator.g.cs"],
+        "KeyedPatchValidator",
+        [
+          "System.Text.RegularExpressions.Regex _classPattern = new(",
+          '.Must(x => IsMatch(_classPattern, x.GetString("klass")))',
+        ],
+      );
+      for (const name of ["KeyedValidator", "KeyedPatchValidator"]) {
+        expectNone(results[`Validators/${name}.g.cs`], name, ["_@"]);
+      }
+    });
+
+    it("enforces a zero @maxItems or @maxLength", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+        @service namespace Demo;
+
+        model Box { @maxItems(0) none?: string[]; @maxLength(0) blank?: string; }
+
+        interface Boxes {
+          @route("/boxes") @post create(@body body: Box): void;
+          @route("/boxes") @patch update(@body body: MergePatchUpdate<Box>): void;
+        }
+        `,
+        OPTIONS,
+      );
+      expectAll(results["Validators/BoxValidator.g.cs"], "BoxValidator", [
+        "RuleFor(x => x.None).Must(value => value is null || value.Count <= 0)",
+        "RuleFor(x => x.Blank).MaximumLength(0);",
+      ]);
+      expectAll(
+        results["Validators/BoxPatchValidator.g.cs"],
+        "BoxPatchValidator",
+        [
+          "items.GetArrayLength() <= 0",
+          '.Must(x => (x.GetString("blank")?.Length ?? 0) <= 0)',
+        ],
+      );
+    });
   });
 });

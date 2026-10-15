@@ -229,6 +229,13 @@ namespace MassiveScale.Petshop.Api.Helpers
                     continue;
                 }
                 var property = member.Value.Property;
+                // A read-only property is rejected before any merge, so a nested object
+                // behind a getter-only property is never mutated.
+                if (!property.CanWrite)
+                {
+                    rejected.Add(JoinPath(prefix, name));
+                    continue;
+                }
                 if (element.ValueKind == JsonValueKind.Object
                     && property.CanRead
                     && IsModelType(property.PropertyType)
@@ -240,11 +247,6 @@ namespace MassiveScale.Petshop.Api.Helpers
                         nestedValues.Add(new(nestedProperty.Name, nestedProperty.Value));
                     }
                     PatchObject(nested, nested.GetType(), nestedValues, rejected, JoinPath(prefix, member.Value.WireName), options);
-                    continue;
-                }
-                if (!property.CanWrite)
-                {
-                    rejected.Add(JoinPath(prefix, name));
                     continue;
                 }
                 entries.Add(new PatchEntry(property, name, element));
