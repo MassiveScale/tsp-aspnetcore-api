@@ -69,11 +69,12 @@ The validator templates (`validator-post`, `validator-patch`, `validator-post-ve
 | `patternFields`              | `{ field, pattern }` for each compiled `@pattern` `Regex` field.                                                                                                                       |
 | `hasFields`                  | `true` when the class declares fields before its constructor.                                                                                                                          |
 | `usesPatterns`               | `true` when the class needs the `IsMatch` helper.                                                                                                                                      |
-| `usesNumberRules`            | MergePatch only. `true` when the class needs the `TryGetNumber` helper.                                                                                                                |
+| `usesNumberRules`            | MergePatch only. `true` when the class needs the `TryGetNumber` (`decimal`) helper.                                                                                                    |
+| `usesDoubleRules`            | MergePatch only. `true` when the class needs the `TryGetDouble` helper, for floating-point bounds.                                                                                     |
 
 Each entry in `properties` carries `name`, the C# property identifier, and `jsonName`, the JSON wire name escaped for a C# regular string literal. MergePatch rules must look properties up by wire name: `IsDefined("{{{jsonName}}}")`. `pattern` is escaped for a C# verbatim string, so write it as `@"{{{pattern}}}"`.
 
-Each property entry carries the rule data (`notEmpty`, `notNull`, `rejectNull`, `minLength`, `maxLength`, `pattern`, `patternField`, `emailAddress`, `minValue`, `maxValue`, `minValueExclusive`, `maxValueExclusive`, `minItems`, `maxItems`, `isInEnum`, …). A numeric bound is `{ value, formatted, decimalLiteral, display }`: `formatted` is a C# literal of the property's type for typed rules, `decimalLiteral` is the `decimal` literal MergePatch rules compare against. A model reference sets `isCollectionReference` or `isRecordReference`, and `referencedValidatorExpression` (with `referencedValidatorLazy`) or `mergePatchValidatorExpression` holds the C# expression for the child validator: the constructor parameter, `this`, or a lazy `serviceProvider` lookup.
+Each property entry carries the rule data (`notEmpty`, `notNull`, `rejectNull`, `minLength`, `maxLength`, `pattern`, `patternField`, `emailAddress`, `minValue`, `maxValue`, `minValueExclusive`, `maxValueExclusive`, `minItems`, `maxItems`, `isInEnum`, …). A numeric bound is `{ value, formatted, patchReader, patchLiteral, display }`: `formatted` is a C# literal of the property's type for typed rules; MergePatch rules read the JSON number with `patchReader` (`TryGetNumber` for a `decimal`, `TryGetDouble` for floating-point properties) and compare it against `patchLiteral`. A bound outside the property type's range is dropped when it accepts every value, and clamped to the range otherwise. A model reference sets `isCollectionReference` or `isRecordReference`, and `referencedValidatorExpression` (with `referencedValidatorLazy`) or `mergePatchValidatorExpression` holds the C# expression for the child validator: the constructor parameter, `this`, or a lazy `serviceProvider` lookup.
 
 The built-in validator templates are assembled from partials that custom templates can include too. Include a partial on its own line; every rendered line gets that line's indent.
 
@@ -85,7 +86,7 @@ The built-in validator templates are assembled from partials that custom templat
 | `typedPropertyRules`      | POST and plain-PATCH rules for one property (`RuleFor(x => x.Name)...`).                                                  |
 | `mergePatchPropertyRules` | MergePatch rules for one property.                                                                                        |
 | `mergePatchNestedRules`   | The rule for a model-typed property of a MergePatch body. The enclosing constructor must declare `jsonSerializerOptions`. |
-| `validatorHelpers`        | The private helper methods after the constructor: `IsMatch`, `TryGetNumber`, and the API-version helpers.                 |
+| `validatorHelpers`        | The private helper methods after the constructor: `IsMatch`, `TryGetNumber`, `TryGetDouble`, and the API-version helpers. |
 
 ### Upgrading custom templates
 

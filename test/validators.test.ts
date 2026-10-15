@@ -2460,7 +2460,7 @@ describe("csharp emitter - validators", () => {
         [
           "items.GetArrayLength() >= 1",
           "items.GetArrayLength() <= 5",
-          '.Must(x => TryGetNumber(x, "rating", out var n) && n > 0m)',
+          '.Must(x => TryGetDouble(x, "rating", out var n) && n > 0d)',
         ],
       );
     });
@@ -2613,6 +2613,84 @@ describe("csharp emitter - validators", () => {
           `expected the CanWrite rejection before the nested merge in the ${style} helper:\n${helper}`,
         );
       }
+    });
+
+    it("never patches a [JsonIgnore] property or merges into its nested object", async () => {
+      for (const style of ["generic", "typed"]) {
+        const results = await emit(
+          `
+          import "@typespec/http";
+          using TypeSpec.Http;
+          @service namespace Demo;
+
+          model Widget { name?: string; }
+          @route("/widgets") interface Widgets { @patch update(@body body: MergePatchUpdate<Widget>): void; }
+          `,
+          { ...OPTIONS, "merge-patch-style": style },
+        );
+        const helper =
+          style === "generic"
+            ? results["Helpers/MergePatch.g.cs"]
+            : results["WidgetMergePatchUpdate.g.cs"];
+        expectAll(helper, `${style} helper`, [
+          "if (property.GetCustomAttribute<JsonIgnoreAttribute>() is { Condition: JsonIgnoreCondition.Always }) continue;",
+        ]);
+      }
+    });
+
+    it("compares floating-point MergePatch bounds as double and keeps out-of-range bounds compilable", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+        @service namespace Demo;
+
+        model Measure {
+          @minValueExclusive(1e30) huge?: float64;
+          @maxValueExclusive(-1e30) tiny?: float64;
+          @minValue(0.5) ratio?: float32;
+          @maxValue(9223372036854775807) wide?: int64;
+          @maxValue(1e30) money?: decimal;
+          @minValue(1e30) richer?: decimal;
+          @minValue(2) qty?: int32;
+        }
+
+        interface Measures {
+          @route("/m") @post create(@body body: Measure): void;
+          @route("/m") @patch update(@body body: MergePatchUpdate<Measure>): void;
+        }
+        `,
+        OPTIONS,
+      );
+      const post = results["Validators/MeasureValidator.g.cs"];
+      expectAll(post, "MeasureValidator", [
+        "RuleFor(x => x.Huge).GreaterThan(1e+30d);",
+        "RuleFor(x => x.Tiny).LessThan(-1e+30d);",
+        "RuleFor(x => x.Ratio).GreaterThanOrEqualTo(0.5f);",
+        "RuleFor(x => x.Richer).GreaterThanOrEqualTo(79228162514264337593543950335m);",
+        "RuleFor(x => x.Qty).GreaterThanOrEqualTo(2);",
+      ]);
+      expectNone(post, "MeasureValidator", [
+        "RuleFor(x => x.Wide)",
+        "RuleFor(x => x.Money)",
+        "9223372036854775808",
+      ]);
+
+      const patch = results["Validators/MeasurePatchValidator.g.cs"];
+      expectAll(patch, "MeasurePatchValidator", [
+        '.Must(x => TryGetDouble(x, "huge", out var n) && n > 1e+30d)',
+        '.Must(x => TryGetDouble(x, "tiny", out var n) && n < -1e+30d)',
+        '.Must(x => TryGetDouble(x, "ratio", out var n) && n >= 0.5d)',
+        '.Must(x => TryGetNumber(x, "richer", out var n) && n >= 79228162514264337593543950335m)',
+        '.Must(x => TryGetNumber(x, "qty", out var n) && n >= 2m)',
+        "private static bool TryGetDouble(MergePatch<Measure> patch, string name, out double value)",
+        "private static bool TryGetNumber(MergePatch<Measure> patch, string name, out decimal value)",
+      ]);
+      expectNone(patch, "MeasurePatchValidator", [
+        "1e+30m",
+        '"wide"',
+        '"money"',
+      ]);
     });
 
     it("uses the base class's identifiers for inherited properties in a derived validator", async () => {

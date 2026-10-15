@@ -445,7 +445,7 @@ namespace MassiveScale.Petshop.Api.Helpers
         private static PropertyInfo? FindProperty(string name) => FindMember(typeof(T), name)?.Property;
 
         /// <summary>
-        /// Public instance properties of each patched type keyed by JSON wire name (case-insensitive),
+        /// Public instance properties of each patched type, except <c>[JsonIgnore]</c> ones, keyed by JSON wire name (case-insensitive),
         /// built once per type because reflection is slow on the PATCH hot path.
         /// </summary>
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Dictionary<string, (PropertyInfo Property, string WireName)>> _typeProperties = new();
@@ -459,6 +459,9 @@ namespace MassiveScale.Petshop.Api.Helpers
             foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
                 if (property.GetIndexParameters().Length > 0) continue;
+                // A [JsonIgnore] property is server-only state: it is not part of the wire
+                // contract, so a patch can neither set it nor merge into the object it holds.
+                if (property.GetCustomAttribute<JsonIgnoreAttribute>() is { Condition: JsonIgnoreCondition.Always }) continue;
                 var wireName = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name;
                 map.TryAdd(wireName, (property, wireName));
             }

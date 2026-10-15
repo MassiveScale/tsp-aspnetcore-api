@@ -80,8 +80,13 @@ interface NumericRule {
    * FluentValidation's comparison rules compile for every numeric type.
    */
   formatted: string;
-  /** The bound as a `decimal` literal (`0.5m`), compared against MergePatch JSON numbers. */
-  decimalLiteral: string;
+  /**
+   * The helper a MergePatch rule reads the JSON number with: `TryGetDouble` for
+   * floating-point properties, `TryGetNumber` (a `decimal`) for every other type.
+   */
+  patchReader: "TryGetNumber" | "TryGetDouble";
+  /** The bound as a literal of the type `patchReader` reads (`0.5m`, `1e+30d`). */
+  patchLiteral: string;
   /** The bound as plain text for comments and messages (`0.5`). */
   display: string;
 }
@@ -243,8 +248,10 @@ interface ValidatorTemplateDataBase {
   patternFields: PatternField[];
   /** True when the class needs the `IsMatch` helper. */
   usesPatterns?: boolean;
-  /** True when a MergePatch validator needs the `TryGetNumber` helper. */
+  /** True when a MergePatch validator needs the `TryGetNumber` (`decimal`) helper. */
   usesNumberRules?: boolean;
+  /** True when a MergePatch validator needs the `TryGetDouble` helper, for floating-point bounds. */
+  usesDoubleRules?: boolean;
   /** True when the class declares fields before its constructor. */
   hasFields?: boolean;
 }
@@ -419,29 +426,86 @@ function isNullableForValidator(
 interface NumericBoundType {
   /** True for integer types: fractional bounds are rounded to the nearest valid integer. */
   integer: boolean;
-  /** True for unsigned types: negative literals don't compile. */
-  unsigned?: boolean;
+  /** Exact text of the type's smallest and largest values, which bounds are kept within. */
+  range: readonly [min: string, max: string];
+  /**
+   * The type MergePatch rules read the JSON number as. Floating-point properties
+   * use `double`, so their whole range compares correctly; every other type uses
+   * `decimal`, which holds every integer and decimal bound exactly.
+   */
+  patchNumber: "decimal" | "double";
   /** Turns the bound's text into a C# literal of this type. */
   literal: (text: string) => string;
 }
 
 /** C# numeric types that bound rules are emitted for, keyed by C# type name. */
 const NUMERIC_BOUND_TYPES: Record<string, NumericBoundType> = {
-  sbyte: { integer: true, literal: (text) => `(sbyte)${text}` },
-  byte: { integer: true, unsigned: true, literal: (text) => `(byte)${text}` },
-  short: { integer: true, literal: (text) => `(short)${text}` },
+  sbyte: {
+    integer: true,
+    range: ["-128", "127"],
+    patchNumber: "decimal",
+    literal: (text) => `(sbyte)${text}`,
+  },
+  byte: {
+    integer: true,
+    range: ["0", "255"],
+    patchNumber: "decimal",
+    literal: (text) => `(byte)${text}`,
+  },
+  short: {
+    integer: true,
+    range: ["-32768", "32767"],
+    patchNumber: "decimal",
+    literal: (text) => `(short)${text}`,
+  },
   ushort: {
     integer: true,
-    unsigned: true,
+    range: ["0", "65535"],
+    patchNumber: "decimal",
     literal: (text) => `(ushort)${text}`,
   },
-  int: { integer: true, literal: (text) => text },
-  uint: { integer: true, unsigned: true, literal: (text) => `${text}u` },
-  long: { integer: true, literal: (text) => `${text}L` },
-  ulong: { integer: true, unsigned: true, literal: (text) => `${text}UL` },
-  float: { integer: false, literal: (text) => `${text}f` },
-  double: { integer: false, literal: (text) => `${text}d` },
-  decimal: { integer: false, literal: (text) => `${text}m` },
+  int: {
+    integer: true,
+    range: ["-2147483648", "2147483647"],
+    patchNumber: "decimal",
+    literal: (text) => text,
+  },
+  uint: {
+    integer: true,
+    range: ["0", "4294967295"],
+    patchNumber: "decimal",
+    literal: (text) => `${text}u`,
+  },
+  long: {
+    integer: true,
+    range: ["-9223372036854775808", "9223372036854775807"],
+    patchNumber: "decimal",
+    literal: (text) => `${text}L`,
+  },
+  ulong: {
+    integer: true,
+    range: ["0", "18446744073709551615"],
+    patchNumber: "decimal",
+    literal: (text) => `${text}UL`,
+  },
+  float: {
+    integer: false,
+    range: ["-3.4028234663852886e+38", "3.4028234663852886e+38"],
+    patchNumber: "double",
+    literal: (text) => `${text}f`,
+  },
+  double: {
+    integer: false,
+    range: [String(-Number.MAX_VALUE), String(Number.MAX_VALUE)],
+    patchNumber: "double",
+    literal: (text) => `${text}d`,
+  },
+  decimal: {
+    integer: false,
+    range: ["-79228162514264337593543950335", "79228162514264337593543950335"],
+    patchNumber: "decimal",
+    literal: (text) => `${text}m`,
+  },
 };
 
 /**
@@ -471,9 +535,12 @@ type BoundKind = "min" | "max" | "minExclusive" | "maxExclusive";
  *
  * For an integer property, a fractional bound is rounded to the integer bound
  * that accepts exactly the same integers (`>= 0.5` → `>= 1`, `> 0.5` → `> 0`),
- * because a fractional literal does not convert to an integer type. Returns
- * `undefined` when the bound is negative on an unsigned type, where it accepts
- * every value and its literal would not compile.
+ * because a fractional literal does not convert to an integer type.
+ *
+ * A bound outside the C# type's range would not compile as a literal. When it
+ * accepts every value the property can hold (a lower bound below the minimum,
+ * an upper bound above the maximum) no rule is needed and `undefined` is
+ * returned; otherwise it is clamped to the nearest edge of the range.
  */
 function numericRule(
   value: number | undefined,
@@ -486,7 +553,8 @@ function numericRule(
     return {
       value,
       formatted: text,
-      decimalLiteral: `${text}m`,
+      patchReader: "TryGetDouble",
+      patchLiteral: `${text}d`,
       display: text,
     };
   }
@@ -497,15 +565,31 @@ function numericRule(
         ? Math.ceil(bound)
         : Math.floor(bound);
   }
-  if (boundType.unsigned && bound < 0) return undefined;
-  const text =
-    boundType.integer && !Number.isSafeInteger(bound)
-      ? BigInt(bound).toString()
-      : String(bound);
+
+  const [minText, maxText] = boundType.range;
+  // Integer bounds compare exactly: 2^63 must count as above `long.MaxValue`.
+  // A floating-point range edge is the nearest double, so reaching it counts.
+  const belowRange = boundType.integer
+    ? BigInt(bound) < BigInt(minText)
+    : bound <= Number(minText);
+  const aboveRange = boundType.integer
+    ? BigInt(bound) > BigInt(maxText)
+    : bound >= Number(maxText);
+  const lowerBound = kind === "min" || kind === "minExclusive";
+  let text: string;
+  if (belowRange || aboveRange) {
+    if (lowerBound ? belowRange : aboveRange) return undefined;
+    text = belowRange ? minText : maxText;
+  } else {
+    text = boundType.integer ? BigInt(bound).toString() : String(bound);
+  }
+
+  const patchDouble = boundType.patchNumber === "double";
   return {
-    value: bound,
+    value: Number(text),
     formatted: boundType.literal(text),
-    decimalLiteral: `${text}m`,
+    patchReader: patchDouble ? "TryGetDouble" : "TryGetNumber",
+    patchLiteral: `${text}${patchDouble ? "d" : "m"}`,
     display: text,
   };
 }
@@ -1593,7 +1677,7 @@ function finishTemplateData(
   isVersionAware: boolean,
 ): void {
   const fields = new Map<string, PatternField>();
-  let usesNumberRules = false;
+  const numberReaders = new Set<NumericRule["patchReader"]>();
   for (const props of propertyGroups) {
     for (const prop of props) {
       if (prop.patternField && prop.pattern !== undefined) {
@@ -1602,20 +1686,22 @@ function finishTemplateData(
           pattern: prop.pattern,
         });
       }
-      if (
-        prop.minValue ||
-        prop.maxValue ||
-        prop.minValueExclusive ||
-        prop.maxValueExclusive
-      ) {
-        usesNumberRules = true;
+      for (const rule of [
+        prop.minValue,
+        prop.maxValue,
+        prop.minValueExclusive,
+        prop.maxValueExclusive,
+      ]) {
+        if (rule) numberReaders.add(rule.patchReader);
       }
     }
   }
   data.patternFields = [...fields.values()];
   data.usesPatterns = data.patternFields.length > 0 || undefined;
   data.usesNumberRules =
-    (data.isMergePatchBody && usesNumberRules) || undefined;
+    (data.isMergePatchBody && numberReaders.has("TryGetNumber")) || undefined;
+  data.usesDoubleRules =
+    (data.isMergePatchBody && numberReaders.has("TryGetDouble")) || undefined;
   data.hasFields =
     isVersionAware ||
     data.derivedTypeValidators !== undefined ||

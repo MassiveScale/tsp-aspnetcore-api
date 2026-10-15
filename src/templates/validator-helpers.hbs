@@ -2,8 +2,9 @@
   validator-helpers.hbs — partial registered as `validatorHelpers`.
 
   Declares the private helper methods a generated validator needs after its
-  constructor: `IsMatch` for `@pattern` rules, `TryGetNumber` for numeric
-  bounds in a MergePatch validator, and the API-version helpers of a
+  constructor: `IsMatch` for `@pattern` rules, `TryGetNumber` (`decimal`) and
+  `TryGetDouble` (floating-point properties) for numeric bounds in a MergePatch
+  validator, and the API-version helpers of a
   version-aware validator. Include it on its own line inside the class body.
 --}}
 {{#if usesPatterns}}
@@ -40,6 +41,25 @@ private static bool TryGetNumber({{{qualifiedPatchBodyTypeName}}} patch, string 
     if (!element.TryGetDecimal(out value))
     {
         value = element.GetRawText().StartsWith('-') ? decimal.MinValue : decimal.MaxValue;
+    }
+    return true;
+}
+{{/if}}
+{{#if usesDoubleRules}}
+
+/// <summary>
+/// Reads the JSON number supplied for <paramref name="name"/> as a <see cref="double"/>,
+/// for the bounds of a floating-point property. Returns <see langword="false"/> when the
+/// value is absent or is not a JSON number. A number outside the <see cref="double"/>
+/// range is clamped to it, which keeps every comparison with a bound correct.
+/// </summary>
+private static bool TryGetDouble({{{qualifiedPatchBodyTypeName}}} patch, string name, out double value)
+{
+    value = 0d;
+    if (!patch.Properties.TryGetValue(name, out var element) || element.ValueKind != System.Text.Json.JsonValueKind.Number) return false;
+    if (!element.TryGetDouble(out value))
+    {
+        value = element.GetRawText().StartsWith('-') ? double.MinValue : double.MaxValue;
     }
     return true;
 }
