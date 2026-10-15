@@ -12,10 +12,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using MarketOnce.Community.Campaign.Api.Helpers;
-using MarketOnce.Community.Campaign.Api.Models;
+using MassiveScale.Petshop.Api.Helpers;
+using MassiveScale.Petshop.Api.Models;
 
-namespace MarketOnce.Community.Campaign.Api.Services
+namespace MassiveScale.Petshop.Api.Services
 {
     /// <summary>
     /// Controller for Store entities.
@@ -26,28 +26,28 @@ namespace MarketOnce.Community.Campaign.Api.Services
         /// Retrieves a list of all stores.
         /// </summary>
         Task<PagedResultStore?> ListAsync(CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Retrieves a specific store by its unique identifier.
         /// </summary>
         Task<Store?> ReadAsync(string id, CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Creates a new store with the provided information.
         /// </summary>
         Task<Store?> CreateAsync(Store body, CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Updates an existing store with the provided information. Only the fields included in the request body will be updated.
         /// </summary>
         Task UpdateAsync(string id, MergePatch<Store> body, CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Deletes a store by its unique identifier.
         /// </summary>
         Task DeleteAsync(string id, CancellationToken cancellationToken);
-    
-    
+
+
     }
 
 }

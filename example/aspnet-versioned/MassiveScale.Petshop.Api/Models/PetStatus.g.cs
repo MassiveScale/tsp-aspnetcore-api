@@ -12,9 +12,9 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
-using MarketOnce.Community.Campaign.Api.Helpers;
+using MassiveScale.Petshop.Api.Helpers;
 
-namespace MarketOnce.Community.Campaign.Api.Models
+namespace MassiveScale.Petshop.Api.Models
 {
     [JsonConverter(typeof(EnumMemberConverterFactory))]
     public enum PetStatus

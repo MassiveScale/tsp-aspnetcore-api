@@ -17,7 +17,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace MarketOnce.Community.Campaign.Api.Helpers
+namespace MassiveScale.Petshop.Api.Helpers
 {
     /// <summary>
     /// Generic RFC 7396 JSON Merge Patch container.

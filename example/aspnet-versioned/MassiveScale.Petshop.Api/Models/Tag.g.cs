@@ -12,7 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace MarketOnce.Community.Campaign.Api.Models
+namespace MassiveScale.Petshop.Api.Models
 {
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     public partial class Tag
@@ -23,14 +23,14 @@ namespace MarketOnce.Community.Campaign.Api.Models
         [JsonPropertyName("id")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public long? Id { get; set; }
-    
+
         /// <summary>
         /// The name of the tag.
         /// </summary>
         [JsonPropertyName("name")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Name { get; set; }
-    
+
     }
 
 }

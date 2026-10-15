@@ -12,7 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace MarketOnce.Community.Campaign.Api.Models
+namespace MassiveScale.Petshop.Api.Models
 {
     /// <summary>
     /// Represents an error response from the API.
@@ -26,28 +26,28 @@ namespace MarketOnce.Community.Campaign.Api.Models
         [JsonPropertyName("code")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Code { get; set; }
-    
+
         /// <summary>
         /// A human-readable message describing the error.
         /// </summary>
         [JsonPropertyName("message")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Message { get; set; }
-    
+
         /// <summary>
         /// Correlation id for the request that resulted in the error.
         /// </summary>
         [JsonPropertyName("trace")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? correlationId { get; set; }
-    
+
         /// <summary>
         /// An optional array of inner errors that provide more details about the error.
         /// </summary>
         [JsonPropertyName("innererror")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public IList<ErrorResponseBase>? Innererror { get; set; } = new List<ErrorResponseBase>();
-    
+
     }
 
 }

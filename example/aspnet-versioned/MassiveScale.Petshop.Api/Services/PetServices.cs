@@ -1,6 +1,5 @@
-﻿using MarketOnce.Community.Campaign.Api.Helpers;
-using MarketOnce.Community.Campaign.Api.Models;
-using MarketOnce.Community.Campaign.Api.Services;
+﻿using MassiveScale.Petshop.Api.Helpers;
+using MassiveScale.Petshop.Api.Models;
 
 namespace MassiveScale.Petshop.Api.Services
 {

@@ -12,7 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace MarketOnce.Community.Campaign.Api.Models
+namespace MassiveScale.Petshop.Api.Models
 {
     /// <summary>
     /// Model template for paginated results from the API.
@@ -28,14 +28,14 @@ namespace MarketOnce.Community.Campaign.Api.Models
         [JsonPropertyName("items")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public IList<Store>? Items { get; set; }
-    
+
         /// <summary>
         /// The total count of items in the collection, if known.
         /// </summary>
         [JsonPropertyName("totalCount")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? TotalCount { get; set; }
-    
+
     }
 
 }

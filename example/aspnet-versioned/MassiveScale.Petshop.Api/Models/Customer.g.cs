@@ -12,7 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace MarketOnce.Community.Campaign.Api.Models
+namespace MassiveScale.Petshop.Api.Models
 {
     /// <summary>
     /// Represents a customer of the pet store.
@@ -26,28 +26,28 @@ namespace MarketOnce.Community.Campaign.Api.Models
         [JsonPropertyName("firstName")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? FirstName { get; set; }
-    
+
         /// <summary>
         /// The last name of the customer.
         /// </summary>
         [JsonPropertyName("lastName")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? LastName { get; set; }
-    
+
         /// <summary>
         /// The email address of the customer.
         /// </summary>
         [JsonPropertyName("email")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Email { get; set; }
-    
+
         /// <summary>
         /// The phone number of the customer.
         /// </summary>
         [JsonPropertyName("phoneNumber")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? PhoneNumber { get; set; }
-    
+
     }
 
 }

@@ -8,9 +8,9 @@
 
 using FluentValidation;
 using Microsoft.AspNetCore.Http;
-using MarketOnce.Community.Campaign.Api.Models;
+using MassiveScale.Petshop.Api.Models;
 
-namespace MarketOnce.Community.Campaign.Api.Validators;
+namespace MassiveScale.Petshop.Api.Validators;
 
 /// <summary>
 /// Auto-generated version-aware POST validator for Pet.

@@ -12,10 +12,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using MarketOnce.Community.Campaign.Api.Helpers;
-using MarketOnce.Community.Campaign.Api.Models;
+using MassiveScale.Petshop.Api.Helpers;
+using MassiveScale.Petshop.Api.Models;
 
-namespace MarketOnce.Community.Campaign.Api.Services
+namespace MassiveScale.Petshop.Api.Services
 {
     /// <summary>
     /// Controller for Pet entities within a Store.
@@ -26,23 +26,23 @@ namespace MarketOnce.Community.Campaign.Api.Services
         /// Retrieves a list of all pets in the specified store.
         /// </summary>
         Task<IList<Pet>?> ListAsync(string storeId, CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Adds a new pet to the specified store.
         /// </summary>
         Task<Pet?> CreateAsync(string storeId, Pet body, CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Updates an existing pet in the specified store. Only the fields included in the request body will be updated.
         /// </summary>
         Task<Pet?> UpdateAsync(string storeId, string petId, MergePatch<Pet> body, CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Removes a pet from the specified store.
         /// </summary>
         Task DeleteAsync(string storeId, string petId, CancellationToken cancellationToken);
-    
-    
+
+
     }
 
 }

@@ -12,7 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace MarketOnce.Community.Campaign.Api.Models
+namespace MassiveScale.Petshop.Api.Models
 {
     /// <summary>
     /// Represents a cat in the pet store.
@@ -26,7 +26,7 @@ namespace MarketOnce.Community.Campaign.Api.Models
         [JsonPropertyName("isPurrer")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? IsPurrer { get; set; }
-    
+
     }
 
 }

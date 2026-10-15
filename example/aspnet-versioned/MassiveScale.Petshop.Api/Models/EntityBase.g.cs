@@ -12,7 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace MarketOnce.Community.Campaign.Api.Models
+namespace MassiveScale.Petshop.Api.Models
 {
     /// <summary>
     /// Base model for all entities in the API.
@@ -26,21 +26,21 @@ namespace MarketOnce.Community.Campaign.Api.Models
         [JsonPropertyName("id")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public Guid? Id { get; set; }
-    
+
         /// <summary>
         /// Date and time when the resource was created.
         /// </summary>
         [JsonPropertyName("createdDateTime")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public DateTimeOffset? CreatedDateTime { get; set; }
-    
+
         /// <summary>
         /// Date and time when the resource was last modified.
         /// </summary>
         [JsonPropertyName("lastModifiedDateTime")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public DateTimeOffset? LastModifiedDateTime { get; set; }
-    
+
     }
 
 }

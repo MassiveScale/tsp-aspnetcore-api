@@ -12,11 +12,11 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using MarketOnce.Community.Campaign.Api.Helpers;
-using MarketOnce.Community.Campaign.Api.Models;
+using MassiveScale.Petshop.Api.Helpers;
+using MassiveScale.Petshop.Api.Models;
 using Microsoft.AspNetCore.Mvc;
 
-namespace MarketOnce.Community.Campaign.Api.Controllers
+namespace MassiveScale.Petshop.Api.Controllers
 {
     /// <summary>
     /// Controller for Store entities.
@@ -31,35 +31,35 @@ namespace MarketOnce.Community.Campaign.Api.Controllers
         [HttpGet("/api/v1.0/store")]
         [HttpGet("/api/v2.0/store")]
         public abstract Task<IActionResult> List(CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Retrieves a specific store by its unique identifier.
         /// </summary>
         [HttpGet("/api/v1.0/store/{id}")]
         [HttpGet("/api/v2.0/store/{id}")]
         public abstract Task<IActionResult> Read([FromRoute] string id, CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Creates a new store with the provided information.
         /// </summary>
         [HttpPost("/api/v1.0/store")]
         [HttpPost("/api/v2.0/store")]
         public abstract Task<IActionResult> Create([FromBody] Store body, CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Updates an existing store with the provided information. Only the fields included in the request body will be updated.
         /// </summary>
         [HttpPatch("/api/v1.0/store/{id}")]
         [HttpPatch("/api/v2.0/store/{id}")]
         public abstract Task<IActionResult> Update([FromRoute] string id, [FromBody] MergePatch<Store> body, CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Deletes a store by its unique identifier.
         /// </summary>
         [HttpDelete("/api/v1.0/store/{id}")]
         [HttpDelete("/api/v2.0/store/{id}")]
         public abstract Task<IActionResult> Delete([FromRoute] string id, CancellationToken cancellationToken);
-    
+
     }
 
 }

@@ -12,10 +12,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using MarketOnce.Community.Campaign.Api.Helpers;
-using MarketOnce.Community.Campaign.Api.Models;
+using MassiveScale.Petshop.Api.Helpers;
+using MassiveScale.Petshop.Api.Models;
 
-namespace MarketOnce.Community.Campaign.Api.Services
+namespace MassiveScale.Petshop.Api.Services
 {
     /// <summary>
     /// Controller for Customer entities.
@@ -26,28 +26,28 @@ namespace MarketOnce.Community.Campaign.Api.Services
         /// Retrieves a list of all customers.
         /// </summary>
         Task<IList<Customer>?> ListAsync(CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Retrieves a specific customer by their unique identifier.
         /// </summary>
         Task<Customer?> ReadAsync(string id, CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Creates a new customer with the provided information.
         /// </summary>
         Task<Customer?> CreateAsync(Customer body, CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Updates an existing customer with the provided information. Only the fields included in the request body will be updated.
         /// </summary>
         Task<Customer?> UpdateAsync(string id, MergePatch<Customer> body, CancellationToken cancellationToken);
-    
+
         /// <summary>
         /// Deletes a customer by their unique identifier.
         /// </summary>
         Task DeleteAsync(string id, CancellationToken cancellationToken);
-    
-    
+
+
     }
 
 }
