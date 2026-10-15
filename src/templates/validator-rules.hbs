@@ -1,0 +1,24 @@
+{{!--
+  validator-rules.hbs — partial registered as `validatorRules`.
+
+  Renders every property rule of a validator: `properties` for a standard
+  validator, or `baseProperties` followed by one `When` block per entry of
+  `versionGroups` for a version-aware validator. Include it on its own line
+  inside the constructor; every rendered line gets that line's indent.
+--}}
+{{#each properties}}
+{{> propertyRules}}
+{{/each}}
+{{#each baseProperties}}
+{{> propertyRules}}
+{{/each}}
+{{#each versionGroups}}
+// Rules for {{{label}}}
+When(_ => {{{condition}}}, () =>
+{
+{{#each properties}}
+    {{> propertyRules}}
+{{/each}}
+});
+
+{{/each}}

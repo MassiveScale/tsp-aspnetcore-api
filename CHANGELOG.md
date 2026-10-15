@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Validators for `@put` request bodies. A PUT body is validated by `{Model}Validator` with the same rules as a POST body, except that update-only properties are accepted. Previously PUT bodies were not validated. See [Validators — PUT bodies](docs/validators.md#put-bodies).
+- `@minItems`, `@maxItems`, `@minValueExclusive` and `@maxValueExclusive` now produce validation rules. Previously they were ignored, so for example the `@maxItems(5)` on the example's `Pet.photoUrls` was never enforced.
+- `Record<Model>` properties validate each value, with failures such as `Labels[key].Name`. In a MergePatch body each supplied value is validated as a nested patch.
+- Version-aware validators honour `@removed` and `@madeOptional`: a property's rules apply only in the versions it exists in, and a `@madeOptional` property stays required in the versions before it became optional. The `earliest`, `latest` and `per-version` strategies honour `@madeOptional` too. See [Validators — Version-aware validators](docs/validators.md#version-aware-validators).
+- Validator template partials (`validatorFields`, `validatorRules`, `propertyRules`, `typedPropertyRules`, `mergePatchPropertyRules`, `validatorHelpers`) and view-model fields (`constructorParameters`, `usesServiceProvider`, `patternFields`, `versionGroups[].condition`, …) for custom templates. See [Custom Templates — Validator view models](docs/custom-templates.md#validator-view-models).
+
+### Changed
+
+- **Breaking:** generated validators are registered as singletons instead of scoped services, so each one is built once instead of on every request. Version-aware validators now keep the `IHttpContextAccessor` and read the API version each time they validate, instead of capturing it in the constructor.
+- **Breaking:** version-aware validators normalize the requested API version (`2.0`, `V2` and `v2.0` all match `v2.0`), and validate a version that matches none of the known versions against the latest rules. Previously an unrecognised version skipped every rule added after the first version. The version-group comments now read `Rules for v2.0 and later`, and the `IsAtLeast` helper is replaced by `IsVersionInRange`.
+- **Breaking:** derived-model validators check inherited properties too, so `DogValidator` and `DogPatchValidator` now check `Pet.name`. A `@discriminator` base validator skips its own property rules for the derived types it dispatches to, so each failure is reported once.
+- **Breaking:** MergePatch numeric bounds accept only JSON numbers. Exponent notation such as `1e2`, which was rejected before, is now accepted; a number sent as a string (`"50"`), which was accepted before, now fails.
+- **Breaking:** `Patch` / `TryPatch` resolve properties from the entity's runtime type, so a `MergePatch<Pet>` applied to a `Dog` also updates `Dog`-only properties. Object values are merged into the existing nested instance instead of replacing it, so references to that instance and its `[JsonIgnore]` members are kept.
+- Every MergePatch validation rule now has a `.WithMessage`, so failures read like `'Count' must be a number less than or equal to 9.` instead of FluentValidation's generic predicate message.
+- `@pattern` rules use one compiled `static readonly Regex` per pattern with a one-second match timeout. A match that times out fails validation instead of throwing. Previously POST rules built the regex on every request and MergePatch rules used the static `Regex.IsMatch` without a timeout.
+- Custom validator templates must declare the constructor from `constructorParameters`, and version-aware ones must assign `_httpContextAccessor` and use the version-group `condition`. See [Custom Templates — Upgrading custom templates](docs/custom-templates.md#upgrading-custom-templates).
+
+### Removed
+
+- The `merge-patch-recursive-reference` diagnostic. Recursive and cyclic models are now supported, so the emitter no longer reports them.
+
+### Fixed
+
+- A read-only or update-only property with a default value (such as the example's `Pet.status = "available"`) no longer gets a `Null()` rule in POST and plain PATCH validators. The model initializer sets the default whenever the field is absent, so every POST failed.
+- A self-referencing or cyclic model (`model Node { children?: Node[] }`, `A → B → A`, or a `@discriminator` base whose derived type references the base) no longer makes validators depend on each other in their constructors, which hung or failed dependency-injection resolution. A self-reference uses `SetValidator(this)`, and the edge that closes a longer loop is resolved lazily from `IServiceProvider`. See [Validators — Recursive models](docs/validators.md#recursive-models).
+- Fractional `@minValue` / `@maxValue` bounds on `decimal` and `float32` properties emitted a `double` literal that didn't compile (CS1929). Bounds are now literals of the property's type (`0.5m`, `2.5f`, `5L`, `(short)1`).
+- A `@discriminator` base that references one of its derived types no longer declares that derived validator twice in its constructor (CS0100).
+- `Record<Model>` properties were treated as arrays, which emitted `RuleForEach` over a dictionary (CS1503) and the MergePatch error "must be an array".
+- Derived types sorted by `localeCompare` could be ordered differently on machines with different locales; they are now sorted ordinally.
+
 ## [1.0.0-beta.1] - 2026-10-14
 
 ### Changed

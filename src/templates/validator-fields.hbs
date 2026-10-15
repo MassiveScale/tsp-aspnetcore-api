@@ -1,0 +1,22 @@
+{{!--
+  validator-fields.hbs — partial registered as `validatorFields`.
+
+  Declares the fields a generated validator needs before its constructor:
+  the API versions of a version-aware validator, the derived types handled by
+  polymorphic dispatch, and one compiled `Regex` per `@pattern` rule. Include
+  it on its own line inside the class body.
+--}}
+{{#if allVersions}}
+private static readonly string[] _versions = new[] { {{#each allVersions}}"{{this}}"{{#unless @last}}, {{/unless}}{{/each}} };
+private static readonly string[] _normalizedVersions = System.Array.ConvertAll(_versions, NormalizeVersion);
+private readonly IHttpContextAccessor _httpContextAccessor;
+{{/if}}
+{{#if derivedTypeValidators}}
+private static readonly System.Collections.Generic.HashSet<System.Type> _derivedTypes = new() { {{#each derivedTypeValidators}}typeof({{{qualifiedTypeName}}}){{#unless @last}}, {{/unless}}{{/each}} };
+{{/if}}
+{{#each patternFields}}
+private static readonly System.Text.RegularExpressions.Regex {{{field}}} = new(@"{{pattern}}", System.Text.RegularExpressions.RegexOptions.None, System.TimeSpan.FromSeconds(1));
+{{/each}}
+{{#if hasFields}}
+
+{{/if}}
