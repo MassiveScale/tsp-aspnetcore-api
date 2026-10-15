@@ -35,26 +35,26 @@ public partial class PetPatchValidator : AbstractValidator<MergePatch<Pet>>
 
         // Id is read-only and cannot be modified via patch
         this.RuleFor(x => x)
-            .Must(x => !x.IsDefined("Id"))
+            .Must(x => !x.IsDefined("id"))
             .WithName("Id")
             .WithMessage("'Id' is read-only and cannot be modified.");
 
         // CreatedDateTime is read-only and cannot be modified via patch
         this.RuleFor(x => x)
-            .Must(x => !x.IsDefined("CreatedDateTime"))
+            .Must(x => !x.IsDefined("createdDateTime"))
             .WithName("CreatedDateTime")
             .WithMessage("'CreatedDateTime' is read-only and cannot be modified.");
 
         // LastModifiedDateTime is read-only and cannot be modified via patch
         this.RuleFor(x => x)
-            .Must(x => !x.IsDefined("LastModifiedDateTime"))
+            .Must(x => !x.IsDefined("lastModifiedDateTime"))
             .WithName("LastModifiedDateTime")
             .WithMessage("'LastModifiedDateTime' is read-only and cannot be modified.");
 
         // PhotoUrls is required and cannot be removed
         this.RuleFor(x => x)
-            .Must(x => !x.IsNull("PhotoUrls"))
-            .When(x => x.IsDefined("PhotoUrls"))
+            .Must(x => !x.IsNull("photoUrls"))
+            .When(x => x.IsDefined("photoUrls"))
             .WithName("PhotoUrls")
             .WithMessage("'PhotoUrls' is required and cannot be null.");
 
@@ -64,7 +64,7 @@ public partial class PetPatchValidator : AbstractValidator<MergePatch<Pet>>
             // Tags replaces the whole array, so each item is validated as a complete model
             this.RuleFor(x => x).Custom((patch, context) =>
             {
-                if (!patch.Properties.TryGetValue("Tags", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+                if (!patch.Properties.TryGetValue("tags", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
                 if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
                 {
                     context.AddFailure("Tags", "'Tags' must be an array.");

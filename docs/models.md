@@ -101,6 +101,41 @@ Generic C# classes (`PagedResult<T>`) are not emitted, because a TypeSpec templa
 
 Every model class shares the `models-namespace`, so two different models that map to the same C# name would overwrite each other's file. Examples: `Box<{ id: string }>` and `Box<{ id: int32 }>` (both `BoxId`), or `Demo.A.Widget` and `Demo.B.Widget`. Instead of overwriting silently, the emitter reports a **`duplicate-model-name`** error naming both models, and only emits the first. Rename one with `@friendlyName` or [`@serverName`](./decorators.md).
 
+## Property names and JSON names
+
+Each property gets two names: the JSON wire name in `[JsonPropertyName]`, and the C# property identifier.
+
+**JSON wire name.** The TypeSpec property name is used verbatim: `user_id` stays `"user_id"` and `ID` stays `"ID"`. To send a different name on the wire, use TypeSpec's `@encodedName`:
+
+```typespec
+model User {
+  @encodedName("application/json", "user_name") userName: string;
+}
+```
+
+```csharp
+[JsonPropertyName("user_name")]
+public string? UserName { get; set; }
+```
+
+The same applies to the `@discriminator` property: `TypeDiscriminatorPropertyName` uses its `@encodedName` when one is set. Every wire name is written as an escaped C# string literal, so quotes and backslashes are safe.
+
+**C# identifier.** [`@serverName`](#servername) wins when present. Otherwise the TypeSpec name is turned into a valid PascalCase identifier:
+
+| TypeSpec property        | C# property  | Why                                                        |
+| ------------------------ | ------------ | ---------------------------------------------------------- |
+| `user_id`, `user-id`     | `UserId`     | Every run of non-letter, non-digit characters splits words |
+| `` `$ref` ``             | `Ref`        | Invalid characters are dropped                             |
+| `` `1st` ``              | `_1st`       | An identifier cannot start with a digit                    |
+| `error` on `model Error` | `ErrorValue` | A member cannot share its class's name (CS0542)            |
+| `userId` after `user_id` | `UserId2`    | Names that collide after PascalCasing get a number         |
+
+Interfaces, validators, object initializers and MergePatch rules all use the same identifiers.
+
+Enum members and the members of [inferred enums](#enums) follow the same rules. An empty string value becomes `Empty`, and duplicates get a number (`a-b` and `aB` become `AB` and `AB2`). Default values reference the emitted member name.
+
+`@doc` text is XML-escaped (`&`, `<`, `>`), so it cannot break the generated `<summary>` block.
+
 ## Default property values
 
 An enum value initializer is fully qualified when its generated property name shadows the enum type name (for example, a `Theme` property of type `Theme`) so C# resolves the enum rather than the property. Other references follow [Cross-namespace references](#cross-namespace-references).
@@ -206,7 +241,7 @@ public enum TrafficLight
 }
 ```
 
-The `EnumMemberConverterFactory` helper is emitted once into `helpers-output-dir` (default `Helpers/`). It implements `JsonConverterFactory` and serializes each member using the `[EnumMember(Value = "...")]` attribute; when the attribute is absent, the field name is used verbatim. Deserialization is case-insensitive.
+The `EnumMemberConverterFactory` helper is emitted once into `helpers-output-dir` (default `Helpers/`) whenever any enum is generated, including enums inferred from string-literal unions. It does not depend on `emit-helpers`. It implements `JsonConverterFactory` and serializes each member using the `[EnumMember(Value = "...")]` attribute; when the attribute is absent, the field name is used verbatim. Deserialization is case-insensitive.
 
 ## @discriminator
 

@@ -1345,19 +1345,24 @@ describe("csharp emitter - models", () => {
       );
     });
 
-    it("converts snake_case property names to camelCase JSON keys", async () => {
+    it("keeps property names verbatim as JSON keys", async () => {
       const results = await emit(`
         namespace Demo;
-        model M { first_name: string; user_id: string; }
+        model M { first_name: string; user_id: string; ID: string; }
       `);
       const cls = results["M.g.cs"];
       ok(
-        cls.includes('[JsonPropertyName("firstName")]'),
-        `missing firstName attr in:\n${cls}`,
+        cls.includes('[JsonPropertyName("first_name")]') &&
+          cls.includes("public string? FirstName "),
+        `missing first_name attr in:\n${cls}`,
       );
       ok(
-        cls.includes('[JsonPropertyName("userId")]'),
-        `missing userId attr in:\n${cls}`,
+        cls.includes('[JsonPropertyName("user_id")]'),
+        `missing user_id attr in:\n${cls}`,
+      );
+      ok(
+        cls.includes('[JsonPropertyName("ID")]'),
+        `missing ID attr in:\n${cls}`,
       );
     });
 
@@ -2106,6 +2111,172 @@ namespace {{namespace}}
       ok(
         file.includes("IList<TagResource>?"),
         "expected array element type to use @serverName",
+      );
+    });
+  });
+  describe("wire names", () => {
+    it("uses @encodedName for the JSON property name", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model User {
+          @encodedName("application/json", "user_name") userName: string;
+          @encodedName("application/json", "a\\"b") quoted: string;
+        }
+      `);
+
+      const cls = results["User.g.cs"];
+      ok(
+        cls.includes('[JsonPropertyName("user_name")]') &&
+          cls.includes("public string? UserName "),
+        `expected the encoded name in:\n${cls}`,
+      );
+      ok(
+        cls.includes('[JsonPropertyName("a\\"b")]'),
+        `expected an escaped encoded name in:\n${cls}`,
+      );
+    });
+
+    it("uses the discriminator property's wire name and escapes discriminator values", async () => {
+      const results = await emit(`
+        namespace Demo;
+        @discriminator("kind")
+        model Pet {
+          @encodedName("application/json", "$type") kind: string;
+        }
+        model Dog extends Pet { kind: "say \\"woof\\""; }
+      `);
+
+      const pet = results["Pet.g.cs"];
+      ok(
+        pet.includes(
+          '[JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]',
+        ),
+        `expected the encoded discriminator name in:\n${pet}`,
+      );
+      ok(
+        pet.includes('[JsonDerivedType(typeof(Dog), "say \\"woof\\"")]'),
+        `expected an escaped discriminator value in:\n${pet}`,
+      );
+    });
+
+    it("escapes enum member values", async () => {
+      const results = await emit(`
+        namespace Demo;
+        enum Quote { said: "say \\"hi\\"" }
+      `);
+
+      const en = results["Quote.g.cs"];
+      ok(
+        en.includes('[EnumMember(Value = "say \\"hi\\"")]'),
+        `expected an escaped member value in:\n${en}`,
+      );
+    });
+
+    it("XML-escapes doc comments", async () => {
+      const results = await emit(`
+        namespace Demo;
+        @doc("Use <b> & keep a > b")
+        model Widget { @doc("Either <x> or & y") name: string; }
+      `);
+
+      const cls = results["Widget.g.cs"];
+      ok(
+        cls.includes("/// Use &lt;b&gt; &amp; keep a &gt; b") &&
+          cls.includes("/// Either &lt;x&gt; or &amp; y"),
+        `expected escaped doc comments in:\n${cls}`,
+      );
+    });
+  });
+
+  describe("C# identifiers", () => {
+    /** Collapses every run of whitespace to one space. */
+    const squash = (text: string): string => text.replace(/\s+/g, " ");
+
+    it("makes property names valid, unique and different from the class name", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Error {
+          error: string;
+          user_id: string;
+          userId: string;
+          \`1st\`: string;
+          \`$ref\`: string;
+          \`class\`: string;
+        }
+      `);
+
+      const cls = results["Error.g.cs"];
+      for (const [wire, name] of [
+        ["error", "ErrorValue"],
+        ["user_id", "UserId"],
+        ["userId", "UserId2"],
+        ["1st", "_1st"],
+        ["$ref", "Ref"],
+        ["class", "Class"],
+      ]) {
+        ok(
+          squash(cls).includes(
+            `[JsonPropertyName("${wire}")] [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ${name} { get; set; }`,
+          ),
+          `expected ${wire} -> ${name} in:\n${cls}`,
+        );
+      }
+    });
+
+    it("keeps the interface property names in step with the class", async () => {
+      const results = await emit(
+        `
+        namespace Demo;
+        model Error { error: string; }
+      `,
+        { "emit-interfaces": true },
+      );
+
+      ok(
+        results["IError.g.cs"].includes("string? ErrorValue { get; set; }"),
+        results["IError.g.cs"],
+      );
+    });
+
+    it("makes enum member names valid and unique, and references them consistently", async () => {
+      const results = await emit(`
+        namespace Demo;
+        enum Mode { \`a-b\`, aB, \`1x\` }
+        model Widget {
+          mode?: Mode = Mode.aB;
+          status?: "in-progress" | "done" | "" | "Done" = "";
+        }
+      `);
+
+      const mode = results["Mode.g.cs"];
+      for (const [wire, name] of [
+        ["a-b", "AB"],
+        ["aB", "AB2"],
+        ["1x", "_1x"],
+      ]) {
+        ok(
+          squash(mode).includes(`[EnumMember(Value = "${wire}")] ${name}`),
+          `expected ${wire} -> ${name} in:\n${mode}`,
+        );
+      }
+
+      const status = results["WidgetStatus.g.cs"];
+      for (const [wire, name] of [
+        ["in-progress", "InProgress"],
+        ["done", "Done"],
+        ["", "Empty"],
+        ["Done", "Done2"],
+      ]) {
+        ok(
+          squash(status).includes(`[EnumMember(Value = "${wire}")] ${name}`),
+          `expected "${wire}" -> ${name} in:\n${status}`,
+        );
+      }
+
+      const cls = results["Widget.g.cs"];
+      ok(
+        cls.includes(".Mode.AB2;") && cls.includes("= WidgetStatus.Empty;"),
+        `expected initializers to use the emitted member names in:\n${cls}`,
       );
     });
   });

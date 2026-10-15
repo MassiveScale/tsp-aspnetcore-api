@@ -34,8 +34,8 @@ public partial class DogPatchValidator : AbstractValidator<MergePatch<Dog>>
 
         // IsBarker is required and cannot be removed
         this.RuleFor(x => x)
-            .Must(x => !x.IsNull("IsBarker"))
-            .When(x => x.IsDefined("IsBarker"))
+            .Must(x => !x.IsNull("isBarker"))
+            .When(x => x.IsDefined("isBarker"))
             .WithName("IsBarker")
             .WithMessage("'IsBarker' is required and cannot be null.");
 

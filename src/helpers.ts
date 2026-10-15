@@ -10,7 +10,8 @@
  * and enums have been emitted.
  */
 
-import { Model, Program, emitFile, resolvePath } from "@typespec/compiler";
+import { Model, Program, resolvePath } from "@typespec/compiler";
+import { emitFile } from "./output.js";
 import {
   computeModelTypeName,
   csharpNamespaceFor,
@@ -54,17 +55,20 @@ const BOOL_CONVERTER_HELPER_USINGS = [
 
 /**
  * Emits the MergePatch support files (generic helper or per-entity typed
- * classes, depending on `merge-patch-style`) and, when `emit-helpers` is
- * enabled, the `EnumMemberConverter` helper.
+ * classes, depending on `merge-patch-style`), the `EnumMemberConverter` helper
+ * when any enum was emitted or `emit-helpers` is enabled, and the
+ * `BooleanStringJsonConverter` helper when a model needs it.
  *
  * @param program - The compiled TypeSpec program.
  * @param models - Models collected by the emitter, used to discover PATCH bodies.
+ * @param emittedEnums - Whether any enum file (explicit or inferred) was emitted.
  * @param renderer - Pre-compiled renderer instance.
  * @param options - Resolved emitter options.
  */
 export async function emitHelpers(
   program: Program,
   models: Model[],
+  emittedEnums: boolean,
   renderer: Renderer,
   options: ResolvedOptions,
 ): Promise<void> {
@@ -83,14 +87,15 @@ export async function emitHelpers(
     await emitMergePatch(program, renderer, options);
   }
 
-  // Emit EnumMemberConverter helper only when emit-helpers is true (optional).
-  if (options.emitHelpers) {
+  // Every generated enum carries [JsonConverter(typeof(EnumMemberConverterFactory))],
+  // so the helper is required whenever an enum is emitted. emit-helpers forces
+  // it even when the spec has no enums.
+  if (emittedEnums || options.emitHelpers) {
     await emitEnumMemberConverter(program, renderer, options);
   }
 
   // Emit the BooleanStringJsonConverter helper whenever a model relies on it
-  // (i.e. any property uses `@encode(string)` on a boolean). Unlike the
-  // EnumMemberConverter this is not gated on `emit-helpers`, because generated
+  // (i.e. any property uses `@encode(string)` on a boolean), because generated
   // model code references the converter by name and would not compile without it.
   if (
     models.some((model) =>
@@ -172,7 +177,8 @@ async function emitEntityMergePatches(
 
 /**
  * Writes the `EnumMemberConverter` helper class to the helpers output
- * directory. This is only emitted when the `emit-helpers` option is enabled.
+ * directory. Emitted whenever an enum is emitted (every enum references it),
+ * or unconditionally when the `emit-helpers` option is enabled.
  *
  * @param program - The compiled TypeSpec program (needed by `emitFile`).
  * @param renderer - Pre-compiled renderer instance.

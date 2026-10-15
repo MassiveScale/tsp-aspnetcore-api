@@ -1,6 +1,6 @@
 import { ok, strictEqual } from "node:assert";
 import { describe, it } from "node:test";
-import { emit } from "./host.js";
+import { emit, emitWithDiagnostics } from "./host.js";
 
 describe("csharp emitter - controllers", () => {
   describe("type mapping", () => {
@@ -1067,6 +1067,111 @@ describe("csharp emitter - controllers", () => {
       ok(
         !ctrl.includes("Name ="),
         `expected no explicit Name override when the identifier already matches the wire name in:\n${ctrl}`,
+      );
+    });
+  });
+  describe("HTTP library warnings", () => {
+    it("still emits every controller and service when @typespec/http only warns", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service namespace Demo;
+
+        model User { name: string; }
+        model Widget { id: string; name: string; }
+        model WidgetPatch is MergePatchUpdate<Widget>;
+
+        @route("/session") interface Session {
+          @post login(@body body: User): { @cookie token: string; @body user: User };
+        }
+
+        @route("/widgets") interface Widgets {
+          @patch update(@header contentType: "application/json", @body body: WidgetPatch): Widget;
+        }
+      `);
+
+      const codes = diagnostics.map((d) => d.code);
+      ok(
+        codes.includes("@typespec/http/response-cookie-not-supported") &&
+          codes.includes("@typespec/http/merge-patch-content-type"),
+        `expected both HTTP warnings, got: ${codes.join(", ")}`,
+      );
+      ok(
+        diagnostics.every((d) => d.severity === "warning"),
+        `expected warnings only, got: ${codes.join(", ")}`,
+      );
+      for (const path of [
+        "Controllers/SessionControllerBase.g.cs",
+        "Services/ISessionService.g.cs",
+        "Controllers/WidgetsControllerBase.g.cs",
+        "Services/IWidgetsService.g.cs",
+      ]) {
+        ok(
+          results[path],
+          `expected ${path}, got: ${Object.keys(results).join(", ")}`,
+        );
+      }
+    });
+  });
+
+  describe("parameter identifiers", () => {
+    it("emits valid, unique identifiers and binds them to the wire names", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service namespace Demo;
+
+        model User { name: string; }
+
+        @route("/items/{class}") interface Items {
+          @post create(
+            @path \`class\`: string,
+            @query body: string,
+            @query \`2fa\`: string,
+            @header \`x-request-id\`: string,
+            @query user_id: string,
+            @query userId: string,
+            @query cancellationToken: string,
+            @body payload: User,
+          ): User;
+        }
+      `);
+
+      const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
+      ok(
+        ctrl.includes(
+          'Create([FromRoute] string @class, [FromQuery(Name = "body")] string body2, [FromQuery(Name = "2fa")] string _2fa, [FromHeader(Name = "x-request-id")] string xRequestId, [FromQuery(Name = "user_id")] string userId, [FromQuery(Name = "userId")] string userId2, [FromQuery(Name = "cancellationToken")] string cancellationToken2, [FromBody] User body, CancellationToken cancellationToken);',
+        ),
+        `unexpected controller signature in:\n${ctrl}`,
+      );
+
+      const service = results["Services/IItemsService.g.cs"];
+      ok(
+        service.includes(
+          "CreateAsync(string @class, string body2, string _2fa, string xRequestId, string userId, string userId2, string cancellationToken2, User body, CancellationToken cancellationToken);",
+        ),
+        `unexpected service signature in:\n${service}`,
+      );
+    });
+
+    it("escapes quotes in route and binding-name attribute strings", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service namespace Demo;
+
+        @route("/items") interface Items {
+          @get list(@query("a\\"b") filter: string): void;
+        }
+      `);
+
+      const ctrl = results["Controllers/ItemsControllerBase.g.cs"];
+      ok(
+        ctrl.includes('[FromQuery(Name = "a\\"b")] string filter'),
+        `expected an escaped binding name in:\n${ctrl}`,
       );
     });
   });

@@ -8,8 +8,10 @@
  */
 
 import {
+  type EnumMember,
   type IndeterminateEntity,
   Model,
+  type ModelProperty,
   Program,
   type Type,
   type Value,
@@ -18,7 +20,8 @@ import {
   isRecordModelType,
   isTemplateInstance,
 } from "@typespec/compiler";
-import { getServerName } from "./decorators.js";
+import { CSHARP_RESERVED_KEYWORDS, getServerName } from "./decorators.js";
+import { classProperties } from "./payloads.js";
 import { pascalCase } from "./utils.js";
 
 /**
@@ -249,6 +252,160 @@ function templateArgumentName(
     default:
       return "";
   }
+}
+
+/** Identifier used for a name that has no letters or digits at all (e.g. `""`). */
+const EMPTY_IDENTIFIER = "Empty";
+
+/**
+ * Suffix appended to a property whose identifier equals its class name, since
+ * C# forbids a member named after its enclosing type (CS0542).
+ */
+const CLASS_NAME_COLLISION_SUFFIX = "Value";
+
+/**
+ * Converts arbitrary TypeSpec text (a property name, an enum member name or a
+ * string literal) to a PascalCase C# identifier.
+ *
+ * Every run of characters that is not a letter or digit separates words, so
+ * `user_id`, `user-id` and `user.id` all become `UserId`. A leading digit gets a
+ * `_` prefix, and text with no letters or digits becomes `Empty`. The result
+ * starts with an upper-case letter, a `_`, or a caseless letter, so it can never
+ * be a (lower-case) C# keyword.
+ *
+ * @param name - The raw name.
+ * @returns A valid C# identifier.
+ */
+export function csharpIdentifier(name: string): string {
+  const pascal = name
+    .split(/[^\p{L}\p{Nd}]+/u)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join("");
+  if (!pascal) return EMPTY_IDENTIFIER;
+  return /^\p{Nd}/u.test(pascal) ? `_${pascal}` : pascal;
+}
+
+/**
+ * Converts arbitrary TypeSpec text to a camelCase C# parameter identifier,
+ * `@`-escaping it when it is a C# keyword (`class` becomes `@class`).
+ *
+ * @param name - The raw name.
+ * @returns A valid C# identifier.
+ */
+export function csharpParameterIdentifier(name: string): string {
+  const pascal = csharpIdentifier(name);
+  const camel = pascal[0].toLowerCase() + pascal.slice(1);
+  return CSHARP_RESERVED_KEYWORDS.has(camel) ? `@${camel}` : camel;
+}
+
+/**
+ * Returns `candidate`, or `candidate` followed by the smallest number from 2
+ * upward that is not yet in `taken`, and records the result in `taken`. Names
+ * are compared without a leading `@`, since `@class` and `class` are the same
+ * C# identifier.
+ *
+ * @param candidate - The preferred identifier.
+ * @param taken - Identifiers already in use in the same scope; updated in place.
+ * @returns A unique identifier.
+ */
+export function uniqueIdentifier(
+  candidate: string,
+  taken: Set<string>,
+): string {
+  const bare = (name: string) => name.replace(/^@/, "");
+  let name = candidate;
+  for (let i = 2; taken.has(bare(name)); i++) name = `${candidate}${i}`;
+  taken.add(bare(name));
+  return name;
+}
+
+/**
+ * Returns the C# identifiers of a list of enum member names (or inferred-enum
+ * string values), in the same order. Names that collide after conversion
+ * (`a-b` and `aB`) get a numeric suffix.
+ *
+ * @param names - Raw member names in declaration order.
+ * @returns One unique C# identifier per name.
+ */
+export function enumMemberIdentifiers(names: readonly string[]): string[] {
+  const taken = new Set<string>();
+  return names.map((name) => uniqueIdentifier(csharpIdentifier(name), taken));
+}
+
+/**
+ * Returns the C# identifier of a single member of a TypeSpec enum, consistent
+ * with {@link enumMemberIdentifiers} over the whole enum.
+ *
+ * @param member - The enum member.
+ * @returns The member's C# identifier.
+ */
+export function enumMemberIdentifier(member: EnumMember): string {
+  const members = [...member.enum.members.values()];
+  return enumMemberIdentifiers(members.map((m) => m.name))[
+    members.indexOf(member)
+  ];
+}
+
+/**
+ * Returns the C# property identifier of every class property of a model (see
+ * {@link classProperties}). Every module that declares or references a model
+ * property goes through this, so declarations and references agree.
+ *
+ * - `@serverName` is used verbatim and reserved before any other name.
+ * - Other names go through {@link csharpIdentifier}.
+ * - A name equal to the class name gets a `Value` suffix (CS0542).
+ * - Names that collide after conversion (`user_id` and `userId`) get a numeric suffix.
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param model - The model that owns the class.
+ * @returns Map from each class property to its C# identifier.
+ */
+export function propertyIdentifiers(
+  program: Program,
+  model: Model,
+): Map<ModelProperty, string> {
+  const className = csharpModelName(program, model).replace(/^@/, "");
+  const properties = classProperties(program, model);
+  const taken = new Set<string>();
+  for (const prop of properties) {
+    const serverName = getServerName(program, prop);
+    if (serverName) taken.add(serverName.replace(/^@/, ""));
+  }
+
+  const result = new Map<ModelProperty, string>();
+  for (const prop of properties) {
+    const serverName = getServerName(program, prop);
+    if (serverName) {
+      result.set(prop, serverName);
+      continue;
+    }
+    let candidate = csharpIdentifier(prop.name);
+    if (candidate === className) candidate += CLASS_NAME_COLLISION_SUFFIX;
+    result.set(prop, uniqueIdentifier(candidate, taken));
+  }
+  return result;
+}
+
+/**
+ * Returns the C# property identifier of one class property of `model`,
+ * consistent with {@link propertyIdentifiers}.
+ *
+ * @param program - The compiled TypeSpec program.
+ * @param model - The model that owns the class.
+ * @param prop - A class property of `model`.
+ * @returns The property's C# identifier.
+ */
+export function propertyIdentifier(
+  program: Program,
+  model: Model,
+  prop: ModelProperty,
+): string {
+  return (
+    propertyIdentifiers(program, model).get(prop) ??
+    getServerName(program, prop) ??
+    csharpIdentifier(prop.name)
+  );
 }
 
 /**

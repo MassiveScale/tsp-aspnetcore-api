@@ -207,4 +207,60 @@ describe("csharp emitter - helpers", () => {
       );
     });
   });
+  describe("EnumMemberConverter gating", () => {
+    const CONVERTER = "Helpers/EnumMemberConverter.g.cs";
+
+    it("emits the converter with default options when an enum is emitted", async () => {
+      const results = await emit(`
+        namespace Demo;
+        enum Color { red, green }
+        model Widget { color: Color; }
+      `);
+
+      ok(
+        results["Models/Color.g.cs"].includes(
+          "[JsonConverter(typeof(EnumMemberConverterFactory))]",
+        ),
+        "the enum references the converter",
+      );
+      ok(
+        results[CONVERTER]?.includes("class EnumMemberConverterFactory"),
+        `expected ${CONVERTER}, got ${Object.keys(results).join(", ")}`,
+      );
+    });
+
+    it("emits the converter for an enum inferred from a string-literal union", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Widget { status: "on" | "off"; }
+      `);
+
+      ok(results["Models/WidgetStatus.g.cs"], "expected the inferred enum");
+      ok(
+        results[CONVERTER],
+        `expected ${CONVERTER}, got ${Object.keys(results).join(", ")}`,
+      );
+    });
+
+    it("does not emit the converter when no enum is emitted", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Widget { name: string; }
+      `);
+
+      ok(results[CONVERTER] === undefined, `unexpected ${CONVERTER}`);
+    });
+
+    it("emits the converter without enums when emit-helpers is true", async () => {
+      const results = await emit(
+        `
+        namespace Demo;
+        model Widget { name: string; }
+      `,
+        { "emit-helpers": true },
+      );
+
+      ok(results[CONVERTER], `expected ${CONVERTER}`);
+    });
+  });
 });

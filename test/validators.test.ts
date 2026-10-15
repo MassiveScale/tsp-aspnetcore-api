@@ -5,6 +5,11 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { emit, emitWithDiagnostics } from "./host.js";
 
+/** JSON wire name of a camelCase TypeSpec property, given its C# name. */
+function wireName(csharpName: string): string {
+  return csharpName[0].toLowerCase() + csharpName.slice(1);
+}
+
 function describeDiagnostics(
   diagnostics: readonly { code: string; message: string }[],
 ): string {
@@ -570,7 +575,7 @@ describe("csharp emitter - validators", () => {
         ok(
           appearancePatch.includes("Leaf.{failure.PropertyName}") &&
             appearancePatch.includes("'Leaf' must be an object.") &&
-            appearancePatch.includes('IsNull("Label")') &&
+            appearancePatch.includes('IsNull("label")') &&
             appearancePatch.includes("TryGetValue<Theme?>"),
           `expected second-level object validation in ${style} child patch:\n${appearancePatch}`,
         );
@@ -756,7 +761,7 @@ describe("csharp emitter - validators", () => {
       ok(
         child.includes("Rules added in v2") &&
           child.includes('IsAtLeast("v2"') &&
-          child.includes('GetString("FontSize")'),
+          child.includes('GetString("fontSize")'),
         `expected nested later-version constraint to remain guarded:\n${child}`,
       );
     });
@@ -967,21 +972,21 @@ describe("csharp emitter - validators", () => {
         "Revision",
       ]) {
         assertLines(patch, "WidgetPatchValidator", [
-          `.Must(x => !x.IsNull("${name}"))`,
+          `.Must(x => !x.IsNull("${wireName(name)}"))`,
           `.WithMessage("'${name}' is required and cannot be null.");`,
         ]);
       }
       assertLines(patch, "WidgetPatchValidator", [
         "// Slot cannot be changed after creation",
-        '.Must(x => !x.IsDefined("Slot"))',
+        '.Must(x => !x.IsDefined("slot"))',
         `.WithMessage("'Slot' cannot be changed after creation.");`,
         `.WithMessage("'Id' is read-only and cannot be modified.");`,
       ]);
       for (const absent of [
-        'IsNull("OptCount")',
-        'IsNull("DefCount")',
-        'IsNull("Slot")',
-        'IsNull("Id")',
+        'IsNull("optCount")',
+        'IsNull("defCount")',
+        'IsNull("slot")',
+        'IsNull("id")',
       ]) {
         ok(!patch.includes(absent), `expected no ${absent} rule in:\n${patch}`);
       }
@@ -1060,7 +1065,7 @@ describe("csharp emitter - validators", () => {
         "RuleFor(x => x.Name).NotEmpty();",
       ]);
       assertLines(patch, "WidgetPatchValidator", [
-        '.Must(x => !x.IsNull("Name"))',
+        '.Must(x => !x.IsNull("name"))',
       ]);
       for (const name of ["Note", "Count", "Part", "Mode"]) {
         ok(
@@ -1069,8 +1074,8 @@ describe("csharp emitter - validators", () => {
           `expected no non-null rule for ${name} in:\n${post}`,
         );
         ok(
-          !patch.includes(`IsNull("${name}"))\n`) &&
-            !patch.includes(`.Must(x => !x.IsNull("${name}"))`),
+          !patch.includes(`IsNull("${wireName(name)}"))\n`) &&
+            !patch.includes(`.Must(x => !x.IsNull("${wireName(name)}"))`),
           `expected no reject-null rule for ${name} in:\n${patch}`,
         );
       }
@@ -1121,7 +1126,7 @@ describe("csharp emitter - validators", () => {
           results[`${dir}/WidgetPatchValidator.g.cs`],
           `${dir}/WidgetPatchValidator`,
           [
-            '.Must(x => !x.IsDefined("Slot"))',
+            '.Must(x => !x.IsDefined("slot"))',
             `.WithMessage("'Slot' cannot be changed after creation.");`,
           ],
         );
@@ -1165,13 +1170,13 @@ describe("csharp emitter - validators", () => {
       const patch = results["Validators/WidgetPatchValidator.g.cs"];
       assertLines(patch, "WidgetPatchValidator", [
         "Rules added in v2.0",
-        '.Must(x => !x.IsNull("Count"))',
-        '.Must(x => !x.IsNull("Weight"))',
+        '.Must(x => !x.IsNull("count"))',
+        '.Must(x => !x.IsNull("weight"))',
         `.WithMessage("'Slot' cannot be changed after creation.");`,
       ]);
       for (const [file, label, base, versioned] of [
         [post, "WidgetValidator", "x.Count).NotNull", "x.Weight).NotNull"],
-        [patch, "WidgetPatchValidator", 'IsNull("Count")', 'IsNull("Weight")'],
+        [patch, "WidgetPatchValidator", 'IsNull("count")', 'IsNull("weight")'],
       ] as const) {
         const groupStart = file.indexOf("Rules added in v2.0");
         ok(
@@ -1454,8 +1459,8 @@ describe("csharp emitter - validators", () => {
       );
       ok(
         validator.includes(
-          '.When(x => x.IsDefined("Target") && !x.IsNull("Target"))',
-        ) && validator.includes('x.GetString("Name")'),
+          '.When(x => x.IsDefined("target") && !x.IsNull("target"))',
+        ) && validator.includes('x.GetString("name")'),
         `expected MergePatch bodies to keep the string-keyed rule shape in:\n${validator}`,
       );
       ok(
@@ -1579,7 +1584,7 @@ describe("csharp emitter - validators", () => {
           "public partial class AddressMergePatchValidator : AbstractValidator<MergePatch<Address>>",
         ) &&
           merge.includes("public AddressMergePatchValidator(") &&
-          merge.includes('GetString("Street")'),
+          merge.includes('GetString("street")'),
         `expected a separate MergePatch validator:\n${merge}`,
       );
       const registrations = results["Validators/ValidatorsInitializer.g.cs"];
@@ -1779,6 +1784,83 @@ describe("csharp emitter - validators", () => {
         nested > groupStart &&
           lines[nested].startsWith("            this.RuleFor"),
         `expected the nested rule at the 12-space group indent:\n${validator}`,
+      );
+    });
+  });
+  describe("wire names and escaping", () => {
+    const OPTIONS = {
+      "emit-validators": true,
+      "emit-controllers": false,
+      "emit-services": false,
+      "emit-interfaces": false,
+    };
+
+    it("looks MergePatch properties up by their wire name, not the C# name", async () => {
+      const results = await emit(
+        `
+        import "@massivescale/tsp-aspnetcore-api";
+        import "@typespec/http";
+        using MassiveScale.AspNetCoreApi;
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+        model Widget {
+          @serverName("DisplayName") @maxLength(10) name: string;
+          @encodedName("application/json", "color_code") @maxLength(5) colorCode?: string;
+        }
+
+        @route("/widgets")
+        interface Widgets {
+          @patch update(@body body: MergePatchUpdate<Widget>): Widget;
+        }
+        `,
+        OPTIONS,
+      );
+
+      const patch = results["Validators/WidgetPatchValidator.g.cs"];
+      ok(
+        patch,
+        `expected a patch validator, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(
+        patch.includes('IsDefined("name")') &&
+          patch.includes('IsDefined("color_code")'),
+        `expected wire-name lookups in:\n${patch}`,
+      );
+      ok(
+        !patch.includes('IsDefined("DisplayName")') &&
+          !patch.includes('IsDefined("ColorCode")'),
+        `expected no C#-name lookups in:\n${patch}`,
+      );
+    });
+
+    it("writes @pattern verbatim, with quotes doubled for the verbatim string", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+        model Widget { @pattern("^[a-z]+=\\"<x>\\"&$") code: string; }
+
+        @route("/widgets")
+        interface Widgets {
+          @post create(@body body: Widget): Widget;
+        }
+        `,
+        OPTIONS,
+      );
+
+      const post = results["Validators/WidgetValidator.g.cs"];
+      ok(
+        post.includes('Matches(@"^[a-z]+=""<x>""&$")'),
+        `expected the raw pattern in:\n${post}`,
+      );
+      ok(
+        !/&#x3D;|&quot;|&lt;|&amp;/.test(post),
+        `expected no HTML entities in:\n${post}`,
       );
     });
   });

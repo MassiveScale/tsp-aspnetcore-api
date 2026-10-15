@@ -37,7 +37,7 @@ The emitter reads TypeSpec constraint decorators and translates them to FluentVa
 | Required non-optional property of any other type (number, `boolean`, date, enum, model, array) | `NotNull()` (POST)                               |
 | `@minLength(n)`                                                                                | `MinimumLength(n)`                               |
 | `@maxLength(n)`                                                                                | `MaximumLength(n)`                               |
-| `@pattern("...")`                                                                              | `Matches(@"...")`                                |
+| `@pattern("...")`                                                                              | `Matches(@"...")`, quotes doubled (`""`)         |
 | `@format("email")`                                                                             | `EmailAddress()`                                 |
 | `@minValue(n)`                                                                                 | `GreaterThanOrEqualTo(n)`                        |
 | `@maxValue(n)`                                                                                 | `LessThanOrEqualTo(n)`                           |
@@ -72,12 +72,12 @@ Rejection rules are emitted for every API version, including versions where the 
 
 PATCH validators emit one of two rule shapes, chosen by the body type of the `@patch` operation.
 
-**`MergePatchUpdate<T>` body.** The body is a `MergePatch<T>` container that captures raw JSON, so rules are keyed by property name and can tell "field absent" apart from "field explicitly null":
+**`MergePatchUpdate<T>` body.** The body is a `MergePatch<T>` container that captures raw JSON, so rules are keyed by the property's JSON wire name (its TypeSpec name, or `@encodedName`) and can tell "field absent" apart from "field explicitly null". A `@serverName` changes only the C# name in `WithName`, never the lookup:
 
 ```csharp
 this.RuleFor(x => x)
-    .Must(x => decimal.TryParse(x.GetString("Target"), /* ... */, out decimal n) && n >= 0m)
-    .When(x => x.IsDefined("Target") && !x.IsNull("Target"))
+    .Must(x => decimal.TryParse(x.GetString("target"), /* ... */, out decimal n) && n >= 0m)
+    .When(x => x.IsDefined("target") && !x.IsNull("target"))
     .WithName("Target");
 ```
 

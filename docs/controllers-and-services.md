@@ -11,7 +11,22 @@ For each HTTP `interface` (or `namespace`) that carries routes, the emitter writ
 
 **Routes** — one `[Http<Verb>("...")]` attribute is emitted per available API version of each operation. Without versioning a single attribute is emitted using the resolved operation path.
 
-**Parameter binding** — path parameters get `[FromRoute]`, query parameters get `[FromQuery]`, headers get `[FromHeader]`, and request bodies get `[FromBody]`. When [`@serverName`](./decorators.md) renames a parameter's emitted C# identifier, the binding attribute gets an explicit `Name = "..."` pointing at the original wire name (e.g. `[FromQuery(Name = "custId")] string customerId`), so the HTTP contract is unaffected by the rename.
+**Parameter binding** — path parameters get `[FromRoute]`, query parameters get `[FromQuery]`, headers get `[FromHeader]`, and request bodies get `[FromBody]`. When a parameter's C# identifier differs from its wire name, the binding attribute gets an explicit `Name = "..."` pointing at the wire name (e.g. `[FromQuery(Name = "custId")] string customerId`), so the HTTP contract is unaffected.
+
+**Parameter names** — the C# identifier is the [`@serverName`](./decorators.md) when one is set. Otherwise it is the camelCased wire name, made valid and unique within the action:
+
+| Wire parameter                   | C# parameter                                                        |
+| -------------------------------- | ------------------------------------------------------------------- |
+| `class` (a C# keyword)           | `[FromRoute] string @class`                                         |
+| `x-request-id` header            | `[FromHeader(Name = "x-request-id")] string xRequestId`             |
+| `2fa`                            | `[FromQuery(Name = "2fa")] string _2fa`                             |
+| `user_id` and `userId` together  | `userId` and `userId2`                                              |
+| `body` query with a request body | `[FromQuery(Name = "body")] string body2`                           |
+| `cancellationToken` query        | `[FromQuery(Name = "cancellationToken")] string cancellationToken2` |
+
+`body` and `cancellationToken` are reserved for the request body and the trailing `CancellationToken`.
+
+**HTTP library warnings** — controllers and services are skipped only when `@typespec/http` reports an **error**. Warnings such as `merge-patch-content-type` or `response-cookie-not-supported` are reported as usual and every controller is still generated.
 
 ## Return types and response models
 

@@ -34,8 +34,8 @@ public partial class CatPatchValidator : AbstractValidator<MergePatch<Cat>>
 
         // IsPurrer is required and cannot be removed
         this.RuleFor(x => x)
-            .Must(x => !x.IsNull("IsPurrer"))
-            .When(x => x.IsDefined("IsPurrer"))
+            .Must(x => !x.IsNull("isPurrer"))
+            .When(x => x.IsDefined("isPurrer"))
             .WithName("IsPurrer")
             .WithMessage("'IsPurrer' is required and cannot be null.");
 
