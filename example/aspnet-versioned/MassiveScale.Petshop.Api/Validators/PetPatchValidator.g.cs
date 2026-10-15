@@ -62,8 +62,8 @@ public partial class PetPatchValidator : AbstractValidator<MergePatch<Pet>>
 
         // PhotoUrls cannot contain more than 5 items when provided
         this.RuleFor(x => x)
-            .Must(x => x.Properties.TryGetValue("PhotoUrls", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() <= 5)
-            .When(x => x.IsDefined("PhotoUrls") && !x.IsNull("PhotoUrls"))
+            .Must(x => x.Properties.TryGetValue("photoUrls", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() <= 5)
+            .When(x => x.IsDefined("photoUrls") && !x.IsNull("photoUrls"))
             .WithName("PhotoUrls")
             .WithMessage("'PhotoUrls' must be an array with no more than 5 items.");
 
@@ -72,8 +72,8 @@ public partial class PetPatchValidator : AbstractValidator<MergePatch<Pet>>
         {
             // Tags cannot contain more than 10 items when provided
             this.RuleFor(x => x)
-                .Must(x => x.Properties.TryGetValue("Tags", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() <= 10)
-                .When(x => x.IsDefined("Tags") && !x.IsNull("Tags"))
+                .Must(x => x.Properties.TryGetValue("tags", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() <= 10)
+                .When(x => x.IsDefined("tags") && !x.IsNull("tags"))
                 .WithName("Tags")
                 .WithMessage("'Tags' must be an array with no more than 10 items.");
 

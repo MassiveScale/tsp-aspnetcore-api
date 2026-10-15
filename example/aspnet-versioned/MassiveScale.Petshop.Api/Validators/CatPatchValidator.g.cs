@@ -37,33 +37,33 @@ public partial class CatPatchValidator : AbstractValidator<MergePatch<Cat>>
 
         // Id is read-only and cannot be modified via patch
         this.RuleFor(x => x)
-            .Must(x => !x.IsDefined("Id"))
+            .Must(x => !x.IsDefined("id"))
             .WithName("Id")
             .WithMessage("'Id' is read-only and cannot be modified.");
 
         // CreatedDateTime is read-only and cannot be modified via patch
         this.RuleFor(x => x)
-            .Must(x => !x.IsDefined("CreatedDateTime"))
+            .Must(x => !x.IsDefined("createdDateTime"))
             .WithName("CreatedDateTime")
             .WithMessage("'CreatedDateTime' is read-only and cannot be modified.");
 
         // LastModifiedDateTime is read-only and cannot be modified via patch
         this.RuleFor(x => x)
-            .Must(x => !x.IsDefined("LastModifiedDateTime"))
+            .Must(x => !x.IsDefined("lastModifiedDateTime"))
             .WithName("LastModifiedDateTime")
             .WithMessage("'LastModifiedDateTime' is read-only and cannot be modified.");
 
         // PhotoUrls is required and cannot be removed
         this.RuleFor(x => x)
-            .Must(x => !x.IsNull("PhotoUrls"))
-            .When(x => x.IsDefined("PhotoUrls"))
+            .Must(x => !x.IsNull("photoUrls"))
+            .When(x => x.IsDefined("photoUrls"))
             .WithName("PhotoUrls")
             .WithMessage("'PhotoUrls' is required and cannot be null.");
 
         // PhotoUrls cannot contain more than 5 items when provided
         this.RuleFor(x => x)
-            .Must(x => x.Properties.TryGetValue("PhotoUrls", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() <= 5)
-            .When(x => x.IsDefined("PhotoUrls") && !x.IsNull("PhotoUrls"))
+            .Must(x => x.Properties.TryGetValue("photoUrls", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() <= 5)
+            .When(x => x.IsDefined("photoUrls") && !x.IsNull("photoUrls"))
             .WithName("PhotoUrls")
             .WithMessage("'PhotoUrls' must be an array with no more than 5 items.");
 
@@ -79,15 +79,15 @@ public partial class CatPatchValidator : AbstractValidator<MergePatch<Cat>>
         {
             // Tags cannot contain more than 10 items when provided
             this.RuleFor(x => x)
-                .Must(x => x.Properties.TryGetValue("Tags", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() <= 10)
-                .When(x => x.IsDefined("Tags") && !x.IsNull("Tags"))
+                .Must(x => x.Properties.TryGetValue("tags", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() <= 10)
+                .When(x => x.IsDefined("tags") && !x.IsNull("tags"))
                 .WithName("Tags")
                 .WithMessage("'Tags' must be an array with no more than 10 items.");
 
             // Tags replaces the whole array, so each item is validated as a complete model
             this.RuleFor(x => x).Custom((patch, context) =>
             {
-                if (!patch.Properties.TryGetValue("Tags", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+                if (!patch.Properties.TryGetValue("tags", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
                 if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
                 {
                     context.AddFailure("Tags", "'Tags' must be an array.");

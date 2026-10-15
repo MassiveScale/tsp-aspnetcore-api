@@ -36,82 +36,82 @@ public partial class CustomerPatchValidator : AbstractValidator<MergePatch<Custo
 
         // Id is read-only and cannot be modified via patch
         this.RuleFor(x => x)
-            .Must(x => !x.IsDefined("Id"))
+            .Must(x => !x.IsDefined("id"))
             .WithName("Id")
             .WithMessage("'Id' is read-only and cannot be modified.");
 
         // CreatedDateTime is read-only and cannot be modified via patch
         this.RuleFor(x => x)
-            .Must(x => !x.IsDefined("CreatedDateTime"))
+            .Must(x => !x.IsDefined("createdDateTime"))
             .WithName("CreatedDateTime")
             .WithMessage("'CreatedDateTime' is read-only and cannot be modified.");
 
         // LastModifiedDateTime is read-only and cannot be modified via patch
         this.RuleFor(x => x)
-            .Must(x => !x.IsDefined("LastModifiedDateTime"))
+            .Must(x => !x.IsDefined("lastModifiedDateTime"))
             .WithName("LastModifiedDateTime")
             .WithMessage("'LastModifiedDateTime' is read-only and cannot be modified.");
 
         // FirstName is required and cannot be removed
         this.RuleFor(x => x)
-            .Must(x => !x.IsNull("FirstName"))
-            .When(x => x.IsDefined("FirstName"))
+            .Must(x => !x.IsNull("firstName"))
+            .When(x => x.IsDefined("firstName"))
             .WithName("FirstName")
             .WithMessage("'FirstName' is required and cannot be null.");
 
         // FirstName must not be empty when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("FirstName")?.Length ?? 0) > 0)
-            .When(x => x.IsDefined("FirstName") && !x.IsNull("FirstName"))
+            .Must(x => (x.GetString("firstName")?.Length ?? 0) > 0)
+            .When(x => x.IsDefined("firstName") && !x.IsNull("firstName"))
             .WithName("FirstName")
             .WithMessage("'FirstName' must not be empty.");
 
         // FirstName cannot exceed a MaxLength of 100 when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("FirstName")?.Length ?? 0) <= 100)
-            .When(x => x.IsDefined("FirstName") && !x.IsNull("FirstName"))
+            .Must(x => (x.GetString("firstName")?.Length ?? 0) <= 100)
+            .When(x => x.IsDefined("firstName") && !x.IsNull("firstName"))
             .WithName("FirstName")
             .WithMessage("'FirstName' must be 100 characters or fewer.");
 
         // LastName is required and cannot be removed
         this.RuleFor(x => x)
-            .Must(x => !x.IsNull("LastName"))
-            .When(x => x.IsDefined("LastName"))
+            .Must(x => !x.IsNull("lastName"))
+            .When(x => x.IsDefined("lastName"))
             .WithName("LastName")
             .WithMessage("'LastName' is required and cannot be null.");
 
         // LastName must not be empty when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("LastName")?.Length ?? 0) > 0)
-            .When(x => x.IsDefined("LastName") && !x.IsNull("LastName"))
+            .Must(x => (x.GetString("lastName")?.Length ?? 0) > 0)
+            .When(x => x.IsDefined("lastName") && !x.IsNull("lastName"))
             .WithName("LastName")
             .WithMessage("'LastName' must not be empty.");
 
         // LastName cannot exceed a MaxLength of 100 when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("LastName")?.Length ?? 0) <= 100)
-            .When(x => x.IsDefined("LastName") && !x.IsNull("LastName"))
+            .Must(x => (x.GetString("lastName")?.Length ?? 0) <= 100)
+            .When(x => x.IsDefined("lastName") && !x.IsNull("lastName"))
             .WithName("LastName")
             .WithMessage("'LastName' must be 100 characters or fewer.");
 
         // Email cannot exceed a MaxLength of 255 when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("Email")?.Length ?? 0) <= 255)
-            .When(x => x.IsDefined("Email") && !x.IsNull("Email"))
+            .Must(x => (x.GetString("email")?.Length ?? 0) <= 255)
+            .When(x => x.IsDefined("email") && !x.IsNull("email"))
             .WithName("Email")
             .WithMessage("'Email' must be 255 characters or fewer.");
 
         // Email must be a valid email address when provided
         this.RuleFor(x => x)
-            .Must(x => System.Net.Mail.MailAddress.TryCreate(x.GetString("Email") ?? string.Empty, out _))
-            .When(x => x.IsDefined("Email") && !x.IsNull("Email"))
+            .Must(x => System.Net.Mail.MailAddress.TryCreate(x.GetString("email") ?? string.Empty, out _))
+            .When(x => x.IsDefined("email") && !x.IsNull("email"))
             .WithName("Email")
             .WithMessage("'Email' is not a valid email address.");
 
         // PhoneNumber cannot exceed a MaxLength of 20 when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("PhoneNumber")?.Length ?? 0) <= 20)
-            .When(x => x.IsDefined("PhoneNumber") && !x.IsNull("PhoneNumber"))
+            .Must(x => (x.GetString("phoneNumber")?.Length ?? 0) <= 20)
+            .When(x => x.IsDefined("phoneNumber") && !x.IsNull("phoneNumber"))
             .WithName("PhoneNumber")
             .WithMessage("'PhoneNumber' must be 20 characters or fewer.");
 
