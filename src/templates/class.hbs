@@ -28,7 +28,8 @@
     .doc              —   pre-rendered XML <summary> block (may be falsy)
     .type             —   C# type string, e.g. "string?", "IList<Guid>?", "int"
     .name             —   PascalCase property name, e.g. "FirstName"
-    .jsonName         —   camelCase JSON key for [JsonPropertyName], e.g. "firstName"
+    .jsonName         —   JSON wire name (TypeSpec name or @encodedName), unescaped;
+                          write it with {{csharpString jsonName}}
     .nullable         —   true when the type is nullable (ends with "?");
                           controls whether [JsonIgnore] is emitted
     .attributes       —   extra serialization attributes (complete "[...]"
@@ -77,6 +78,8 @@
                              4 spaces; safe to call on multi-line doc strings
   {{#if (isDefined val)}}  — true when val is not undefined (use for numeric
                              values that may legitimately be 0)
+  {{csharpString val}}     — writes val as a quoted, escaped C# string literal;
+                             use it for every wire value placed in an attribute
 
   ── Handlebars #each data ────────────────────────────────────────────────────
 
@@ -105,22 +108,22 @@
       public {{type}} {{name}} { get; init; }
 
   • Omit [JsonIgnore] and rely on global JsonSerializerOptions instead:
-      [JsonPropertyName("{{jsonName}}")]
+      [JsonPropertyName({{csharpString jsonName}})]
       public {{type}} {{name}} { get; set; }
 
   • Add [JsonRequired] for non-nullable required properties:
       {{#unless nullable}}[JsonRequired]
-      {{/unless}}[JsonPropertyName("{{jsonName}}")]
+      {{/unless}}[JsonPropertyName({{csharpString jsonName}})]
       public {{type}} {{name}} { get; set; }
 --}}
 {{#if doc}}{{doc}}
-{{/if}}{{#if discriminator}}[JsonPolymorphic(TypeDiscriminatorPropertyName = "{{discriminator.propertyName}}")]
-{{#each discriminator.derivedTypes}}[JsonDerivedType(typeof({{className}}), "{{discriminatorValue}}")]
+{{/if}}{{#if discriminator}}[JsonPolymorphic(TypeDiscriminatorPropertyName = {{csharpString discriminator.propertyName}})]
+{{#each discriminator.derivedTypes}}[JsonDerivedType(typeof({{className}}), {{csharpString discriminatorValue}})]
 {{/each}}{{/if}}[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public {{#if isAbstract}}abstract {{/if}}partial class {{className}}{{#if bases}} : {{bases}}{{/if}}
 {
 {{#each properties}}{{#if doc}}{{indent doc}}
-{{/if}}    [JsonPropertyName("{{jsonName}}")]
+{{/if}}    [JsonPropertyName({{csharpString jsonName}})]
 {{#each attributes}}    {{this}}
 {{/each}}{{#if nullable}}    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 {{/if}}    public {{type}} {{name}} { get; set; }{{#if initializer}} = {{initializer}};{{/if}}

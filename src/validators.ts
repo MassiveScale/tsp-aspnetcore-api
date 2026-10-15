@@ -18,7 +18,6 @@ import {
   type Scalar,
   Type,
   type Union,
-  emitFile,
   getDiscriminatedUnionFromInheritance,
   getDiscriminator,
   getFormat,
@@ -33,6 +32,7 @@ import {
   isVisible,
   navigateProgram,
   NoTarget,
+  resolveEncodedName,
   resolvePath,
 } from "@typespec/compiler";
 import { getAllHttpServices, type HttpOperationBody } from "@typespec/http";
@@ -50,12 +50,26 @@ import Handlebars from "handlebars";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getServerName } from "./decorators.js";
 import { computeModelTypeName, ResolvedOptions } from "./emitter.js";
 import { reportDiagnostic } from "./lib.js";
-import { csharpModelName, qualifyTypeName } from "./naming.js";
+import {
+  csharpModelName,
+  propertyIdentifier,
+  qualifyTypeName,
+} from "./naming.js";
+import { emitFile } from "./output.js";
+import {
+  TemplateLoadError,
+  TemplateName,
+  TemplateOverrides,
+  compileTemplate,
+} from "./renderer.js";
 import { classProperties } from "./payloads.js";
-import { pascalCase } from "./utils.js";
+import {
+  csharpStringContent,
+  csharpVerbatimStringContent,
+  pascalCase,
+} from "./utils.js";
 
 /** Absolute path to the bundled templates directory (shared with renderer). */
 const TEMPLATES_DIR = resolve(
@@ -79,57 +93,104 @@ const MERGE_PATCH_NESTED_PARTIAL = "mergePatchNestedRules";
 /**
  * Compiles a validator template, first registering the partials that the
  * built-in templates share so custom templates can include them too.
+ *
+ * Templates are compiled with HTML escaping disabled (generated C# must never
+ * contain `&#x3D;` and similar entities) and eagerly, so a syntax error in a
+ * custom template is caught by {@link preloadValidatorTemplates} before any
+ * output is cleaned or written.
+ *
+ * @param name - Template key, used to report which template failed.
+ * @param path - Absolute path of the template file.
+ * @throws {TemplateLoadError} If the template cannot be read or compiled.
  */
-function loadValidatorTemplate(path: string): Handlebars.TemplateDelegate {
-  if (!Handlebars.partials[MERGE_PATCH_NESTED_PARTIAL]) {
-    Handlebars.registerPartial(
-      MERGE_PATCH_NESTED_PARTIAL,
-      readFileSync(
-        resolve(TEMPLATES_DIR, "validator-merge-patch-nested.hbs"),
-        "utf-8",
-      ),
+function loadValidatorTemplate(
+  name: TemplateName,
+  path: string,
+): Handlebars.TemplateDelegate {
+  try {
+    if (!Handlebars.partials[MERGE_PATCH_NESTED_PARTIAL]) {
+      Handlebars.registerPartial(
+        MERGE_PATCH_NESTED_PARTIAL,
+        readFileSync(
+          resolve(TEMPLATES_DIR, "validator-merge-patch-nested.hbs"),
+          "utf-8",
+        ),
+      );
+    }
+    return compileTemplate(Handlebars, readFileSync(path, "utf-8"));
+  } catch (err) {
+    throw new TemplateLoadError(
+      name,
+      path,
+      err instanceof Error ? err.message : String(err),
     );
   }
-  return Handlebars.compile(readFileSync(path, "utf-8"));
+}
+
+/**
+ * Loads and compiles every validator template (built-in or overridden) so a
+ * missing or malformed custom template fails the emit before the output
+ * directories are cleaned.
+ *
+ * @param overrides - Template override paths from the resolved options.
+ * @throws {TemplateLoadError} If any validator template fails to load.
+ */
+export function preloadValidatorTemplates(overrides: TemplateOverrides): void {
+  getValidatorPostTemplate(overrides["validator-post"]);
+  getValidatorPatchTemplate(overrides["validator-patch"]);
+  getValidatorPostVersionAwareTemplate(
+    overrides["validator-post-version-aware"],
+  );
+  getValidatorPatchVersionAwareTemplate(
+    overrides["validator-patch-version-aware"],
+  );
+  getValidatorInitializerTemplate(overrides["validator-initializer"]);
 }
 
 function getValidatorPostTemplate(
   override?: string,
 ): Handlebars.TemplateDelegate {
-  if (override) return loadValidatorTemplate(override);
+  if (override) return loadValidatorTemplate("validator-post", override);
   return (_compiledValidatorPostTemplate ??= loadValidatorTemplate(
+    "validator-post",
     resolve(TEMPLATES_DIR, "validator-post.hbs"),
   ));
 }
 function getValidatorPatchTemplate(
   override?: string,
 ): Handlebars.TemplateDelegate {
-  if (override) return loadValidatorTemplate(override);
+  if (override) return loadValidatorTemplate("validator-patch", override);
   return (_compiledValidatorPatchTemplate ??= loadValidatorTemplate(
+    "validator-patch",
     resolve(TEMPLATES_DIR, "validator-patch.hbs"),
   ));
 }
 function getValidatorPostVersionAwareTemplate(
   override?: string,
 ): Handlebars.TemplateDelegate {
-  if (override) return loadValidatorTemplate(override);
+  if (override)
+    return loadValidatorTemplate("validator-post-version-aware", override);
   return (_compiledValidatorPostVersionAwareTemplate ??= loadValidatorTemplate(
+    "validator-post-version-aware",
     resolve(TEMPLATES_DIR, "validator-post-version-aware.hbs"),
   ));
 }
 function getValidatorPatchVersionAwareTemplate(
   override?: string,
 ): Handlebars.TemplateDelegate {
-  if (override) return loadValidatorTemplate(override);
+  if (override)
+    return loadValidatorTemplate("validator-patch-version-aware", override);
   return (_compiledValidatorPatchVersionAwareTemplate ??= loadValidatorTemplate(
+    "validator-patch-version-aware",
     resolve(TEMPLATES_DIR, "validator-patch-version-aware.hbs"),
   ));
 }
 function getValidatorInitializerTemplate(
   override?: string,
 ): Handlebars.TemplateDelegate {
-  if (override) return loadValidatorTemplate(override);
+  if (override) return loadValidatorTemplate("validator-initializer", override);
   return (_compiledValidatorInitializerTemplate ??= loadValidatorTemplate(
+    "validator-initializer",
     resolve(TEMPLATES_DIR, "validator-initializer.hbs"),
   ));
 }
@@ -145,7 +206,14 @@ interface NumericRule {
 
 /** Structured rule data for a single model property. */
 interface PropertyData {
+  /** C# property identifier, e.g. `UserId`. */
   name: string;
+  /**
+   * JSON wire name (TypeSpec name or `@encodedName`), escaped for use inside a
+   * C# regular string literal. MergePatch validators look properties up by this
+   * name (`IsDefined("{{{jsonName}}}")`).
+   */
+  jsonName: string;
   hasRules: boolean;
   notEmpty: boolean;
   /**
@@ -178,6 +246,7 @@ interface PropertyData {
   nullable: boolean;
   minLength?: number;
   maxLength?: number;
+  /** `@pattern` regex, escaped for a C# verbatim string (`@"{{{pattern}}}"`). */
   pattern?: string;
   emailAddress: boolean;
   isInEnum: boolean;
@@ -475,6 +544,7 @@ function getNonNullType(type: Type): Type | undefined {
  */
 function buildSinglePropertyData(
   program: Program,
+  model: Model,
   prop: ModelProperty,
   options: ResolvedOptions,
   isReadOnly = false,
@@ -568,7 +638,10 @@ function buildSinglePropertyData(
     referencedModelName !== undefined;
 
   return {
-    name: getServerName(program, prop) ?? pascalCase(prop.name),
+    name: propertyIdentifier(program, model, prop),
+    jsonName: csharpStringContent(
+      resolveEncodedName(program, prop, "application/json"),
+    ),
     hasRules,
     notEmpty,
     notNull,
@@ -578,7 +651,8 @@ function buildSinglePropertyData(
     nullable,
     minLength,
     maxLength,
-    pattern,
+    pattern:
+      pattern === undefined ? undefined : csharpVerbatimStringContent(pattern),
     emailAddress,
     isInEnum: isReadOnly ? false : isInEnum,
     enumTypeName: isReadOnly ? undefined : enumTypeName,
@@ -631,7 +705,7 @@ function buildValidatorProperties(
 
     if (!isWritable) {
       // Include read-only property so the validator can reject it.
-      result.push(buildSinglePropertyData(program, prop, options, true));
+      result.push(buildSinglePropertyData(program, model, prop, options, true));
       continue;
     }
     if (
@@ -640,11 +714,13 @@ function buildValidatorProperties(
     ) {
       // Writable in the other lifecycle phase only (e.g. create-only in a
       // PATCH): reject it rather than silently accepting it.
-      result.push(buildSinglePropertyData(program, prop, options, true, true));
+      result.push(
+        buildSinglePropertyData(program, model, prop, options, true, true),
+      );
       continue;
     }
     if (versionFilter && !versionFilter(prop)) continue;
-    result.push(buildSinglePropertyData(program, prop, options, false));
+    result.push(buildSinglePropertyData(program, model, prop, options, false));
   }
   return result;
 }
@@ -679,7 +755,7 @@ function buildVersionAwareValidatorProperties(
 
     if (!isWritable) {
       baseProperties.push(
-        buildSinglePropertyData(program, prop, options, true),
+        buildSinglePropertyData(program, model, prop, options, true),
       );
       continue;
     }
@@ -688,11 +764,17 @@ function buildVersionAwareValidatorProperties(
       !isVisible(program, prop, { any: new Set([visibilityMember]) })
     ) {
       baseProperties.push(
-        buildSinglePropertyData(program, prop, options, true, true),
+        buildSinglePropertyData(program, model, prop, options, true, true),
       );
       continue;
     }
-    const propData = buildSinglePropertyData(program, prop, options, false);
+    const propData = buildSinglePropertyData(
+      program,
+      model,
+      prop,
+      options,
+      false,
+    );
     const availMap = getAvailabilityMap(program, prop);
     if (availMap === undefined) {
       baseProperties.push(propData);

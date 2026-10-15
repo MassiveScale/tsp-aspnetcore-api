@@ -18,7 +18,6 @@ import {
   Program,
   type Type,
   Value,
-  emitFile,
   getDiscriminatedUnionFromInheritance,
   getDiscriminator,
   getDoc,
@@ -29,14 +28,22 @@ import {
   isStdNamespace,
   isTemplateDeclaration,
   isTemplateInstance,
+  resolveEncodedName,
   resolvePath,
 } from "@typespec/compiler";
+import { emitFile } from "./output.js";
 import {
   getMergePatchSource,
   isMergePatch,
 } from "@typespec/http/experimental/merge-patch";
-import { getServerName } from "./decorators.js";
-import { csharpModelName, qualifyTypeName } from "./naming.js";
+import {
+  csharpIdentifier,
+  csharpModelName,
+  enumMemberIdentifier,
+  enumMemberIdentifiers,
+  propertyIdentifiers,
+  qualifyTypeName,
+} from "./naming.js";
 import { classProperties, emittedBaseModel } from "./payloads.js";
 import {
   ResolvedOptions,
@@ -53,7 +60,12 @@ import {
   Renderer,
   renderDocComment,
 } from "./renderer.js";
-import { SCALAR_MAP, FORMAT_MAP, pascalCase, camelCase } from "./utils.js";
+import {
+  SCALAR_MAP,
+  FORMAT_MAP,
+  csharpStringLiteral,
+  pascalCase,
+} from "./utils.js";
 
 /** `using` directives included in every model / interface / enum file. */
 export const SYSTEM_USINGS = [
@@ -92,6 +104,9 @@ interface InferredEnum {
  * @param enums - Enums collected by the emitter (already filtered).
  * @param renderer - Pre-compiled renderer instance.
  * @param options - Resolved emitter options.
+ * @returns `emittedEnums` is `true` when at least one enum file (explicit or
+ *   inferred) was written; every generated enum references the
+ *   `EnumMemberConverterFactory` helper.
  */
 export async function emitModelsAndEnums(
   program: Program,
@@ -99,7 +114,7 @@ export async function emitModelsAndEnums(
   enums: Enum[],
   renderer: Renderer,
   options: ResolvedOptions,
-): Promise<void> {
+): Promise<{ emittedEnums: boolean }> {
   const inferredEnums = collectInferredEnums(program, models, enums, options);
   const emittedModels: ReadonlySet<Model> = new Set(models);
 
@@ -198,6 +213,8 @@ export async function emitModelsAndEnums(
       }),
     });
   }
+
+  return { emittedEnums: enums.length > 0 || inferredEnums.length > 0 };
 }
 
 /**
@@ -446,8 +463,13 @@ function buildDiscriminatorView(
     }))
     .sort((a, b) => a.discriminatorValue.localeCompare(b.discriminatorValue));
 
+  const discriminatorProperty = model.properties.get(
+    discriminator.propertyName,
+  );
   return {
-    propertyName: camelCase(discriminator.propertyName),
+    propertyName: discriminatorProperty
+      ? resolveEncodedName(program, discriminatorProperty, "application/json")
+      : discriminator.propertyName,
     derivedTypes,
   };
 }
@@ -491,14 +513,16 @@ function buildInterfaceView(
  */
 function buildEnumView(program: Program, en: Enum): EnumView {
   const enumDoc = getDoc(program, en);
+  const members = [...en.members.values()];
+  const memberNames = enumMemberIdentifiers(members.map((m) => m.name));
   return {
     doc: enumDoc ? renderDocComment(enumDoc) : undefined,
     enumName: pascalCase(en.name),
-    members: [...en.members.values()].map((member) => {
+    members: members.map((member, index) => {
       const memberDoc = getDoc(program, member);
       return {
         doc: memberDoc ? renderDocComment(memberDoc) : undefined,
-        name: pascalCase(member.name),
+        name: memberNames[index],
         value: typeof member.value === "number" ? member.value : undefined,
         memberValue:
           typeof member.value === "string" ? member.value : member.name,
@@ -547,7 +571,7 @@ function defaultValueInitializer(
         containingMemberName === enumName
           ? `${options.modelsNamespace}.${enumName}`
           : qualifyTypeName(options.modelsNamespace, enumName, options);
-      return `${enumTypeName}.${pascalCase(member.name)}`;
+      return `${enumTypeName}.${enumMemberIdentifier(member)}`;
     }
     case "StringValue":
       return csharpStringLiteral(value.value);
@@ -571,52 +595,6 @@ function defaultValueInitializer(
     default:
       return undefined;
   }
-}
-
-/** Short C# escape sequences for characters that cannot appear raw in a string literal. */
-const CSHARP_STRING_ESCAPES: Record<string, string> = {
-  "\\": "\\\\",
-  '"': '\\"',
-  "\0": "\\0",
-  "\x07": "\\a",
-  "\b": "\\b",
-  "\f": "\\f",
-  "\n": "\\n",
-  "\r": "\\r",
-  "\t": "\\t",
-  "\v": "\\v",
-};
-
-/** Code points C# treats as line breaks besides `\r` / `\n`: NEL, LS and PS. */
-const CSHARP_EXTRA_LINE_BREAKS = new Set([0x85, 0x2028, 0x2029]);
-
-/**
- * Converts a string to a C# regular string literal, escaping backslashes,
- * quotes, and every control or line-terminator character. A raw newline (or
- * U+0085 / U+2028 / U+2029, which C# also treats as line breaks) inside a
- * regular string literal is a compile error.
- *
- * @param value - The string to encode.
- * @returns A quoted C# string literal, e.g. `"line1\nline2"`.
- */
-function csharpStringLiteral(value: string): string {
-  let escaped = "";
-  for (const char of value) {
-    const code = char.charCodeAt(0);
-    const short = CSHARP_STRING_ESCAPES[char];
-    if (short) {
-      escaped += short;
-    } else if (
-      code < 0x20 ||
-      code === 0x7f ||
-      CSHARP_EXTRA_LINE_BREAKS.has(code)
-    ) {
-      escaped += `\\u${code.toString(16).padStart(4, "0")}`;
-    } else {
-      escaped += char;
-    }
-  }
-  return `"${escaped}"`;
 }
 
 /**
@@ -701,6 +679,7 @@ function objectInitializer(
 
   const modelType = typeReference(model, options, program);
   const properties = classProperties(program, model);
+  const memberNames = propertyIdentifiers(program, model);
   const assignments: string[] = [];
 
   for (const descriptor of value.properties.values()) {
@@ -709,6 +688,7 @@ function objectInitializer(
     );
     if (!prop) return undefined;
 
+    const memberName = memberNames.get(prop)!;
     const encoding = resolvePropertyEncoding(program, prop, options);
     const targetType = propertyTypeName(
       program,
@@ -732,11 +712,10 @@ function objectInitializer(
       qualifiedInferredEnumType,
       options,
       program,
-      getServerName(program, prop) ?? pascalCase(prop.name),
+      memberName,
     );
     if (initializer === undefined) return undefined;
 
-    const memberName = getServerName(program, prop) ?? pascalCase(prop.name);
     assignments.push(`${memberName} = ${initializer}`);
   }
 
@@ -779,6 +758,7 @@ function buildPropertyViews(
     program,
     model,
   );
+  const names = propertyIdentifiers(program, model);
   return classProperties(program, model)
     .filter((prop) => prop.name !== discriminatorPropertyName)
     .map((prop) => {
@@ -798,11 +778,12 @@ function buildPropertyViews(
       const qualifiedInferredEnumType = inferredEnumType
         ? qualifyTypeName(options.modelsNamespace, inferredEnumType, options)
         : undefined;
+      const name = names.get(prop)!;
       return {
         doc: docFor(program, prop),
         type,
-        name: getServerName(program, prop) ?? pascalCase(prop.name),
-        jsonName: camelCase(prop.name),
+        name,
+        jsonName: resolveEncodedName(program, prop, "application/json"),
         nullable: type.endsWith("?"),
         attributes: encoding.attributes,
         initializer: resolveInitializer(
@@ -812,7 +793,7 @@ function buildPropertyViews(
           qualifiedInferredEnumType,
           options,
           program,
-          getServerName(program, prop) ?? pascalCase(prop.name),
+          name,
         ),
       };
     });
@@ -841,7 +822,15 @@ function resolveInitializer(
 ): string | undefined {
   if (value === undefined) return undefined;
   if (qualifiedInferredEnumType && value.valueKind === "StringValue") {
-    return `${qualifiedInferredEnumType}.${pascalCase(value.value)}`;
+    const values = targetSpecType
+      ? (getStringLiteralUnionValues(targetSpecType) ?? [])
+      : [];
+    const index = values.indexOf(value.value);
+    const member =
+      index >= 0
+        ? enumMemberIdentifiers(values)[index]
+        : csharpIdentifier(value.value);
+    return `${qualifiedInferredEnumType}.${member}`;
   }
   return defaultValueInitializer(
     value,
@@ -1110,7 +1099,7 @@ function inferredEnumTypeNameForProperty(
     isTemplateInstance(model) && !isMergePatch(program, model)
       ? csharpModelName(program, model).replace(/^@/, "")
       : pascalCase(model.name);
-  return `${modelStem}${pascalCase(prop.name)}`;
+  return `${modelStem}${csharpIdentifier(prop.name)}`;
 }
 
 /**
@@ -1177,10 +1166,11 @@ function collectInferredEnums(
  * Builds an {@link EnumView} for an inferred enum.
  */
 function buildInferredEnumView(inferred: InferredEnum): EnumView {
+  const names = enumMemberIdentifiers(inferred.values);
   return {
     enumName: inferred.name,
-    members: inferred.values.map((value) => ({
-      name: pascalCase(value),
+    members: inferred.values.map((value, index) => ({
+      name: names[index],
       memberValue: value,
     })),
   };

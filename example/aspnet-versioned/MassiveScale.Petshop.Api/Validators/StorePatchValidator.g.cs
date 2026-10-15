@@ -35,47 +35,47 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
 
         // Name is required and cannot be removed
         this.RuleFor(x => x)
-            .Must(x => !x.IsNull("Name"))
-            .When(x => x.IsDefined("Name"))
+            .Must(x => !x.IsNull("name"))
+            .When(x => x.IsDefined("name"))
             .WithName("Name")
             .WithMessage("'Name' is required and cannot be null.");
 
         // Name must not be empty when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("Name")?.Length ?? 0) > 0)
-            .When(x => x.IsDefined("Name") && !x.IsNull("Name"))
+            .Must(x => (x.GetString("name")?.Length ?? 0) > 0)
+            .When(x => x.IsDefined("name") && !x.IsNull("name"))
             .WithName("Name");
 
         // Name cannot exceed a MaxLength of 100 when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("Name")?.Length ?? 0) <= 100)
-            .When(x => x.IsDefined("Name") && !x.IsNull("Name"))
+            .Must(x => (x.GetString("name")?.Length ?? 0) <= 100)
+            .When(x => x.IsDefined("name") && !x.IsNull("name"))
             .WithName("Name");
 
         // PhoneNumber is required and cannot be removed
         this.RuleFor(x => x)
-            .Must(x => !x.IsNull("PhoneNumber"))
-            .When(x => x.IsDefined("PhoneNumber"))
+            .Must(x => !x.IsNull("phoneNumber"))
+            .When(x => x.IsDefined("phoneNumber"))
             .WithName("PhoneNumber")
             .WithMessage("'PhoneNumber' is required and cannot be null.");
 
         // PhoneNumber must not be empty when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("PhoneNumber")?.Length ?? 0) > 0)
-            .When(x => x.IsDefined("PhoneNumber") && !x.IsNull("PhoneNumber"))
+            .Must(x => (x.GetString("phoneNumber")?.Length ?? 0) > 0)
+            .When(x => x.IsDefined("phoneNumber") && !x.IsNull("phoneNumber"))
             .WithName("PhoneNumber");
 
         // Pets is required and cannot be removed
         this.RuleFor(x => x)
-            .Must(x => !x.IsNull("Pets"))
-            .When(x => x.IsDefined("Pets"))
+            .Must(x => !x.IsNull("pets"))
+            .When(x => x.IsDefined("pets"))
             .WithName("Pets")
             .WithMessage("'Pets' is required and cannot be null.");
 
         // Pets replaces the whole array, so each item is validated as a complete model
         this.RuleFor(x => x).Custom((patch, context) =>
         {
-            if (!patch.Properties.TryGetValue("Pets", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+            if (!patch.Properties.TryGetValue("pets", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
             if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
             {
                 context.AddFailure("Pets", "'Pets' must be an array.");
@@ -121,27 +121,27 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
         {
             // Email is required and cannot be removed
             this.RuleFor(x => x)
-                .Must(x => !x.IsNull("Email"))
-                .When(x => x.IsDefined("Email"))
+                .Must(x => !x.IsNull("email"))
+                .When(x => x.IsDefined("email"))
                 .WithName("Email")
                 .WithMessage("'Email' is required and cannot be null.");
 
             // Email must not be empty when provided
             this.RuleFor(x => x)
-                .Must(x => (x.GetString("Email")?.Length ?? 0) > 0)
-                .When(x => x.IsDefined("Email") && !x.IsNull("Email"))
+                .Must(x => (x.GetString("email")?.Length ?? 0) > 0)
+                .When(x => x.IsDefined("email") && !x.IsNull("email"))
                 .WithName("Email");
 
             // Email cannot exceed a MaxLength of 255 when provided
             this.RuleFor(x => x)
-                .Must(x => (x.GetString("Email")?.Length ?? 0) <= 255)
-                .When(x => x.IsDefined("Email") && !x.IsNull("Email"))
+                .Must(x => (x.GetString("email")?.Length ?? 0) <= 255)
+                .When(x => x.IsDefined("email") && !x.IsNull("email"))
                 .WithName("Email");
 
             // Email must be a valid email address when provided
             this.RuleFor(x => x)
-                .Must(x => System.Net.Mail.MailAddress.TryCreate(x.GetString("Email") ?? string.Empty, out _))
-                .When(x => x.IsDefined("Email") && !x.IsNull("Email"))
+                .Must(x => System.Net.Mail.MailAddress.TryCreate(x.GetString("email") ?? string.Empty, out _))
+                .When(x => x.IsDefined("email") && !x.IsNull("email"))
                 .WithName("Email");
 
         });

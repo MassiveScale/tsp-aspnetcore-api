@@ -57,6 +57,7 @@
   {{indent <text>}}        — 4-space indent on every non-empty line; use for
                              multi-line doc strings: {{indent doc}}
   {{#if (isDefined val)}}  — true when val is not undefined
+  {{csharpString val}}     — writes val as a quoted, escaped C# string literal
 
   ── Handlebars #each data ───────────────────────────────────────────────────
 
@@ -67,10 +68,10 @@
   ── Param rendering quick reference ─────────────────────────────────────────
 
   Full parameter with binding attribute:
-    [{{binding}}{{#if bindingName}}(Name = "{{bindingName}}"){{/if}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}
+    [{{binding}}{{#if bindingName}}(Name = {{csharpString bindingName}}){{/if}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}
 
   Comma-separated parameter list:
-    {{#each params}}[{{binding}}{{#if bindingName}}(Name = "{{bindingName}}"){{/if}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}}
+    {{#each params}}[{{binding}}{{#if bindingName}}(Name = {{csharpString bindingName}}){{/if}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}}
 
   ── Example customisations ────────────────────────────────────────────────────
 
@@ -94,7 +95,7 @@
   • Add [ProducesResponseType] attributes per operation:
       [ProducesResponseType(typeof({{returnType}}), StatusCodes.Status200OK)]
       [ProducesResponseType(StatusCodes.Status404NotFound)]
-      {{#each routes}}[Http{{../httpVerb}}("{{this}}")]
+      {{#each routes}}[Http{{../httpVerb}}({{csharpString this}})]
       {{/each}}
 
   • Revert to class-level [Route] with relative method suffixes:
@@ -103,7 +104,7 @@
       public abstract class {{controllerName}} : ControllerBase
       {
       {{#each operations}}
-          [Http{{httpVerb}}{{#if routeSuffix}}("{{routeSuffix}}"){{/if}}]
+          [Http{{httpVerb}}{{#if routeSuffix}}({{csharpString routeSuffix}}){{/if}}]
           ...
       {{/each}}
 --}}
@@ -113,8 +114,8 @@
 public abstract class {{controllerName}} : ControllerBase
 {
 {{#each operations}}{{#if doc}}{{indent doc}}
-{{/if}}{{#each routes}}    [Http{{../httpVerb}}("{{this}}")]
-{{/each}}    public abstract Task<IActionResult> {{name}}({{#each params}}[{{binding}}{{#if bindingName}}(Name = "{{bindingName}}"){{/if}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}}{{#if cancellationToken}}{{#if params}}, {{/if}}CancellationToken cancellationToken{{/if}});
+{{/if}}{{#each routes}}    [Http{{../httpVerb}}({{csharpString this}})]
+{{/each}}    public abstract Task<IActionResult> {{name}}({{#each params}}[{{binding}}{{#if bindingName}}(Name = {{csharpString bindingName}}){{/if}}] {{#if optional}}{{type}}?{{else}}{{type}}{{/if}} {{name}}{{#unless @last}}, {{/unless}}{{/each}}{{#if cancellationToken}}{{#if params}}, {{/if}}CancellationToken cancellationToken{{/if}});
 {{#unless @last}}
 
 {{/unless}}{{/each}}

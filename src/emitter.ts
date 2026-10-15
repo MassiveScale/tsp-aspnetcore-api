@@ -35,6 +35,7 @@ import { EmitterOptions, reportDiagnostic } from "./lib.js";
 import { pascalCase } from "./utils.js";
 import {
   Renderer,
+  TemplateLoadError,
   TemplateName,
   TemplateOverrides,
   createRenderer,
@@ -53,8 +54,8 @@ import {
 import { emitHelpers } from "./helpers.js";
 import { csharpModelName, qualifyTypeName } from "./naming.js";
 import { analyzePayloadModels } from "./payloads.js";
-import { emitValidators } from "./validators.js";
-import { cleanOutputDirectories } from "./clean.js";
+import { emitValidators, preloadValidatorTemplates } from "./validators.js";
+import { cleanOutputDirectories, writeCleanupManifest } from "./clean.js";
 
 /** Default C# namespace used for top-level TypeSpec models with no namespace. */
 const DEFAULT_NAMESPACE = "Models";
@@ -88,6 +89,8 @@ export interface ResolvedOptions {
   namespaceMap: Array<{ key: string; value: string }>;
   /** File extension for all emitted files, e.g. `".g.cs"`. */
   fileExtension: string;
+  /** Absolute path of the emitter output directory; holds the cleanup manifest. */
+  emitterOutputDir: string;
   /** Absolute path to the models output directory. */
   modelsOutputDir: string;
   /** Whether to emit `I<Model>` interface files. */
@@ -167,6 +170,8 @@ export async function $onEmit(
   const program = context.program;
   const options = resolveOptions(context);
 
+  // Every template is compiled before anything is cleaned, so a broken custom
+  // template fails the emit without emptying the output directories.
   const renderer = buildRenderer(program, options);
   if (!renderer) return;
 
@@ -191,7 +196,13 @@ export async function $onEmit(
 
   const models = analyzePayloadModels(program, candidates);
 
-  await emitModelsAndEnums(program, models, enums, renderer, options);
+  const { emittedEnums } = await emitModelsAndEnums(
+    program,
+    models,
+    enums,
+    renderer,
+    options,
+  );
 
   const controllerOptions: ControllerOptions = {
     routePrefix: options.routePrefix,
@@ -220,10 +231,14 @@ export async function $onEmit(
     }
   }
 
-  await emitHelpers(program, models, renderer, options);
+  await emitHelpers(program, models, emittedEnums, renderer, options);
 
   if (options.emitValidators) {
     await emitValidators(program, options, new Set(models));
+  }
+
+  if (options.cleanOutputDirs) {
+    await writeCleanupManifest(program, options);
   }
 }
 
@@ -244,8 +259,9 @@ export function sortUsings(set: Set<string>): string[] {
 }
 
 /**
- * Instantiates the Handlebars renderer, reporting a structured diagnostic if
- * any template cannot be loaded.
+ * Instantiates the Handlebars renderer and, when validators are enabled,
+ * compiles the validator templates too, reporting a structured diagnostic if
+ * any template cannot be read or has a syntax error.
  *
  * @param program - The compiled TypeSpec program (used to report diagnostics).
  * @param options - Resolved options carrying template override paths.
@@ -256,42 +272,25 @@ function buildRenderer(
   options: ResolvedOptions,
 ): Renderer | undefined {
   try {
-    return createRenderer(options.templates);
+    const renderer = createRenderer(options.templates);
+    if (options.emitValidators) preloadValidatorTemplates(options.templates);
+    return renderer;
   } catch (err) {
-    const path = findFailingTemplatePath(options.templates, err);
-    const name = (Object.entries(options.templates).find(
-      ([, p]) => p === path,
-    )?.[0] ?? "unknown") as TemplateName;
+    const failure =
+      err instanceof TemplateLoadError
+        ? err
+        : { templateName: "unknown" as TemplateName, path: "" };
     reportDiagnostic(program, {
       code: "template-load-failed",
       target: NoTarget,
       format: {
-        name,
-        path: path ?? "",
+        name: failure.templateName,
+        path: failure.path,
         reason: err instanceof Error ? err.message : String(err),
       },
     });
     return undefined;
   }
-}
-
-/**
- * Searches the error message of a failed template load to identify which
- * override path caused the failure.
- *
- * @param templates - Map of template name to override path.
- * @param err - The error thrown during template loading.
- * @returns The failing path string, or `undefined` if it cannot be inferred.
- */
-function findFailingTemplatePath(
-  templates: TemplateOverrides,
-  err: unknown,
-): string | undefined {
-  const message = err instanceof Error ? err.message : String(err);
-  for (const value of Object.values(templates)) {
-    if (value && message.includes(value)) return value;
-  }
-  return undefined;
 }
 
 /**
@@ -437,6 +436,7 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     helpersNamespace,
     namespaceMap,
     fileExtension: raw["file-extension"] ?? ".g.cs",
+    emitterOutputDir: baseDir,
     modelsOutputDir: resolvePath(baseDir, modelsDir),
     emitInterfaces: raw["emit-interfaces"] ?? false,
     interfacesOutputDir: resolvePath(baseDir, interfacesDir),

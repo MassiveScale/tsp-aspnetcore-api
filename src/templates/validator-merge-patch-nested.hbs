@@ -19,7 +19,7 @@
 // {{{name}}} replaces the whole array, so each item is validated as a complete model
 this.RuleFor(x => x).Custom((patch, context) =>
 {
-    if (!patch.Properties.TryGetValue("{{{name}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+    if (!patch.Properties.TryGetValue("{{{jsonName}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
     if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
     {
         context.AddFailure("{{{name}}}", "'{{{name}}}' must be an array.");
@@ -63,7 +63,7 @@ this.RuleFor(x => x).Custom((patch, context) =>
 // {{{name}}} is merged into the existing value, so it is validated as a nested patch
 this.RuleFor(x => x).Custom((patch, context) =>
 {
-    if (!patch.Properties.TryGetValue("{{{name}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+    if (!patch.Properties.TryGetValue("{{{jsonName}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
     if (element.ValueKind != System.Text.Json.JsonValueKind.Object)
     {
         context.AddFailure("{{{name}}}", "'{{{name}}}' must be an object.");

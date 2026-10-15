@@ -1,6 +1,7 @@
 import { Diagnostic, resolvePath } from "@typespec/compiler";
 import { expectDiagnosticEmpty } from "@typespec/compiler/testing";
 import { createTester } from "@typespec/compiler/testing";
+import { MANIFEST_FILE_NAME } from "../src/clean.js";
 
 export const baseTester = createTester(
   resolvePath(import.meta.dirname, "../.."),
@@ -23,7 +24,10 @@ export async function emitWithDiagnostics(
     ? baseTester.emit("@massivescale/tsp-aspnetcore-api", options)
     : Tester;
   const [{ outputs }, diagnostics] = await tester.compileAndDiagnose(code);
-  return [outputs, diagnostics];
+  // The cleanup manifest is bookkeeping, not generated C#; clean.test.ts
+  // covers it directly.
+  const { [MANIFEST_FILE_NAME]: _manifest, ...generated } = outputs;
+  return [generated, diagnostics];
 }
 
 export async function emit(

@@ -25,7 +25,8 @@
     .doc              —   pre-rendered XML <summary> block (may be falsy)
     .type             —   C# type string, e.g. "string?", "IList<Guid>?"
     .name             —   PascalCase property name
-    .jsonName         —   camelCase JSON key for [JsonPropertyName], e.g. "firstName"
+    .jsonName         —   JSON wire name (TypeSpec name or @encodedName), unescaped;
+                          write it with {{csharpString jsonName}}
     .nullable         —   true when the type is nullable (ends with "?");
                           controls whether [JsonIgnore] is emitted
 
@@ -38,6 +39,7 @@
 
   {{indent <text>}}        — 4-space indent on every non-empty line
   {{#if (isDefined val)}}  — true when val is not undefined
+  {{csharpString val}}     — writes val as a quoted, escaped C# string literal
 
   ── Handlebars #each data ───────────────────────────────────────────────────
 
@@ -49,7 +51,7 @@
   • Switch to get-only properties to enforce immutability:
       {{#each properties}}
           {{#if doc}}{{indent doc}}
-          {{/if}}[JsonPropertyName("{{jsonName}}")]
+          {{/if}}[JsonPropertyName({{csharpString jsonName}})]
           {{type}} {{name}} { get; }
       {{/each}}
 
@@ -59,14 +61,14 @@
   • Remove `partial` if you don't need hand-written interface extensions.
 
   • Omit [JsonIgnore] and use a global JsonSerializerOptions:
-      [JsonPropertyName("{{jsonName}}")]
+      [JsonPropertyName({{csharpString jsonName}})]
       {{type}} {{name}} { get; set; }
 --}}
 {{#if doc}}{{doc}}
 {{/if}}public partial interface {{interfaceName}}{{baseClause}}
 {
 {{#each properties}}{{#if doc}}{{indent doc}}
-{{/if}}    [JsonPropertyName("{{jsonName}}")]
+{{/if}}    [JsonPropertyName({{csharpString jsonName}})]
 {{#each attributes}}    {{this}}
 {{/each}}{{#if nullable}}    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 {{/if}}    {{type}} {{name}} { get; set; }

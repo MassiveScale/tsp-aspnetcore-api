@@ -12,7 +12,8 @@ import { camelCase } from "../utils.js";
 
 /**
  * Flags a path/query/header parameter whose emitted C# identifier is a bare
- * C# reserved keyword. The emitted identifier is `@serverName` when present
+ * C# reserved keyword. The emitter `@`-escapes such identifiers (`@class`), so
+ * the code compiles, but the escaped name is awkward to use in service code. The emitted identifier is `@serverName` when present
  * (matching what `buildParams` in `controllers.ts` actually emits), falling
  * back to the camelCased TypeSpec property name otherwise. The request body
  * parameter is never at risk: it is always emitted as the fixed literal
@@ -24,7 +25,7 @@ export const reservedParameterNameRule = createRule({
   description:
     "Checks that HTTP operation parameter names do not collide with reserved C# keywords.",
   messages: {
-    default: paramMessage`Parameter "${"name"}" is a reserved C# keyword; the generated controller method will declare it verbatim ("${"candidate"}") and fail to compile. Rename the parameter, or apply @serverName to override the emitted identifier.`,
+    default: paramMessage`Parameter "${"name"}" is a reserved C# keyword; the generated controller method declares it as the escaped identifier "@${"candidate"}". Rename the parameter, or apply @serverName to choose a plain identifier.`,
   },
   create(context) {
     return {

@@ -224,3 +224,103 @@ describe("generated merge-patch runtime behavior", { skip: !hasDotnet }, () => {
     });
   }
 });
+
+const AWKWARD_NAMES_SPEC = `
+  import "@typespec/http";
+  using TypeSpec.Http;
+
+  @service namespace Demo;
+
+  enum Mode { \`a-b\`, aB, \`1x\` }
+
+  @doc("Use <b> & keep a > b")
+  model Error {
+    error: string;
+    user_id: string;
+    userId: string;
+    \`1st\`: string;
+    \`$ref\`: string;
+    mode?: Mode = Mode.aB;
+    status?: "in-progress" | "" = "";
+  }
+
+  @discriminator("kind")
+  model Pet { @encodedName("application/json", "$type") kind: string; }
+  model Dog extends Pet { kind: "say \\"woof\\""; name: string; }
+
+  @route("/items/{class}") interface Items {
+    @post create(
+      @path \`class\`: string,
+      @query body: string,
+      @query \`2fa\`: string,
+      @query cancellationToken: string,
+      @body payload: Error,
+    ): Pet;
+  }
+`;
+
+const AWKWARD_NAMES_PROGRAM = `using System.Text.Json;
+using Demo.Models;
+
+static void Check(bool condition, string message)
+{
+    if (!condition) throw new InvalidOperationException(message);
+}
+
+var error = new Error { ErrorValue = "e", UserId = "snake", UserId2 = "camel", _1st = "first", Ref = "r" };
+var json = JsonSerializer.Serialize(error);
+Check(json.Contains("\\"error\\":\\"e\\"") && json.Contains("\\"user_id\\":\\"snake\\"") && json.Contains("\\"userId\\":\\"camel\\""), json);
+Check(json.Contains("\\"1st\\":\\"first\\"") && json.Contains("\\"$ref\\":\\"r\\""), json);
+Check(json.Contains("\\"mode\\":\\"aB\\"") && json.Contains("\\"status\\":\\"\\""), json);
+
+var pet = JsonSerializer.Deserialize<Pet>("""{"$type":"say \\"woof\\"","name":"Rex"}""");
+Check(pet is Dog { Name: "Rex" }, "polymorphic deserialization must use the encoded discriminator name");
+`;
+
+describe("generated code with awkward names", { skip: !hasDotnet }, () => {
+  it("compiles and round-trips JSON with default options", async () => {
+    const files = await emit(AWKWARD_NAMES_SPEC);
+    const directory = await mkdtemp(join(tmpdir(), "awkward-names-"));
+
+    try {
+      for (const [path, content] of Object.entries(files)) {
+        if (!path.endsWith(".g.cs")) continue;
+        const destination = join(directory, path);
+        await mkdir(join(destination, ".."), { recursive: true });
+        await writeFile(destination, content, "utf8");
+      }
+      await writeFile(
+        join(directory, "Runtime.csproj"),
+        `<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup><ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup></Project>`,
+        "utf8",
+      );
+      await writeFile(
+        join(directory, "Program.cs"),
+        AWKWARD_NAMES_PROGRAM,
+        "utf8",
+      );
+
+      try {
+        execFileSync(
+          "dotnet",
+          [
+            "run",
+            "--project",
+            join(directory, "Runtime.csproj"),
+            "--verbosity",
+            "quiet",
+          ],
+          { stdio: "pipe" },
+        );
+      } catch (error) {
+        const result = error as { stdout?: Buffer; stderr?: Buffer };
+        throw new Error(
+          `${result.stdout?.toString() ?? ""}${result.stderr?.toString() ?? ""}`,
+          { cause: error },
+        );
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});

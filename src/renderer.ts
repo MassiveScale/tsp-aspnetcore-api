@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import Handlebars from "handlebars";
+import { csharpStringLiteral, xmlEscape } from "./utils.js";
 
 /** Absolute path to the bundled default templates directory. */
 const TEMPLATES_DIR = resolve(
@@ -60,7 +61,10 @@ export interface PropertyView {
   type: string;
   /** PascalCase property name. */
   name: string;
-  /** camelCase JSON property name for `[JsonPropertyName]`, e.g. `"firstName"`. */
+  /**
+   * JSON wire name for `[JsonPropertyName]`: the TypeSpec property name, or its
+   * `@encodedName("application/json", ...)`, verbatim (unescaped).
+   */
   jsonName: string;
   /** `true` when the type is nullable (ends with `?`); drives `[JsonIgnore]`. */
   nullable: boolean;
@@ -208,7 +212,11 @@ export interface FileView {
 
 /** View model for a single action-method parameter. */
 export interface OperationParamView {
-  /** camelCase parameter name — the emitted C# identifier, honoring `@serverName`. */
+  /**
+   * camelCase parameter name — the emitted C# identifier. Honors `@serverName`;
+   * otherwise derived from the wire name, made valid (`@`-escaped keywords,
+   * `_` before a leading digit) and unique within the action.
+   */
   name: string;
   /** C# type string (non-nullable; optional marker is added by the renderer). */
   type: string;
@@ -219,9 +227,10 @@ export interface OperationParamView {
   /**
    * Wire-level name ASP.NET Core should bind against (the resolved HTTP
    * parameter/route-token name), rendered as an explicit `Name = "..."` on
-   * the binding attribute. Only set when it differs from `name` — i.e. when
-   * `@serverName` renamed the emitted C# identifier away from the wire name
-   * — so the HTTP contract keeps working regardless of the C# identifier.
+   * the binding attribute. Only set when it differs from `name` (ignoring a
+   * leading `@`) — e.g. `@serverName`, a header such as `x-request-id`, or a
+   * de-duplicated identifier — so the HTTP contract keeps working regardless
+   * of the C# identifier. Unescaped; write it with `{{csharpString bindingName}}`.
    * Never set for `FromBody`, which has no `Name` property.
    */
   bindingName?: string;
@@ -331,7 +340,8 @@ export interface Renderer {
 
 /**
  * Wraps a plain-text doc string in an XML `<summary>` block suitable for
- * inclusion in generated C# source.
+ * inclusion in generated C# source. `&`, `<` and `>` are XML-escaped so the
+ * text cannot produce a malformed doc comment.
  *
  * @param doc - Raw documentation text (may contain newlines).
  * @returns Multi-line string of `/// ` prefixed lines.
@@ -344,7 +354,7 @@ export function renderDocComment(doc: string): string {
   const lines = doc.split(/\r?\n/);
   return [
     "/// <summary>",
-    ...lines.map((l) => `/// ${l}`),
+    ...lines.map((l) => `/// ${xmlEscape(l)}`),
     "/// </summary>",
   ].join("\n");
 }
@@ -389,20 +399,55 @@ function createHandlebarsEnv(): typeof Handlebars {
    */
   env.registerHelper("eq", (a: unknown, b: unknown) => a === b);
 
+  /**
+   * `{{csharpString value}}` — writes `value` as a quoted, escaped C# string
+   * literal, e.g. `"say \"hi\""`.
+   */
+  env.registerHelper("csharpString", (value: unknown) =>
+    csharpStringLiteral(String(value ?? "")),
+  );
+
   return env;
+}
+
+/**
+ * Error thrown when a template file cannot be read or does not compile.
+ * Carries the template name and path so the emitter can report which
+ * template failed.
+ */
+export class TemplateLoadError extends Error {
+  /**
+   * @param templateName - The template key, e.g. `"class"`.
+   * @param path - Absolute path of the template file.
+   * @param reason - The underlying read or parse error message.
+   */
+  constructor(
+    readonly templateName: TemplateName,
+    readonly path: string,
+    reason: string,
+  ) {
+    super(reason);
+    this.name = "TemplateLoadError";
+  }
 }
 
 /**
  * Compiles a Handlebars template source string with HTML escaping disabled.
  *
+ * `Handlebars.compile` is lazy: it only parses the source on the first render.
+ * The source is therefore also precompiled here, so a syntax error surfaces
+ * immediately instead of half-way through an emit.
+ *
  * @param env - Handlebars environment to use for compilation.
  * @param source - Raw template source.
  * @returns Compiled template delegate.
+ * @throws If the source has a syntax error.
  */
-function compileTemplate(
+export function compileTemplate(
   env: typeof Handlebars,
   source: string,
 ): HandlebarsTemplateDelegate {
+  env.precompile(source, { noEscape: true });
   return env.compile(source, { noEscape: true });
 }
 
@@ -414,7 +459,7 @@ function compileTemplate(
  * @param name - Template name (determines the default `.hbs` filename).
  * @param override - Absolute path to a custom template file, or `undefined`.
  * @returns Compiled template delegate.
- * @throws If the template file cannot be read.
+ * @throws {TemplateLoadError} If the template file cannot be read or compiled.
  */
 function loadTemplate(
   env: typeof Handlebars,
@@ -422,8 +467,15 @@ function loadTemplate(
   override: string | undefined,
 ): HandlebarsTemplateDelegate {
   const path = override ?? resolve(TEMPLATES_DIR, `${name}.hbs`);
-  const source = readFileSync(path, "utf-8");
-  return compileTemplate(env, source);
+  try {
+    return compileTemplate(env, readFileSync(path, "utf-8"));
+  } catch (err) {
+    throw new TemplateLoadError(
+      name,
+      path,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -494,7 +546,7 @@ function renderPatchMethod(pm: PatchMethodView): string {
 function classPropertyText(prop: PropertyView): string {
   const parts: string[] = [];
   if (prop.doc) parts.push(prop.doc);
-  parts.push(`[JsonPropertyName("${prop.jsonName}")]`);
+  parts.push(`[JsonPropertyName(${csharpStringLiteral(prop.jsonName)})]`);
   for (const attr of prop.attributes ?? []) parts.push(attr);
   if (prop.nullable)
     parts.push(`[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`);
@@ -512,7 +564,7 @@ function classPropertyText(prop: PropertyView): string {
 function interfacePropertyText(prop: PropertyView): string {
   const parts: string[] = [];
   if (prop.doc) parts.push(prop.doc);
-  parts.push(`[JsonPropertyName("${prop.jsonName}")]`);
+  parts.push(`[JsonPropertyName(${csharpStringLiteral(prop.jsonName)})]`);
   for (const attr of prop.attributes ?? []) parts.push(attr);
   if (prop.nullable)
     parts.push(`[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`);
@@ -538,7 +590,9 @@ function interfacePropertyText(prop: PropertyView): string {
 function enumMemberText(member: EnumMemberView, isLast: boolean): string {
   const parts: string[] = [];
   if (member.doc) parts.push(member.doc);
-  parts.push(`[EnumMember(Value = "${member.memberValue}")]`);
+  parts.push(
+    `[EnumMember(Value = ${csharpStringLiteral(member.memberValue)})]`,
+  );
   const numericValue =
     typeof member.value === "number" ? ` = ${member.value}` : "";
   parts.push(`${member.name}${numericValue}${isLast ? "" : ","}`);
@@ -555,7 +609,7 @@ function enumMemberText(member: EnumMemberView, isLast: boolean): string {
  */
 function operationParamDecl(p: OperationParamView): string {
   const attr = p.bindingName
-    ? `${p.binding}(Name = "${p.bindingName}")`
+    ? `${p.binding}(Name = ${csharpStringLiteral(p.bindingName)})`
     : p.binding;
   return `[${attr}] ${p.optional ? `${p.type}?` : p.type} ${p.name}`;
 }
@@ -572,7 +626,7 @@ function controllerActionBlock(op: OperationView): string {
   const lines: string[] = [];
   if (op.doc) lines.push(...op.doc.split("\n").map((l) => `    ${l}`));
   for (const route of op.routes) {
-    lines.push(`    [Http${op.httpVerb}("${route}")]`);
+    lines.push(`    [Http${op.httpVerb}(${csharpStringLiteral(route)})]`);
   }
   const paramList = op.params.map(operationParamDecl).join(", ");
   const fullParamList = op.cancellationToken

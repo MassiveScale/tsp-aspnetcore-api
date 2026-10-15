@@ -8,7 +8,8 @@
  * controller group when `emit-services` is `true`.
  */
 
-import { Program, emitFile, resolvePath } from "@typespec/compiler";
+import { Program, resolvePath } from "@typespec/compiler";
+import { emitFile } from "./output.js";
 import { ControllerGroup } from "./controllers.js";
 import { ResolvedOptions, sortUsings } from "./emitter.js";
 import { Renderer } from "./renderer.js";
