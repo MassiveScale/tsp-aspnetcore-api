@@ -7,12 +7,18 @@
 #nullable enable
 
 using FluentValidation;
+{{#if usesServiceProvider}}
+using Microsoft.Extensions.DependencyInjection;
+{{/if}}
 {{#unless fullyQualifiedTypes}}
 using {{{modelsNamespace}}};
 {{#if useHelpersNamespace}}
 using {{{helpersNamespace}}};
 {{/if}}
 {{/unless}}
+{{#each additionalUsings}}
+using {{{this}}};
+{{/each}}
 {{#if namespace}}
 
 namespace {{{namespace}}};
@@ -25,89 +31,33 @@ namespace {{{namespace}}};
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public partial class {{{modelName}}}Validator : AbstractValidator<{{{qualifiedModelName}}}>
 {
+    {{> validatorFields}}
     /// <summary>
     /// Initializes a new instance of <see cref="{{{modelName}}}Validator"/> with the auto-generated rules.
     /// </summary>
-    public {{{modelName}}}Validator({{#each referencedValidators}}{{#unless @first}}, {{/unless}}AbstractValidator<{{{qualifiedModelName}}}> {{{paramName}}}{{/each}}{{#if derivedTypeValidators}}{{#if referencedValidators}}, {{/if}}{{#each derivedTypeValidators}}{{#unless @first}}, {{/unless}}AbstractValidator<{{{qualifiedTypeName}}}> {{{paramName}}}{{/each}}{{/if}})
+    public {{{modelName}}}Validator({{#each constructorParameters}}{{#unless @first}}, {{/unless}}{{{type}}} {{{name}}}{{/each}})
     {
-{{#each properties}}
-{{#if isReadOnly}}
-{{#if nullable}}
-        // {{{name}}} {{#if isImmutable}}can only be set by an update{{else}}is read-only{{/if}} and must not be set on creation
-        RuleFor(x => x.{{{name}}}).Null();
-
-{{/if}}
-{{else}}
-{{#if notEmpty}}
-        // {{{name}}} is required
-        RuleFor(x => x.{{{name}}}).NotEmpty();
-
-{{/if}}
-{{#if notNull}}
-        // {{{name}}} is required
-        RuleFor(x => x.{{{name}}}).NotNull();
-
-{{/if}}
-{{#if minLength}}
-        // {{{name}}} must be at least {{minLength}} characters
-        RuleFor(x => x.{{{name}}}).MinimumLength({{minLength}});
-
-{{/if}}
-{{#if maxLength}}
-        // {{{name}}} cannot exceed a MaxLength of {{maxLength}}
-        RuleFor(x => x.{{{name}}}).MaximumLength({{maxLength}});
-
-{{/if}}
-{{#if pattern}}
-        // {{{name}}} must match the pattern '{{pattern}}'
-        RuleFor(x => x.{{{name}}}).Matches(@"{{pattern}}");
-
-{{/if}}
-{{#if emailAddress}}
-        // {{{name}}} must be a valid email address
-        RuleFor(x => x.{{{name}}}).EmailAddress();
-
-{{/if}}
-{{#if minValue}}
-        // {{{name}}} must be greater than or equal to {{minValue.formatted}}
-        RuleFor(x => x.{{{name}}}).GreaterThanOrEqualTo({{minValue.formatted}});
-
-{{/if}}
-{{#if maxValue}}
-        // {{{name}}} cannot exceed a MaxValue of {{maxValue.formatted}}
-        RuleFor(x => x.{{{name}}}).LessThanOrEqualTo({{maxValue.formatted}});
-
-{{/if}}
-{{#if isInEnum}}
-        // {{{name}}} must be a valid enum value
-        RuleFor(x => x.{{{name}}}).IsInEnum();
-
-{{/if}}
-{{#if referencedModelName}}
-{{#if isCollectionReference}}
-        // {{{name}}} items are validated recursively{{#if nullable}} when not null{{/if}}
-        RuleForEach(x => x.{{{name}}}{{#if nullable}}!{{/if}}).SetValidator({{{referencedParamName}}}){{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}};
-
-{{else}}
-        // {{{name}}} is validated recursively{{#if nullable}} when not null{{/if}}
-        RuleFor(x => x.{{{name}}}{{#if nullable}}!{{/if}}).SetValidator({{{referencedParamName}}}){{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}};
-
-{{/if}}
-{{/if}}
-{{/if}}
-{{/each}}
 {{#if derivedTypeValidators}}
+        // A derived type's validator checks every property, inherited ones included.
+        When(x => !_derivedTypes.Contains(x.GetType()), () =>
+        {
+            {{> validatorRules}}
+        });
+
         // Polymorphic validation — dispatch to derived type validators
         RuleFor(x => x).SetInheritanceValidator(v =>
         {
 {{#each derivedTypeValidators}}
-            v.Add<{{{qualifiedTypeName}}}>({{{paramName}}});
+            v.Add<{{{qualifiedTypeName}}}>({{#if lazy}}_ => {{/if}}{{{validatorExpression}}});
 {{/each}}
         });
 
+{{else}}
+        {{> validatorRules}}
 {{/if}}
         ExtendRules();
     }
+    {{> validatorHelpers}}
 
     /// <summary>
     /// Implement this partial method in a hand-written part of this class to add custom

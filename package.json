@@ -1,6 +1,6 @@
 {
   "name": "@massivescale/tsp-aspnetcore-api",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0",
   "description": "TypeSpec emitter that generates C# models, ASP.NET Core controllers, service interfaces, and FluentValidation validators.",
   "type": "module",
   "main": "dist/src/index.js",
@@ -68,7 +68,6 @@
     "watch": "tsc --watch",
     "pretest": "npm run build",
     "test": "cd dist && node --test",
-    "test:vscode": "node --test test/**/*.test.mjs",
     "lint": "eslint src/ test/ --report-unused-disable-directives --max-warnings=0",
     "lint:fix": "eslint . --report-unused-disable-directives --fix",
     "format": "prettier .  --write",

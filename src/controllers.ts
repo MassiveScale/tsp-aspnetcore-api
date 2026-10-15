@@ -17,7 +17,6 @@ import {
   Namespace,
   Program,
   Type,
-  emitFile,
   getDoc,
   getFormat,
   isArrayModelType,
@@ -25,11 +24,12 @@ import {
   isRecordModelType,
   resolvePath,
 } from "@typespec/compiler";
+import { emitFile } from "./output.js";
 import {
   HttpOperation,
   HttpOperationParameter,
   HttpPayloadBody,
-  getAllHttpServices,
+  type HttpService,
   getRoutePath,
 } from "@typespec/http";
 import {
@@ -51,10 +51,21 @@ import {
   renderDocComment,
 } from "./renderer.js";
 import { getServerName } from "./decorators.js";
-import { csharpModelName, qualifyTypeName } from "./naming.js";
+import {
+  csharpModelName,
+  csharpParameterIdentifier,
+  qualifyTypeName,
+  uniqueIdentifier,
+} from "./naming.js";
 import { resolvePayloadType } from "./payloads.js";
 import { ResolvedOptions, sortUsings } from "./emitter.js";
-import { SCALAR_MAP, FORMAT_MAP, pascalCase, camelCase } from "./utils.js";
+import { SCALAR_MAP, FORMAT_MAP, pascalCase } from "./utils.js";
+
+/** C# identifier of the request-body action parameter. */
+const BODY_PARAM_NAME = "body";
+
+/** C# identifier of the trailing `CancellationToken` action parameter. */
+const CANCELLATION_TOKEN_PARAM_NAME = "cancellationToken";
 
 /** `using` directives included in every controller file. */
 const CONTROLLER_USINGS = [
@@ -109,28 +120,25 @@ export interface ControllerGroup {
 type OperationContainer = Interface | Namespace;
 
 /**
- * Walks all HTTP services in the compiled TypeSpec program and returns one
- * {@link ControllerGroup} per logical operation container (TypeSpec Interface
- * or Namespace).
+ * Walks the given HTTP services and returns one {@link ControllerGroup} per
+ * logical operation container (TypeSpec Interface or Namespace).
  *
  * @param program - The compiled TypeSpec program.
+ * @param services - The program's HTTP services, from `getAllHttpServices`.
  * @param options - Routing and naming options forwarded from the emitter.
  * @param resolveNamespace - Callback that converts a TypeSpec Namespace node to
  *   a C# namespace string.
  * @param toFolderSegments - Callback that converts a C# namespace string to the
  *   relative folder path segments used when writing files.
- * @returns Array of controller groups, empty if any HTTP diagnostic errors are
- *   present in the program.
+ * @returns Array of controller groups.
  */
 export function collectControllers(
   program: Program,
+  services: readonly HttpService[],
   options: ControllerOptions,
   resolveNamespace: (ns: Namespace | undefined) => string,
   toFolderSegments: (ns: string) => string[],
 ): ControllerGroup[] {
-  const [services, diagnostics] = getAllHttpServices(program);
-  if (diagnostics.length > 0) return [];
-
   const groups: ControllerGroup[] = [];
 
   for (const service of services) {
@@ -312,10 +320,12 @@ function buildOperationView(
  * @param body - Optional request body descriptor.
  * @param options - Nullability options.
  * @returns Ordered array of parameter view models (body always last if present).
- *   When `@serverName` renames a parameter's emitted C# identifier, the view's
- *   `bindingName` is set to the original HTTP wire name so the generated
- *   `[FromRoute]`/`[FromQuery]`/`[FromHeader]` attribute keeps binding the
- *   actual request data instead of the renamed identifier.
+ *   Each parameter's C# identifier is its `@serverName`, or the wire name made
+ *   into a valid, unique camelCase identifier (never `body` or
+ *   `cancellationToken`, which the generated signature already uses). When the
+ *   identifier differs from the HTTP wire name, the view's `bindingName` is set
+ *   to the wire name so the generated `[FromRoute]`/`[FromQuery]`/`[FromHeader]`
+ *   attribute keeps binding the actual request data.
  */
 function buildParams(
   program: Program,
@@ -324,30 +334,41 @@ function buildParams(
   options: ControllerOptions,
 ): OperationParamView[] {
   const result: OperationParamView[] = [];
+  const hasBody = body !== undefined && body.bodyKind === "single";
+  const taken = new Set<string>();
+  if (hasBody) taken.add(BODY_PARAM_NAME);
+  if (options.cancellationToken) taken.add(CANCELLATION_TOKEN_PARAM_NAME);
 
-  for (const param of parameters) {
-    const binding = httpParamBinding(param.type);
-    if (!binding) continue;
+  const bound = parameters.filter((param) => httpParamBinding(param.type));
+  for (const param of bound) {
+    const serverName = getServerName(program, param.param);
+    if (serverName) taken.add(serverName.replace(/^@/, ""));
+  }
+
+  for (const param of bound) {
+    const binding = httpParamBinding(param.type)!;
     const prop = param.param;
-    const name = getServerName(program, prop) ?? camelCase(prop.name);
+    const name =
+      getServerName(program, prop) ??
+      uniqueIdentifier(csharpParameterIdentifier(prop.name), taken);
     // The resolved HTTP wire name (accounts for explicit @query/@path/@header
-    // name overrides), independent of @serverName. When @serverName renames
-    // the emitted C# identifier away from this, the binding attribute must
-    // still target the wire name or ASP.NET Core model binding breaks.
+    // name overrides). When the C# identifier differs from it, the binding
+    // attribute must still target the wire name or ASP.NET Core model binding
+    // breaks. ASP.NET Core binds `@class` as `class`, so the `@` is ignored.
     const wireName = param.name;
     result.push({
       name,
       type: propTypeRef(program, prop, options),
       binding,
       optional: prop.optional,
-      bindingName: wireName !== name ? wireName : undefined,
+      bindingName: wireName !== name.replace(/^@/, "") ? wireName : undefined,
     });
   }
 
-  if (body && body.bodyKind === "single") {
+  if (hasBody) {
     result.push({
-      name: "body",
-      type: typeRef(program, body.type, options),
+      name: BODY_PARAM_NAME,
+      type: typeRef(program, body!.type, options),
       binding: "FromBody",
       optional: false,
     });

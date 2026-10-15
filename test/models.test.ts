@@ -1212,6 +1212,117 @@ describe("csharp emitter - models", () => {
       }
     });
 
+    it("adds configured usings to controller, service, helper, and validator files", async () => {
+      const results = await emit(
+        `
+          import "@typespec/http";
+          using Http;
+          @service
+          namespace Demo;
+          enum Color { Red, Green }
+          model Widget {
+            name: string;
+            color?: Color;
+            @encode("string") active?: boolean;
+          }
+          @route("/widgets")
+          interface Widgets {
+            @post create(@body body: Widget): Widget;
+            @patch(#{ implicitOptionality: false }) update(
+              @path id: string,
+              @body body: MergePatchUpdate<Widget>,
+            ): Widget;
+          }
+        `,
+        {
+          "emit-helpers": true,
+          "emit-validators": true,
+          "additional-usings": ["Acme.Shared"],
+        },
+      );
+
+      for (const key of [
+        "Controllers/WidgetsControllerBase.g.cs",
+        "Services/IWidgetsService.g.cs",
+        "Helpers/MergePatch.g.cs",
+        "Helpers/EnumMemberConverter.g.cs",
+        "Helpers/BooleanStringJsonConverter.g.cs",
+        "Validators/WidgetValidator.g.cs",
+        "Validators/WidgetPatchValidator.g.cs",
+        "Validators/ValidatorsInitializer.g.cs",
+      ]) {
+        const file = results[key];
+        ok(file, `expected ${key} in ${Object.keys(results).join(", ")}`);
+        strictEqual(
+          file.split("using Acme.Shared;").length - 1,
+          1,
+          `expected one 'using Acme.Shared;' in ${key}:\n${file}`,
+        );
+      }
+    });
+
+    it("adds configured usings to typed merge-patch and version-aware validator files", async () => {
+      const results = await emit(
+        `
+          import "@typespec/http";
+          import "@typespec/versioning";
+          using Http;
+          using Versioning;
+          @service
+          @versioned(Versions)
+          namespace Demo;
+          enum Versions { v1, v2 }
+          model Widget {
+            name: string;
+            @added(Versions.v2) size?: int32;
+          }
+          @route("/widgets")
+          interface Widgets {
+            @post create(@body body: Widget): Widget;
+            @patch(#{ implicitOptionality: false }) update(
+              @path id: string,
+              @body body: MergePatchUpdate<Widget>,
+            ): Widget;
+          }
+        `,
+        {
+          "emit-validators": true,
+          "merge-patch-style": "typed",
+          "additional-usings": ["Acme.Shared"],
+        },
+      );
+
+      for (const key of [
+        "Models/WidgetMergePatchUpdate.g.cs",
+        "Validators/WidgetValidator.g.cs",
+        "Validators/WidgetPatchValidator.g.cs",
+        "Validators/ValidatorsInitializer.g.cs",
+      ]) {
+        const file = results[key];
+        ok(file, `expected ${key} in ${Object.keys(results).join(", ")}`);
+        ok(
+          file.includes("using Acme.Shared;"),
+          `missing 'using Acme.Shared;' in ${key}:\n${file}`,
+        );
+      }
+    });
+
+    it("sorts non-System usings by ordinal comparison, independent of locale", async () => {
+      const results = await emit(
+        `
+          namespace Demo;
+          model User { id: string; }
+        `,
+        { "additional-usings": ["acme.Lower", "Zeta.Upper"] },
+      );
+
+      const file = results["User.g.cs"];
+      const upper = file.indexOf("using Zeta.Upper;");
+      const lower = file.indexOf("using acme.Lower;");
+      ok(upper >= 0 && lower >= 0, `missing usings in:\n${file}`);
+      ok(upper < lower, `uppercase should sort before lowercase in:\n${file}`);
+    });
+
     it("places System namespaces before non-System ones", async () => {
       const results = await emit(
         `
@@ -1345,19 +1456,24 @@ describe("csharp emitter - models", () => {
       );
     });
 
-    it("converts snake_case property names to camelCase JSON keys", async () => {
+    it("keeps property names verbatim as JSON keys", async () => {
       const results = await emit(`
         namespace Demo;
-        model M { first_name: string; user_id: string; }
+        model M { first_name: string; user_id: string; ID: string; }
       `);
       const cls = results["M.g.cs"];
       ok(
-        cls.includes('[JsonPropertyName("firstName")]'),
-        `missing firstName attr in:\n${cls}`,
+        cls.includes('[JsonPropertyName("first_name")]') &&
+          cls.includes("public string? FirstName "),
+        `missing first_name attr in:\n${cls}`,
       );
       ok(
-        cls.includes('[JsonPropertyName("userId")]'),
-        `missing userId attr in:\n${cls}`,
+        cls.includes('[JsonPropertyName("user_id")]'),
+        `missing user_id attr in:\n${cls}`,
+      );
+      ok(
+        cls.includes('[JsonPropertyName("ID")]'),
+        `missing ID attr in:\n${cls}`,
       );
     });
 
@@ -1434,6 +1550,22 @@ describe("csharp emitter - models", () => {
   });
 
   describe("@discriminator decorator", () => {
+    it("orders [JsonDerivedType] attributes by ordinal discriminator value", async () => {
+      const results = await emit(`
+        namespace Demo;
+        @discriminator("kind")
+        model Pet { kind: string; }
+        model Bird extends Pet { kind: "bird"; }
+        model Ape extends Pet { kind: "Ape"; }
+      `);
+
+      const pet = results["Pet.g.cs"];
+      const ape = pet.indexOf('"Ape")]');
+      const bird = pet.indexOf('"bird")]');
+      ok(ape >= 0 && bird >= 0, `missing JsonDerivedType in:\n${pet}`);
+      ok(ape < bird, `"Ape" should sort before "bird" in:\n${pet}`);
+    });
+
     it("adds [JsonPolymorphic] and [JsonDerivedType] to the base class", async () => {
       const results = await emit(`
         namespace Demo;
@@ -1618,6 +1750,25 @@ public partial class {{className}} : {{bases}}
       ok(cls.includes("public string? Id { get; set; }"));
       ok(cls.includes("public string? Name { get; set; }"));
       ok(results["IUser.g.cs"].includes("public partial interface IUser"));
+    });
+
+    it("normalises CRLF line endings in a custom template", async () => {
+      const tpl = writeTemplate(
+        "class",
+        "public partial class {{className}}\r\n{\r\n}\r\n",
+      );
+
+      const results = await emit(
+        `
+          namespace Demo;
+          model User { id: string; }
+        `,
+        { templates: { class: tpl } },
+      );
+
+      const cls = results["User.g.cs"];
+      ok(cls.includes("public partial class User\n    {\n    }"), cls);
+      ok(!cls.includes("\r"), `unexpected CR in:\n${JSON.stringify(cls)}`);
     });
 
     it("uses a custom interface template when provided", async () => {
@@ -2106,6 +2257,172 @@ namespace {{namespace}}
       ok(
         file.includes("IList<TagResource>?"),
         "expected array element type to use @serverName",
+      );
+    });
+  });
+  describe("wire names", () => {
+    it("uses @encodedName for the JSON property name", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model User {
+          @encodedName("application/json", "user_name") userName: string;
+          @encodedName("application/json", "a\\"b") quoted: string;
+        }
+      `);
+
+      const cls = results["User.g.cs"];
+      ok(
+        cls.includes('[JsonPropertyName("user_name")]') &&
+          cls.includes("public string? UserName "),
+        `expected the encoded name in:\n${cls}`,
+      );
+      ok(
+        cls.includes('[JsonPropertyName("a\\"b")]'),
+        `expected an escaped encoded name in:\n${cls}`,
+      );
+    });
+
+    it("uses the discriminator property's wire name and escapes discriminator values", async () => {
+      const results = await emit(`
+        namespace Demo;
+        @discriminator("kind")
+        model Pet {
+          @encodedName("application/json", "$type") kind: string;
+        }
+        model Dog extends Pet { kind: "say \\"woof\\""; }
+      `);
+
+      const pet = results["Pet.g.cs"];
+      ok(
+        pet.includes(
+          '[JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]',
+        ),
+        `expected the encoded discriminator name in:\n${pet}`,
+      );
+      ok(
+        pet.includes('[JsonDerivedType(typeof(Dog), "say \\"woof\\"")]'),
+        `expected an escaped discriminator value in:\n${pet}`,
+      );
+    });
+
+    it("escapes enum member values", async () => {
+      const results = await emit(`
+        namespace Demo;
+        enum Quote { said: "say \\"hi\\"" }
+      `);
+
+      const en = results["Quote.g.cs"];
+      ok(
+        en.includes('[EnumMember(Value = "say \\"hi\\"")]'),
+        `expected an escaped member value in:\n${en}`,
+      );
+    });
+
+    it("XML-escapes doc comments", async () => {
+      const results = await emit(`
+        namespace Demo;
+        @doc("Use <b> & keep a > b")
+        model Widget { @doc("Either <x> or & y") name: string; }
+      `);
+
+      const cls = results["Widget.g.cs"];
+      ok(
+        cls.includes("/// Use &lt;b&gt; &amp; keep a &gt; b") &&
+          cls.includes("/// Either &lt;x&gt; or &amp; y"),
+        `expected escaped doc comments in:\n${cls}`,
+      );
+    });
+  });
+
+  describe("C# identifiers", () => {
+    /** Collapses every run of whitespace to one space. */
+    const squash = (text: string): string => text.replace(/\s+/g, " ");
+
+    it("makes property names valid, unique and different from the class name", async () => {
+      const results = await emit(`
+        namespace Demo;
+        model Error {
+          error: string;
+          user_id: string;
+          userId: string;
+          \`1st\`: string;
+          \`$ref\`: string;
+          \`class\`: string;
+        }
+      `);
+
+      const cls = results["Error.g.cs"];
+      for (const [wire, name] of [
+        ["error", "ErrorValue"],
+        ["user_id", "UserId"],
+        ["userId", "UserId2"],
+        ["1st", "_1st"],
+        ["$ref", "Ref"],
+        ["class", "Class"],
+      ]) {
+        ok(
+          squash(cls).includes(
+            `[JsonPropertyName("${wire}")] [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ${name} { get; set; }`,
+          ),
+          `expected ${wire} -> ${name} in:\n${cls}`,
+        );
+      }
+    });
+
+    it("keeps the interface property names in step with the class", async () => {
+      const results = await emit(
+        `
+        namespace Demo;
+        model Error { error: string; }
+      `,
+        { "emit-interfaces": true },
+      );
+
+      ok(
+        results["IError.g.cs"].includes("string? ErrorValue { get; set; }"),
+        results["IError.g.cs"],
+      );
+    });
+
+    it("makes enum member names valid and unique, and references them consistently", async () => {
+      const results = await emit(`
+        namespace Demo;
+        enum Mode { \`a-b\`, aB, \`1x\` }
+        model Widget {
+          mode?: Mode = Mode.aB;
+          status?: "in-progress" | "done" | "" | "Done" = "";
+        }
+      `);
+
+      const mode = results["Mode.g.cs"];
+      for (const [wire, name] of [
+        ["a-b", "AB"],
+        ["aB", "AB2"],
+        ["1x", "_1x"],
+      ]) {
+        ok(
+          squash(mode).includes(`[EnumMember(Value = "${wire}")] ${name}`),
+          `expected ${wire} -> ${name} in:\n${mode}`,
+        );
+      }
+
+      const status = results["WidgetStatus.g.cs"];
+      for (const [wire, name] of [
+        ["in-progress", "InProgress"],
+        ["done", "Done"],
+        ["", "Empty"],
+        ["Done", "Done2"],
+      ]) {
+        ok(
+          squash(status).includes(`[EnumMember(Value = "${wire}")] ${name}`),
+          `expected "${wire}" -> ${name} in:\n${status}`,
+        );
+      }
+
+      const cls = results["Widget.g.cs"];
+      ok(
+        cls.includes(".Mode.AB2;") && cls.includes("= WidgetStatus.Empty;"),
+        `expected initializers to use the emitted member names in:\n${cls}`,
       );
     });
   });

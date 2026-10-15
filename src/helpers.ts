@@ -10,7 +10,9 @@
  * and enums have been emitted.
  */
 
-import { Model, Program, emitFile, resolvePath } from "@typespec/compiler";
+import { Model, Program, resolvePath } from "@typespec/compiler";
+import { type HttpService } from "@typespec/http";
+import { emitFile } from "./output.js";
 import {
   computeModelTypeName,
   csharpNamespaceFor,
@@ -53,24 +55,44 @@ const BOOL_CONVERTER_HELPER_USINGS = [
 ];
 
 /**
+ * Builds the sorted `using` list for a helper file: the helper's own
+ * namespaces plus any `additional-usings`.
+ *
+ * @param base - Namespaces the helper itself needs.
+ * @param options - Resolved emitter options (additional usings).
+ * @returns Sorted, deduplicated array of `using` namespace strings.
+ */
+function helperUsings(base: string[], options: ResolvedOptions): string[] {
+  return sortUsings(new Set([...base, ...options.additionalUsings]));
+}
+
+/**
  * Emits the MergePatch support files (generic helper or per-entity typed
- * classes, depending on `merge-patch-style`) and, when `emit-helpers` is
- * enabled, the `EnumMemberConverter` helper.
+ * classes, depending on `merge-patch-style`), the `EnumMemberConverter` helper
+ * when any enum was emitted or `emit-helpers` is enabled, and the
+ * `BooleanStringJsonConverter` helper when a model needs it.
  *
  * @param program - The compiled TypeSpec program.
  * @param models - Models collected by the emitter, used to discover PATCH bodies.
+ * @param emittedEnums - Whether any enum file (explicit or inferred) was emitted.
+ * @param services - The program's HTTP services, from `getAllHttpServices`.
  * @param renderer - Pre-compiled renderer instance.
  * @param options - Resolved emitter options.
  */
 export async function emitHelpers(
   program: Program,
   models: Model[],
+  emittedEnums: boolean,
+  services: readonly HttpService[],
   renderer: Renderer,
   options: ResolvedOptions,
 ): Promise<void> {
-  const patchRouteModels = collectValidatorModelsFromRoutes(program, models);
-
   if (options.mergePatchStyle === "typed") {
+    const patchRouteModels = collectValidatorModelsFromRoutes(
+      program,
+      services,
+      models,
+    );
     if (patchRouteModels?.patchModels.size) {
       await emitEntityMergePatches(
         program,
@@ -83,14 +105,15 @@ export async function emitHelpers(
     await emitMergePatch(program, renderer, options);
   }
 
-  // Emit EnumMemberConverter helper only when emit-helpers is true (optional).
-  if (options.emitHelpers) {
+  // Every generated enum carries [JsonConverter(typeof(EnumMemberConverterFactory))],
+  // so the helper is required whenever an enum is emitted. emit-helpers forces
+  // it even when the spec has no enums.
+  if (emittedEnums || options.emitHelpers) {
     await emitEnumMemberConverter(program, renderer, options);
   }
 
   // Emit the BooleanStringJsonConverter helper whenever a model relies on it
-  // (i.e. any property uses `@encode(string)` on a boolean). Unlike the
-  // EnumMemberConverter this is not gated on `emit-helpers`, because generated
+  // (i.e. any property uses `@encode(string)` on a boolean), because generated
   // model code references the converter by name and would not compile without it.
   if (
     models.some((model) =>
@@ -120,7 +143,7 @@ async function emitMergePatch(
     content: renderer.renderFile({
       fileName: mergePatchFileName,
       namespace: options.helpersNamespace,
-      usings: sortUsings(new Set(MERGE_PATCH_USINGS)),
+      usings: helperUsings(MERGE_PATCH_USINGS, options),
       body: renderer.renderMergePatch().replace(/\r\n/g, "\n"),
     }),
   });
@@ -161,7 +184,7 @@ async function emitEntityMergePatches(
       content: renderer.renderFile({
         fileName,
         namespace: options.modelsNamespace,
-        usings: sortUsings(new Set(MERGE_PATCH_USINGS)),
+        usings: helperUsings(MERGE_PATCH_USINGS, options),
         body: renderer
           .renderEntityMergePatch({ modelName, qualifiedModelName })
           .replace(/\r\n/g, "\n"),
@@ -172,7 +195,8 @@ async function emitEntityMergePatches(
 
 /**
  * Writes the `EnumMemberConverter` helper class to the helpers output
- * directory. This is only emitted when the `emit-helpers` option is enabled.
+ * directory. Emitted whenever an enum is emitted (every enum references it),
+ * or unconditionally when the `emit-helpers` option is enabled.
  *
  * @param program - The compiled TypeSpec program (needed by `emitFile`).
  * @param renderer - Pre-compiled renderer instance.
@@ -189,7 +213,7 @@ async function emitEnumMemberConverter(
     content: renderer.renderFile({
       fileName: enumConverterFileName,
       namespace: options.helpersNamespace,
-      usings: sortUsings(new Set(ENUM_CONVERTER_HELPER_USINGS)),
+      usings: helperUsings(ENUM_CONVERTER_HELPER_USINGS, options),
       body: renderer.renderEnumMemberConverter(),
     }),
   });
@@ -215,7 +239,7 @@ async function emitBooleanStringConverter(
     content: renderer.renderFile({
       fileName,
       namespace: options.helpersNamespace,
-      usings: sortUsings(new Set(BOOL_CONVERTER_HELPER_USINGS)),
+      usings: helperUsings(BOOL_CONVERTER_HELPER_USINGS, options),
       body: renderer.renderBooleanStringConverter(),
     }),
   });

@@ -1,0 +1,13 @@
+{{!--
+  validator-property-rules.hbs — partial registered as `propertyRules`.
+
+  Renders the rules for one entry of `properties`: the raw-JSON rules of
+  `mergePatchPropertyRules` for a MergePatch body, otherwise the typed rules
+  of `typedPropertyRules`. Include it on its own line inside a properties
+  loop; every rendered line gets that line's indent.
+--}}
+{{#if @root.isMergePatchBody}}
+{{> mergePatchPropertyRules}}
+{{else}}
+{{> typedPropertyRules}}
+{{/if}}

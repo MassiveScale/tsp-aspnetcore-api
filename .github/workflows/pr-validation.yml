@@ -29,3 +29,26 @@ jobs:
 
       - name: Build & Test
         run: npm test
+
+  min-peers:
+    name: Test against minimum peer versions
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Keep these in sync with the lower bounds of peerDependencies in package.json.
+      - name: Install minimum peer versions
+        run: npm install --no-save @typespec/compiler@1.15.0 @typespec/http@1.15.0 @typespec/versioning@0.85.0
+
+      - name: Build & Test
+        run: npm test

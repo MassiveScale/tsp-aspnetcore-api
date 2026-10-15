@@ -36,7 +36,7 @@ import {
   walkPropertiesInherited,
 } from "@typespec/compiler";
 import {
-  getAllHttpServices,
+  type HttpService,
   isBody,
   isBodyRoot,
   isCookieParam,
@@ -97,7 +97,50 @@ export function hasExplicitBody(program: Program, model: Model): boolean {
  * @param model - The model to inspect.
  */
 export function isHttpEnvelopeModel(program: Program, model: Model): boolean {
-  return isMetadataOnlyModel(program, model) || hasExplicitBody(program, model);
+  return memoize(
+    envelopeModelCache,
+    program,
+    model,
+    () =>
+      isMetadataOnlyModel(program, model) || hasExplicitBody(program, model),
+  );
+}
+
+/** Per-program cache of {@link isHttpEnvelopeModel} results. */
+const envelopeModelCache = new WeakMap<Program, WeakMap<Model, boolean>>();
+
+/** Per-program cache of {@link classProperties} results. */
+const classPropertiesCache = new WeakMap<
+  Program,
+  WeakMap<Model, readonly ModelProperty[]>
+>();
+
+/**
+ * Returns the cached value for `model` in `program`, computing and storing it
+ * on first use. HTTP metadata is fixed once the program is checked, so the
+ * results stay valid for the program's lifetime.
+ *
+ * @param cache - The per-program cache to read and fill.
+ * @param program - The compiled TypeSpec program.
+ * @param model - The model the value belongs to.
+ * @param compute - Computes the value on a cache miss.
+ * @returns The cached or newly computed value.
+ */
+export function memoize<T>(
+  cache: WeakMap<Program, WeakMap<Model, T>>,
+  program: Program,
+  model: Model,
+  compute: () => T,
+): T {
+  let byModel = cache.get(program);
+  if (!byModel) {
+    byModel = new WeakMap();
+    cache.set(program, byModel);
+  }
+  if (byModel.has(model)) return byModel.get(model)!;
+  const value = compute();
+  byModel.set(model, value);
+  return value;
 }
 
 /**
@@ -189,12 +232,23 @@ export function emittedBaseModel(
  * Returns the properties declared on `model`'s C# class, in order: properties
  * flattened from skipped envelope base models (furthest ancestor first),
  * then the model's own properties. Every returned property satisfies
- * {@link isClassProperty}.
+ * {@link isClassProperty}. The result is cached per program, so callers must
+ * not mutate it.
  *
  * @param program - The compiled TypeSpec program.
  * @param model - The model to list properties for.
  */
 export function classProperties(
+  program: Program,
+  model: Model,
+): readonly ModelProperty[] {
+  return memoize(classPropertiesCache, program, model, () =>
+    computeClassProperties(program, model),
+  );
+}
+
+/** Uncached implementation of {@link classProperties}. */
+function computeClassProperties(
   program: Program,
   model: Model,
 ): ModelProperty[] {
@@ -269,13 +323,14 @@ export function resolvePayloadType(
  *
  * @param program - The compiled TypeSpec program.
  * @param candidates - Models that pass {@link shouldEmitModel}, in declaration order.
+ * @param services - The program's HTTP services, from `getAllHttpServices`.
  * @returns The models to emit, in declaration order.
  */
 export function analyzePayloadModels(
   program: Program,
   candidates: Model[],
+  services: readonly HttpService[],
 ): Model[] {
-  const [services] = getAllHttpServices(program);
   const operations = services.flatMap((service) => service.operations);
   if (operations.length === 0) {
     return finalizeModels(
@@ -356,7 +411,8 @@ export function analyzePayloadModels(
   }
 
   const ordered = candidates.filter((model) => reached.has(model));
-  const extras = [...reached].filter((model) => !candidates.includes(model));
+  const candidateSet = new Set(candidates);
+  const extras = [...reached].filter((model) => !candidateSet.has(model));
   return finalizeModels(program, [...ordered, ...extras]);
 }
 

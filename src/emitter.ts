@@ -30,11 +30,13 @@ import {
   NoTarget,
   resolvePath,
 } from "@typespec/compiler";
+import { getAllHttpServices } from "@typespec/http";
 import { isMergePatch } from "@typespec/http/experimental/merge-patch";
 import { EmitterOptions, reportDiagnostic } from "./lib.js";
-import { pascalCase } from "./utils.js";
+import { ordinalCompare, pascalCase } from "./utils.js";
 import {
   Renderer,
+  TemplateLoadError,
   TemplateName,
   TemplateOverrides,
   createRenderer,
@@ -54,7 +56,7 @@ import { emitHelpers } from "./helpers.js";
 import { csharpModelName, qualifyTypeName } from "./naming.js";
 import { analyzePayloadModels } from "./payloads.js";
 import { emitValidators } from "./validators.js";
-import { cleanOutputDirectories } from "./clean.js";
+import { cleanOutputDirectories, writeCleanupManifest } from "./clean.js";
 
 /** Default C# namespace used for top-level TypeSpec models with no namespace. */
 const DEFAULT_NAMESPACE = "Models";
@@ -88,6 +90,8 @@ export interface ResolvedOptions {
   namespaceMap: Array<{ key: string; value: string }>;
   /** File extension for all emitted files, e.g. `".g.cs"`. */
   fileExtension: string;
+  /** Absolute path of the emitter output directory; holds the cleanup manifest. */
+  emitterOutputDir: string;
   /** Absolute path to the models output directory. */
   modelsOutputDir: string;
   /** Whether to emit `I<Model>` interface files. */
@@ -118,7 +122,7 @@ export interface ResolvedOptions {
   cleanOutputDirs: boolean;
   /** Resolved template override paths (absolute). */
   templates: TemplateOverrides;
-  /** Whether to emit helper files (`MergePatchValue`, `EnumMemberConverter`). */
+  /** Whether to emit the optional `EnumMemberConverter` helper file. */
   emitHelpers: boolean;
   /** Absolute path to the helpers output directory. */
   helpersOutputDir: string;
@@ -167,6 +171,8 @@ export async function $onEmit(
   const program = context.program;
   const options = resolveOptions(context);
 
+  // Every template is compiled before anything is cleaned, so a broken custom
+  // template fails the emit without emptying the output directories.
   const renderer = buildRenderer(program, options);
   if (!renderer) return;
 
@@ -189,9 +195,19 @@ export async function $onEmit(
     },
   });
 
-  const models = analyzePayloadModels(program, candidates);
+  // Resolving HTTP services is the most expensive step of an emit, so it runs
+  // once here and the result is shared by every emission module.
+  const [services, httpDiagnostics] = getAllHttpServices(program);
 
-  await emitModelsAndEnums(program, models, enums, renderer, options);
+  const models = analyzePayloadModels(program, candidates, services);
+
+  const { emittedEnums } = await emitModelsAndEnums(
+    program,
+    models,
+    enums,
+    renderer,
+    options,
+  );
 
   const controllerOptions: ControllerOptions = {
     routePrefix: options.routePrefix,
@@ -204,12 +220,19 @@ export async function $onEmit(
     fullyQualifiedTypes: options.fullyQualifiedTypes,
   };
 
-  const groups = collectControllers(
-    program,
-    controllerOptions,
-    (ns) => csharpNamespaceFor(ns, options),
-    (ns) => folderSegments(options.effectiveRootNamespace, ns),
-  );
+  // Controllers and services are skipped when the HTTP library reported an
+  // error, since their routes cannot be trusted. Warnings (e.g.
+  // `merge-patch-content-type`) do not suppress them; the HTTP library
+  // reports those itself.
+  const groups = httpDiagnostics.some((d) => d.severity === "error")
+    ? []
+    : collectControllers(
+        program,
+        services,
+        controllerOptions,
+        (ns) => csharpNamespaceFor(ns, options),
+        (ns) => folderSegments(options.effectiveRootNamespace, ns),
+      );
 
   for (const group of groups) {
     if (options.emitControllers) {
@@ -220,10 +243,14 @@ export async function $onEmit(
     }
   }
 
-  await emitHelpers(program, models, renderer, options);
+  await emitHelpers(program, models, emittedEnums, services, renderer, options);
 
   if (options.emitValidators) {
-    await emitValidators(program, options, new Set(models));
+    await emitValidators(program, services, renderer, options, new Set(models));
+  }
+
+  if (options.cleanOutputDirs) {
+    await writeCleanupManifest(program, options);
   }
 }
 
@@ -239,13 +266,14 @@ export function sortUsings(set: Set<string>): string[] {
     const aSystem = a === "System" || a.startsWith("System.");
     const bSystem = b === "System" || b.startsWith("System.");
     if (aSystem !== bSystem) return aSystem ? -1 : 1;
-    return a.localeCompare(b);
+    return ordinalCompare(a, b);
   });
 }
 
 /**
- * Instantiates the Handlebars renderer, reporting a structured diagnostic if
- * any template cannot be loaded.
+ * Instantiates the Handlebars renderer and, when validators are enabled,
+ * compiles the validator templates too, reporting a structured diagnostic if
+ * any template cannot be read or has a syntax error.
  *
  * @param program - The compiled TypeSpec program (used to report diagnostics).
  * @param options - Resolved options carrying template override paths.
@@ -258,40 +286,21 @@ function buildRenderer(
   try {
     return createRenderer(options.templates);
   } catch (err) {
-    const path = findFailingTemplatePath(options.templates, err);
-    const name = (Object.entries(options.templates).find(
-      ([, p]) => p === path,
-    )?.[0] ?? "unknown") as TemplateName;
+    const failure =
+      err instanceof TemplateLoadError
+        ? err
+        : { templateName: "unknown" as TemplateName, path: "" };
     reportDiagnostic(program, {
       code: "template-load-failed",
       target: NoTarget,
       format: {
-        name,
-        path: path ?? "",
+        name: failure.templateName,
+        path: failure.path,
         reason: err instanceof Error ? err.message : String(err),
       },
     });
     return undefined;
   }
-}
-
-/**
- * Searches the error message of a failed template load to identify which
- * override path caused the failure.
- *
- * @param templates - Map of template name to override path.
- * @param err - The error thrown during template loading.
- * @returns The failing path string, or `undefined` if it cannot be inferred.
- */
-function findFailingTemplatePath(
-  templates: TemplateOverrides,
-  err: unknown,
-): string | undefined {
-  const message = err instanceof Error ? err.message : String(err);
-  for (const value of Object.values(templates)) {
-    if (value && message.includes(value)) return value;
-  }
-  return undefined;
 }
 
 /**
@@ -392,8 +401,6 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     .map(([key, value]) => ({ key, value }))
     .sort((a, b) => b.key.length - a.key.length);
   // Default output directories are "Models" for models/interfaces, and "Controllers"/"Services"/"Helpers" for others.
-  // When namespace-from-path is enabled, the dir suffixes are always applied to the namespace
-  // to reflect the output directory path (e.g., "MyApp.Models", "MyApp.Controllers").
   const modelsDir = raw["models-output-dir"] ?? "Models";
   const interfacesDir = raw["interfaces-output-dir"] ?? "Models";
   const controllersDir = raw["controllers-output-dir"] ?? "Controllers";
@@ -437,6 +444,7 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     helpersNamespace,
     namespaceMap,
     fileExtension: raw["file-extension"] ?? ".g.cs",
+    emitterOutputDir: baseDir,
     modelsOutputDir: resolvePath(baseDir, modelsDir),
     emitInterfaces: raw["emit-interfaces"] ?? false,
     interfacesOutputDir: resolvePath(baseDir, interfacesDir),
@@ -523,8 +531,8 @@ function namespaceFullName(ns: Namespace | undefined): string {
  *
  * @param ns - TypeSpec namespace node, or `undefined`.
  * @param options - Resolved options carrying the namespace map and root.
- * @param sectionRootNs - Optional per-section root (e.g. `models-root-namespace`)
- *   that takes priority over the global root for unnamespaced types.
+ * @param sectionRootNs - Optional root (e.g. the effective root namespace)
+ *   that takes priority over `root-namespace` for unnamespaced types.
  * @returns Dot-separated C# namespace string.
  */
 export function csharpNamespaceFor(

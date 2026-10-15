@@ -8,10 +8,10 @@
 
 using FluentValidation;
 using Microsoft.AspNetCore.Http;
-using MarketOnce.Community.Campaign.Api.Models;
-using MarketOnce.Community.Campaign.Api.Helpers;
+using MassiveScale.Petshop.Api.Models;
+using MassiveScale.Petshop.Api.Helpers;
 
-namespace MarketOnce.Community.Campaign.Api.Validators;
+namespace MassiveScale.Petshop.Api.Validators;
 
 /// <summary>
 /// Auto-generated version-aware PATCH validator for Cat.
@@ -24,38 +24,162 @@ namespace MarketOnce.Community.Campaign.Api.Validators;
 public partial class CatPatchValidator : AbstractValidator<MergePatch<Cat>>
 {
     private static readonly string[] _versions = new[] { "v1.0", "v2.0" };
+    private static readonly string[] _normalizedVersions = System.Array.ConvertAll(_versions, NormalizeVersion);
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
     /// <summary>
     /// Initializes a new instance of <see cref="CatPatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
-    public CatPatchValidator(IHttpContextAccessor httpContextAccessor)
+    public CatPatchValidator(IHttpContextAccessor httpContextAccessor, Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions> jsonOptions, AbstractValidator<Tag> tagValidator)
     {
-        var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
+        _httpContextAccessor = httpContextAccessor;
+        var jsonSerializerOptions = jsonOptions.Value.JsonSerializerOptions;
+
+        // Id is read-only and cannot be modified via patch
+        this.RuleFor(x => x)
+            .Must(x => !x.IsDefined("id"))
+            .WithName("Id")
+            .WithMessage("'Id' is read-only and cannot be modified.");
+
+        // CreatedDateTime is read-only and cannot be modified via patch
+        this.RuleFor(x => x)
+            .Must(x => !x.IsDefined("createdDateTime"))
+            .WithName("CreatedDateTime")
+            .WithMessage("'CreatedDateTime' is read-only and cannot be modified.");
+
+        // LastModifiedDateTime is read-only and cannot be modified via patch
+        this.RuleFor(x => x)
+            .Must(x => !x.IsDefined("lastModifiedDateTime"))
+            .WithName("LastModifiedDateTime")
+            .WithMessage("'LastModifiedDateTime' is read-only and cannot be modified.");
+
+        // PhotoUrls is required and cannot be removed
+        this.RuleFor(x => x)
+            .Must(x => !x.IsNull("photoUrls"))
+            .When(x => x.IsDefined("photoUrls"))
+            .WithName("PhotoUrls")
+            .WithMessage("'PhotoUrls' is required and cannot be null.");
+
+        // PhotoUrls cannot contain more than 5 items when provided
+        this.RuleFor(x => x)
+            .Must(x => x.Properties.TryGetValue("photoUrls", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() <= 5)
+            .When(x => x.IsDefined("photoUrls") && !x.IsNull("photoUrls"))
+            .WithName("PhotoUrls")
+            .WithMessage("'PhotoUrls' must be an array with no more than 5 items.");
 
         // IsPurrer is required and cannot be removed
         this.RuleFor(x => x)
-            .Must(x => !x.IsNull("IsPurrer"))
-            .When(x => x.IsDefined("IsPurrer"))
+            .Must(x => !x.IsNull("isPurrer"))
+            .When(x => x.IsDefined("isPurrer"))
             .WithName("IsPurrer")
             .WithMessage("'IsPurrer' is required and cannot be null.");
+
+        // Rules for v2.0 and later
+        When(_ => IsVersionInRange("v2.0", null), () =>
+        {
+            // Tags cannot contain more than 10 items when provided
+            this.RuleFor(x => x)
+                .Must(x => x.Properties.TryGetValue("tags", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() <= 10)
+                .When(x => x.IsDefined("tags") && !x.IsNull("tags"))
+                .WithName("Tags")
+                .WithMessage("'Tags' must be an array with no more than 10 items.");
+
+            // Tags replaces the whole array, so each item is validated as a complete model
+            this.RuleFor(x => x).Custom((patch, context) =>
+            {
+                if (!patch.Properties.TryGetValue("tags", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+                if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
+                {
+                    context.AddFailure("Tags", "'Tags' must be an array.");
+                    return;
+                }
+                var index = 0;
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (item.ValueKind != System.Text.Json.JsonValueKind.Object)
+                    {
+                        context.AddFailure($"Tags[{index}]", "Array items must be objects.");
+                        index++;
+                        continue;
+                    }
+                    Tag? nestedModel;
+                    try
+                    {
+                        nestedModel = System.Text.Json.JsonSerializer.Deserialize<Tag>(item.GetRawText(), jsonSerializerOptions);
+                    }
+                    catch (System.Exception ex) when (ex is System.Text.Json.JsonException or System.NotSupportedException or System.InvalidOperationException)
+                    {
+                        // NotSupportedException: an abstract or polymorphic item sent without its type discriminator.
+                        context.AddFailure($"Tags[{index}]", "The array item could not be deserialized.");
+                        index++;
+                        continue;
+                    }
+                    if (nestedModel is null)
+                    {
+                        context.AddFailure($"Tags[{index}]", "Array items must be objects.");
+                    }
+                    else
+                    {
+                        var nestedResult = tagValidator.Validate(nestedModel);
+                        foreach (var failure in nestedResult.Errors)
+                            context.AddFailure($"Tags[{index}].{failure.PropertyName}", failure.ErrorMessage);
+                    }
+                    index++;
+                }
+            });
+
+        });
 
         ExtendRules();
     }
 
-    private static string ResolveApiVersion(HttpContext? context, string defaultVersion)
+    /// <summary>
+    /// Returns <see langword="true"/> when the request's API version is <paramref name="since"/>
+    /// or later, and earlier than <paramref name="until"/> when it is set.
+    /// </summary>
+    private bool IsVersionInRange(string since, string? until)
     {
-        if (context is null) return defaultVersion;
-        if (context.Request.RouteValues.TryGetValue("version", out var rv) && rv is string rs && rs.Length > 0) return rs;
-        if (context.Request.Headers.TryGetValue("api-version", out var hv) && hv.Count > 0) return hv[0] ?? defaultVersion;
-        if (context.Request.Query.TryGetValue("api-version", out var qv) && qv.Count > 0) return qv[0] ?? defaultVersion;
-        return defaultVersion;
+        var current = CurrentVersionIndex();
+        return current >= System.Array.IndexOf(_versions, since)
+            && (until is null || current < System.Array.IndexOf(_versions, until));
     }
 
-    private static bool IsAtLeast(string target, string current, string[] orderedVersions)
+    /// <summary>
+    /// Returns the position in <c>_versions</c> of the API version requested by the current
+    /// HTTP request. A request without a version uses v1.0; a version that
+    /// matches none of the known versions is validated against the latest one.
+    /// </summary>
+    private int CurrentVersionIndex()
     {
-        var ti = System.Array.IndexOf(orderedVersions, target);
-        var ci = System.Array.IndexOf(orderedVersions, current);
-        return ci >= 0 && ti >= 0 && ci >= ti;
+        var requested = ResolveApiVersion(_httpContextAccessor.HttpContext);
+        if (requested is null) return System.Array.IndexOf(_versions, "v1.0");
+        var index = System.Array.IndexOf(_normalizedVersions, NormalizeVersion(requested));
+        return index >= 0 ? index : _versions.Length - 1;
+    }
+
+    /// <summary>
+    /// Reads the API version from the <c>version</c> route value, the <c>api-version</c>
+    /// header, or the <c>api-version</c> query parameter, in that order.
+    /// </summary>
+    private static string? ResolveApiVersion(HttpContext? context)
+    {
+        if (context is null) return null;
+        if (context.Request.RouteValues.TryGetValue("version", out var rv) && rv is string rs && rs.Length > 0) return rs;
+        if (context.Request.Headers.TryGetValue("api-version", out var hv) && hv.Count > 0 && !string.IsNullOrEmpty(hv[0])) return hv[0];
+        if (context.Request.Query.TryGetValue("api-version", out var qv) && qv.Count > 0 && !string.IsNullOrEmpty(qv[0])) return qv[0];
+        return null;
+    }
+
+    /// <summary>
+    /// Normalizes a version for comparison: case-insensitive, without a leading <c>v</c>
+    /// and without trailing <c>.0</c> parts, so <c>v2.0</c>, <c>V2</c> and <c>2.0</c> match.
+    /// </summary>
+    private static string NormalizeVersion(string version)
+    {
+        var normalized = version.Trim().ToLowerInvariant();
+        if (normalized.StartsWith('v')) normalized = normalized[1..];
+        while (normalized.Length > 2 && normalized.EndsWith(".0", System.StringComparison.Ordinal)) normalized = normalized[..^2];
+        return normalized;
     }
 
     /// <summary>

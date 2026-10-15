@@ -1,0 +1,122 @@
+{{!--
+  validator-typed-property-rules.hbs — partial registered as `typedPropertyRules`.
+
+  Renders the rules for one property of a POST validator, or of a PATCH
+  validator over a plain model body, using typed property access
+  (`RuleFor(x => x.Name)`). PATCH rules are skipped when the value is null,
+  because a plain body can't tell an omitted field from an explicit null.
+  Included through the `propertyRules` partial.
+
+  ── Template variables (one entry of `properties`) ──────────────────────────
+  See "Validator view models" in docs/custom-templates.md. `@root.isPatch`
+  selects the PATCH wording and null guards.
+--}}
+{{#if isReadOnly}}
+{{#if rejectWithNull}}
+{{#if @root.isPatch}}
+// {{{name}}} {{#if isImmutable}}cannot be changed after creation{{else}}is read-only{{/if}} and must not be supplied
+{{else}}
+// {{{name}}} {{#if isImmutable}}can only be set by an update{{else}}is read-only{{/if}} and must not be set on creation
+{{/if}}
+RuleFor(x => x.{{{name}}}).Null();
+
+{{/if}}
+{{else}}
+{{#if notEmpty}}
+{{#if @root.isPatch}}
+// {{{name}}} must not be empty when provided
+RuleFor(x => x.{{{name}}}).NotEmpty(){{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}};
+{{else}}
+// {{{name}}} is required
+RuleFor(x => x.{{{name}}}).NotEmpty();
+{{/if}}
+
+{{/if}}
+{{#unless @root.isPatch}}
+{{#if notNull}}
+// {{{name}}} is required
+RuleFor(x => x.{{{name}}}).NotNull();
+
+{{/if}}
+{{/unless}}
+{{#if minLength}}
+// {{{name}}} must be at least {{minLength}} characters{{#if @root.isPatch}} when provided{{/if}}
+RuleFor(x => x.{{{name}}}).MinimumLength({{minLength}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+
+{{/if}}
+{{!-- isDefined, not a plain #if: a zero maximum is still a limit. --}}
+{{#if (isDefined maxLength)}}
+// {{{name}}} cannot exceed a MaxLength of {{maxLength}}{{#if @root.isPatch}} when provided{{/if}}
+RuleFor(x => x.{{{name}}}).MaximumLength({{maxLength}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+
+{{/if}}
+{{#if pattern}}
+// {{{name}}} must match the pattern '{{pattern}}'{{#if @root.isPatch}} when provided{{/if}}
+RuleFor(x => x.{{{name}}}).Must(value => IsMatch({{{patternField}}}, value)).WithMessage("'{PropertyName}' is not in the correct format."){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+
+{{/if}}
+{{#if emailAddress}}
+// {{{name}}} must be a valid email address{{#if @root.isPatch}} when provided{{/if}}
+RuleFor(x => x.{{{name}}}).EmailAddress(){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+
+{{/if}}
+{{#if minValue}}
+// {{{name}}} must be greater than or equal to {{minValue.display}}{{#if @root.isPatch}} when provided{{/if}}
+RuleFor(x => x.{{{name}}}).GreaterThanOrEqualTo({{{minValue.formatted}}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+
+{{/if}}
+{{#if minValueExclusive}}
+// {{{name}}} must be greater than {{minValueExclusive.display}}{{#if @root.isPatch}} when provided{{/if}}
+RuleFor(x => x.{{{name}}}).GreaterThan({{{minValueExclusive.formatted}}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+
+{{/if}}
+{{#if maxValue}}
+// {{{name}}} cannot exceed a MaxValue of {{maxValue.display}}{{#if @root.isPatch}} when provided{{/if}}
+RuleFor(x => x.{{{name}}}).LessThanOrEqualTo({{{maxValue.formatted}}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+
+{{/if}}
+{{#if maxValueExclusive}}
+// {{{name}}} must be less than {{maxValueExclusive.display}}{{#if @root.isPatch}} when provided{{/if}}
+RuleFor(x => x.{{{name}}}).LessThan({{{maxValueExclusive.formatted}}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+
+{{/if}}
+{{#if minItems}}
+// {{{name}}} must contain at least {{minItems}} items{{#if @root.isPatch}} when provided{{/if}}
+RuleFor(x => x.{{{name}}}).Must(value => value is null || value.Count >= {{minItems}}).WithMessage("'{PropertyName}' must contain at least {{minItems}} items.");
+
+{{/if}}
+{{#if (isDefined maxItems)}}
+// {{{name}}} cannot contain more than {{maxItems}} items{{#if @root.isPatch}} when provided{{/if}}
+RuleFor(x => x.{{{name}}}).Must(value => value is null || value.Count <= {{maxItems}}).WithMessage("'{PropertyName}' must not contain more than {{maxItems}} items.");
+
+{{/if}}
+{{#if isInEnum}}
+// {{{name}}} must be a valid enum value{{#if @root.isPatch}} when provided{{/if}}
+RuleFor(x => x.{{{name}}}).IsInEnum(){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+
+{{/if}}
+{{#if referencedModelName}}
+{{#if isCollectionReference}}
+// {{{name}}} items are validated recursively{{#if nullable}} when not null{{/if}}
+RuleForEach(x => x.{{{name}}}{{#if nullable}}!{{/if}}).SetValidator({{#if referencedValidatorLazy}}_ => {{/if}}{{{referencedValidatorExpression}}}){{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}};
+
+{{else if isRecordReference}}
+// {{{name}}} values are validated recursively
+RuleFor(x => x.{{{name}}}).Custom((values, context) =>
+{
+    if (values is null) return;
+    foreach (var entry in values)
+    {
+        if (entry.Value is null) continue;
+        foreach (var failure in {{{referencedValidatorExpression}}}.Validate(entry.Value).Errors)
+            context.AddFailure($"{{{name}}}[{entry.Key}].{failure.PropertyName}", failure.ErrorMessage);
+    }
+});
+
+{{else}}
+// {{{name}}} is validated recursively{{#if nullable}} when not null{{/if}}
+RuleFor(x => x.{{{name}}}{{#if nullable}}!{{/if}}).SetValidator({{#if referencedValidatorLazy}}_ => {{/if}}{{{referencedValidatorExpression}}}){{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}};
+
+{{/if}}
+{{/if}}
+{{/if}}

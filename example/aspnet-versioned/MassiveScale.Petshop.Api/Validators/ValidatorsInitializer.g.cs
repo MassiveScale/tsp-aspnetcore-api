@@ -8,11 +8,11 @@
 
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
-using MarketOnce.Community.Campaign.Api.Models;
-using MarketOnce.Community.Campaign.Api.Helpers;
+using MassiveScale.Petshop.Api.Models;
+using MassiveScale.Petshop.Api.Helpers;
 using Microsoft.AspNetCore.Http;
 
-namespace MarketOnce.Community.Campaign.Api.Validators;
+namespace MassiveScale.Petshop.Api.Validators;
 
 /// <summary>
 /// Extension methods for registering the auto-generated FluentValidation validators
@@ -25,7 +25,8 @@ public static class ValidatorsInitializer
     /// Registers all auto-generated FluentValidation validators.
     /// Each validator is registered as its concrete type, as <see cref="AbstractValidator{T}"/>
     /// (for cascade injection between validators), and as <see cref="IValidator{T}"/>
-    /// (for the FluentValidation pipeline).
+    /// (for the FluentValidation pipeline). Validators hold no per-request state, so they
+    /// are registered as singletons and built once.
     /// <para>
     /// Version-aware validators require <see cref="IHttpContextAccessor"/>. Ensure
     /// <c>services.AddHttpContextAccessor()</c> has been called before this method.
@@ -34,49 +35,49 @@ public static class ValidatorsInitializer
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     public static IServiceCollection AddGeneratedValidators(this IServiceCollection services)
     {
-        services.AddScoped<StoreValidator>();
-        services.AddScoped<AbstractValidator<Store>>(sp => sp.GetRequiredService<StoreValidator>());
-        services.AddScoped<IValidator<Store>>(sp => sp.GetRequiredService<StoreValidator>());
+        services.AddSingleton<StoreValidator>();
+        services.AddSingleton<AbstractValidator<Store>>(sp => sp.GetRequiredService<StoreValidator>());
+        services.AddSingleton<IValidator<Store>>(sp => sp.GetRequiredService<StoreValidator>());
 
-        services.AddScoped<StorePatchValidator>();
-        services.AddScoped<AbstractValidator<MergePatch<Store>>>(sp => sp.GetRequiredService<StorePatchValidator>());
-        services.AddScoped<IValidator<MergePatch<Store>>>(sp => sp.GetRequiredService<StorePatchValidator>());
+        services.AddSingleton<StorePatchValidator>();
+        services.AddSingleton<AbstractValidator<MergePatch<Store>>>(sp => sp.GetRequiredService<StorePatchValidator>());
+        services.AddSingleton<IValidator<MergePatch<Store>>>(sp => sp.GetRequiredService<StorePatchValidator>());
 
-        services.AddScoped<PetValidator>();
-        services.AddScoped<AbstractValidator<Pet>>(sp => sp.GetRequiredService<PetValidator>());
-        services.AddScoped<IValidator<Pet>>(sp => sp.GetRequiredService<PetValidator>());
+        services.AddSingleton<PetValidator>();
+        services.AddSingleton<AbstractValidator<Pet>>(sp => sp.GetRequiredService<PetValidator>());
+        services.AddSingleton<IValidator<Pet>>(sp => sp.GetRequiredService<PetValidator>());
 
-        services.AddScoped<PetPatchValidator>();
-        services.AddScoped<AbstractValidator<MergePatch<Pet>>>(sp => sp.GetRequiredService<PetPatchValidator>());
-        services.AddScoped<IValidator<MergePatch<Pet>>>(sp => sp.GetRequiredService<PetPatchValidator>());
+        services.AddSingleton<PetPatchValidator>();
+        services.AddSingleton<AbstractValidator<MergePatch<Pet>>>(sp => sp.GetRequiredService<PetPatchValidator>());
+        services.AddSingleton<IValidator<MergePatch<Pet>>>(sp => sp.GetRequiredService<PetPatchValidator>());
 
-        services.AddScoped<TagValidator>();
-        services.AddScoped<AbstractValidator<Tag>>(sp => sp.GetRequiredService<TagValidator>());
-        services.AddScoped<IValidator<Tag>>(sp => sp.GetRequiredService<TagValidator>());
+        services.AddSingleton<TagValidator>();
+        services.AddSingleton<AbstractValidator<Tag>>(sp => sp.GetRequiredService<TagValidator>());
+        services.AddSingleton<IValidator<Tag>>(sp => sp.GetRequiredService<TagValidator>());
 
-        services.AddScoped<CustomerValidator>();
-        services.AddScoped<AbstractValidator<Customer>>(sp => sp.GetRequiredService<CustomerValidator>());
-        services.AddScoped<IValidator<Customer>>(sp => sp.GetRequiredService<CustomerValidator>());
+        services.AddSingleton<CustomerValidator>();
+        services.AddSingleton<AbstractValidator<Customer>>(sp => sp.GetRequiredService<CustomerValidator>());
+        services.AddSingleton<IValidator<Customer>>(sp => sp.GetRequiredService<CustomerValidator>());
 
-        services.AddScoped<CustomerPatchValidator>();
-        services.AddScoped<AbstractValidator<MergePatch<Customer>>>(sp => sp.GetRequiredService<CustomerPatchValidator>());
-        services.AddScoped<IValidator<MergePatch<Customer>>>(sp => sp.GetRequiredService<CustomerPatchValidator>());
+        services.AddSingleton<CustomerPatchValidator>();
+        services.AddSingleton<AbstractValidator<MergePatch<Customer>>>(sp => sp.GetRequiredService<CustomerPatchValidator>());
+        services.AddSingleton<IValidator<MergePatch<Customer>>>(sp => sp.GetRequiredService<CustomerPatchValidator>());
 
-        services.AddScoped<DogValidator>();
-        services.AddScoped<AbstractValidator<Dog>>(sp => sp.GetRequiredService<DogValidator>());
-        services.AddScoped<IValidator<Dog>>(sp => sp.GetRequiredService<DogValidator>());
+        services.AddSingleton<DogValidator>();
+        services.AddSingleton<AbstractValidator<Dog>>(sp => sp.GetRequiredService<DogValidator>());
+        services.AddSingleton<IValidator<Dog>>(sp => sp.GetRequiredService<DogValidator>());
 
-        services.AddScoped<DogPatchValidator>();
-        services.AddScoped<AbstractValidator<MergePatch<Dog>>>(sp => sp.GetRequiredService<DogPatchValidator>());
-        services.AddScoped<IValidator<MergePatch<Dog>>>(sp => sp.GetRequiredService<DogPatchValidator>());
+        services.AddSingleton<DogPatchValidator>();
+        services.AddSingleton<AbstractValidator<MergePatch<Dog>>>(sp => sp.GetRequiredService<DogPatchValidator>());
+        services.AddSingleton<IValidator<MergePatch<Dog>>>(sp => sp.GetRequiredService<DogPatchValidator>());
 
-        services.AddScoped<CatValidator>();
-        services.AddScoped<AbstractValidator<Cat>>(sp => sp.GetRequiredService<CatValidator>());
-        services.AddScoped<IValidator<Cat>>(sp => sp.GetRequiredService<CatValidator>());
+        services.AddSingleton<CatValidator>();
+        services.AddSingleton<AbstractValidator<Cat>>(sp => sp.GetRequiredService<CatValidator>());
+        services.AddSingleton<IValidator<Cat>>(sp => sp.GetRequiredService<CatValidator>());
 
-        services.AddScoped<CatPatchValidator>();
-        services.AddScoped<AbstractValidator<MergePatch<Cat>>>(sp => sp.GetRequiredService<CatPatchValidator>());
-        services.AddScoped<IValidator<MergePatch<Cat>>>(sp => sp.GetRequiredService<CatPatchValidator>());
+        services.AddSingleton<CatPatchValidator>();
+        services.AddSingleton<AbstractValidator<MergePatch<Cat>>>(sp => sp.GetRequiredService<CatPatchValidator>());
+        services.AddSingleton<IValidator<MergePatch<Cat>>>(sp => sp.GetRequiredService<CatPatchValidator>());
 
         return services;
     }

@@ -8,12 +8,18 @@
 
 using FluentValidation;
 using Microsoft.AspNetCore.Http;
+{{#if usesServiceProvider}}
+using Microsoft.Extensions.DependencyInjection;
+{{/if}}
 {{#unless fullyQualifiedTypes}}
 using {{{modelsNamespace}}};
 {{#if useHelpersNamespace}}
 using {{{helpersNamespace}}};
 {{/if}}
 {{/unless}}
+{{#each additionalUsings}}
+using {{{this}}};
+{{/each}}
 {{#if namespace}}
 
 namespace {{{namespace}}};
@@ -28,182 +34,35 @@ namespace {{{namespace}}};
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public partial class {{{modelName}}}Validator : AbstractValidator<{{{qualifiedModelName}}}>
 {
-    private static readonly string[] _versions = new[] { {{#each allVersions}}"{{this}}"{{#unless @last}}, {{/unless}}{{/each}} };
-
+    {{> validatorFields}}
     /// <summary>
     /// Initializes a new instance of <see cref="{{{modelName}}}Validator"/> with version-aware auto-generated rules.
     /// </summary>
-    public {{{modelName}}}Validator(IHttpContextAccessor httpContextAccessor{{#each referencedValidators}}, AbstractValidator<{{{qualifiedModelName}}}> {{{paramName}}}{{/each}}{{#each derivedTypeValidators}}, AbstractValidator<{{{qualifiedTypeName}}}> {{{paramName}}}{{/each}})
+    public {{{modelName}}}Validator({{#each constructorParameters}}{{#unless @first}}, {{/unless}}{{{type}}} {{{name}}}{{/each}})
     {
-        var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "{{{defaultVersion}}}");
+        _httpContextAccessor = httpContextAccessor;
 
-{{#each baseProperties}}
-{{#if isReadOnly}}
-{{#if nullable}}
-        // {{{name}}} {{#if isImmutable}}can only be set by an update{{else}}is read-only{{/if}} and must not be set on creation
-        RuleFor(x => x.{{{name}}}).Null();
-
-{{/if}}
-{{else}}
-{{#if notEmpty}}
-        // {{{name}}} is required
-        RuleFor(x => x.{{{name}}}).NotEmpty();
-
-{{/if}}
-{{#if notNull}}
-        // {{{name}}} is required
-        RuleFor(x => x.{{{name}}}).NotNull();
-
-{{/if}}
-{{#if minLength}}
-        // {{{name}}} must be at least {{minLength}} characters
-        RuleFor(x => x.{{{name}}}).MinimumLength({{minLength}});
-
-{{/if}}
-{{#if maxLength}}
-        // {{{name}}} cannot exceed a MaxLength of {{maxLength}}
-        RuleFor(x => x.{{{name}}}).MaximumLength({{maxLength}});
-
-{{/if}}
-{{#if pattern}}
-        // {{{name}}} must match the pattern '{{pattern}}'
-        RuleFor(x => x.{{{name}}}).Matches(@"{{pattern}}");
-
-{{/if}}
-{{#if emailAddress}}
-        // {{{name}}} must be a valid email address
-        RuleFor(x => x.{{{name}}}).EmailAddress();
-
-{{/if}}
-{{#if minValue}}
-        // {{{name}}} must be greater than or equal to {{minValue.formatted}}
-        RuleFor(x => x.{{{name}}}).GreaterThanOrEqualTo({{minValue.formatted}});
-
-{{/if}}
-{{#if maxValue}}
-        // {{{name}}} cannot exceed a MaxValue of {{maxValue.formatted}}
-        RuleFor(x => x.{{{name}}}).LessThanOrEqualTo({{maxValue.formatted}});
-
-{{/if}}
-{{#if isInEnum}}
-        // {{{name}}} must be a valid enum value
-        RuleFor(x => x.{{{name}}}).IsInEnum();
-
-{{/if}}
-{{#if referencedModelName}}
-{{#if isCollectionReference}}
-        // {{{name}}} items are validated recursively{{#if nullable}} when not null{{/if}}
-        RuleForEach(x => x.{{{name}}}{{#if nullable}}!{{/if}}).SetValidator({{{referencedParamName}}}){{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}};
-
-{{else}}
-        // {{{name}}} is validated recursively{{#if nullable}} when not null{{/if}}
-        RuleFor(x => x.{{{name}}}{{#if nullable}}!{{/if}}).SetValidator({{{referencedParamName}}}){{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}};
-
-{{/if}}
-{{/if}}
-{{/if}}
-{{/each}}
-{{#each versionGroups}}
-        // Rules added in {{{sinceVersion}}}
-        When(_ => IsAtLeast("{{{sinceVersion}}}", _apiVersion, _versions), () =>
+{{#if derivedTypeValidators}}
+        // A derived type's validator checks every property, inherited ones included.
+        When(x => !_derivedTypes.Contains(x.GetType()), () =>
         {
-{{#each properties}}
-{{#if isReadOnly}}
-{{#if nullable}}
-            // {{{name}}} {{#if isImmutable}}can only be set by an update{{else}}is read-only{{/if}} and must not be set on creation
-            RuleFor(x => x.{{{name}}}).Null();
-
-{{/if}}
-{{else}}
-{{#if notEmpty}}
-            // {{{name}}} is required
-            RuleFor(x => x.{{{name}}}).NotEmpty();
-
-{{/if}}
-{{#if notNull}}
-            // {{{name}}} is required
-            RuleFor(x => x.{{{name}}}).NotNull();
-
-{{/if}}
-{{#if minLength}}
-            // {{{name}}} must be at least {{minLength}} characters
-            RuleFor(x => x.{{{name}}}).MinimumLength({{minLength}});
-
-{{/if}}
-{{#if maxLength}}
-            // {{{name}}} cannot exceed a MaxLength of {{maxLength}}
-            RuleFor(x => x.{{{name}}}).MaximumLength({{maxLength}});
-
-{{/if}}
-{{#if pattern}}
-            // {{{name}}} must match the pattern '{{pattern}}'
-            RuleFor(x => x.{{{name}}}).Matches(@"{{pattern}}");
-
-{{/if}}
-{{#if emailAddress}}
-            // {{{name}}} must be a valid email address
-            RuleFor(x => x.{{{name}}}).EmailAddress();
-
-{{/if}}
-{{#if minValue}}
-            // {{{name}}} must be greater than or equal to {{minValue.formatted}}
-            RuleFor(x => x.{{{name}}}).GreaterThanOrEqualTo({{minValue.formatted}});
-
-{{/if}}
-{{#if maxValue}}
-            // {{{name}}} cannot exceed a MaxValue of {{maxValue.formatted}}
-            RuleFor(x => x.{{{name}}}).LessThanOrEqualTo({{maxValue.formatted}});
-
-{{/if}}
-{{#if isInEnum}}
-            // {{{name}}} must be a valid enum value
-            RuleFor(x => x.{{{name}}}).IsInEnum();
-
-{{/if}}
-{{#if referencedModelName}}
-{{#if isCollectionReference}}
-            // {{{name}}} items are validated recursively{{#if nullable}} when not null{{/if}}
-            RuleForEach(x => x.{{{name}}}{{#if nullable}}!{{/if}}).SetValidator({{{referencedParamName}}}){{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}};
-
-{{else}}
-            // {{{name}}} is validated recursively{{#if nullable}} when not null{{/if}}
-            RuleFor(x => x.{{{name}}}{{#if nullable}}!{{/if}}).SetValidator({{{referencedParamName}}}){{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}};
-
-{{/if}}
-{{/if}}
-{{/if}}
-{{/each}}
+            {{> validatorRules}}
         });
 
-{{/each}}
-{{#if derivedTypeValidators}}
         // Polymorphic validation — dispatch to derived type validators
         RuleFor(x => x).SetInheritanceValidator(v =>
         {
 {{#each derivedTypeValidators}}
-            v.Add<{{{qualifiedTypeName}}}>({{{paramName}}});
+            v.Add<{{{qualifiedTypeName}}}>({{#if lazy}}_ => {{/if}}{{{validatorExpression}}});
 {{/each}}
         });
 
+{{else}}
+        {{> validatorRules}}
 {{/if}}
         ExtendRules();
     }
-
-    private static string ResolveApiVersion(HttpContext? context, string defaultVersion)
-    {
-        if (context is null) return defaultVersion;
-        if (context.Request.RouteValues.TryGetValue("version", out var rv) && rv is string rs && rs.Length > 0) return rs;
-        if (context.Request.Headers.TryGetValue("api-version", out var hv) && hv.Count > 0) return hv[0] ?? defaultVersion;
-        if (context.Request.Query.TryGetValue("api-version", out var qv) && qv.Count > 0) return qv[0] ?? defaultVersion;
-        return defaultVersion;
-    }
-
-    private static bool IsAtLeast(string target, string current, string[] orderedVersions)
-    {
-        var ti = System.Array.IndexOf(orderedVersions, target);
-        var ci = System.Array.IndexOf(orderedVersions, current);
-        return ci >= 0 && ti >= 0 && ci >= ti;
-    }
+    {{> validatorHelpers}}
 
     /// <summary>
     /// Implement this partial method in a hand-written part of this class to add custom

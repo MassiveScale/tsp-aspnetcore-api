@@ -73,6 +73,89 @@ export function pascalCase(name: string): string {
     .join("");
 }
 
+/** Short C# escape sequences for characters that cannot appear raw in a string literal. */
+const CSHARP_STRING_ESCAPES: Record<string, string> = {
+  "\\": "\\\\",
+  '"': '\\"',
+  "\0": "\\0",
+  "\x07": "\\a",
+  "\b": "\\b",
+  "\f": "\\f",
+  "\n": "\\n",
+  "\r": "\\r",
+  "\t": "\\t",
+  "\v": "\\v",
+};
+
+/** Code points C# treats as line breaks besides `\r` / `\n`: NEL, LS and PS. */
+const CSHARP_EXTRA_LINE_BREAKS = new Set([0x85, 0x2028, 0x2029]);
+
+/**
+ * Converts a string to a C# regular string literal, escaping backslashes,
+ * quotes, and every control or line-terminator character. A raw newline (or
+ * U+0085 / U+2028 / U+2029, which C# also treats as line breaks) inside a
+ * regular string literal is a compile error.
+ *
+ * @param value - The string to encode.
+ * @returns A quoted C# string literal, e.g. `"line1\nline2"`.
+ */
+export function csharpStringLiteral(value: string): string {
+  let escaped = "";
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    const short = CSHARP_STRING_ESCAPES[char];
+    if (short) {
+      escaped += short;
+    } else if (
+      code < 0x20 ||
+      code === 0x7f ||
+      CSHARP_EXTRA_LINE_BREAKS.has(code)
+    ) {
+      escaped += `\\u${code.toString(16).padStart(4, "0")}`;
+    } else {
+      escaped += char;
+    }
+  }
+  return `"${escaped}"`;
+}
+
+/**
+ * Returns the body of {@link csharpStringLiteral} without the surrounding
+ * quotes, for templates that already write the quotes themselves
+ * (`IsDefined("{{{jsonName}}}")`).
+ *
+ * @param value - The string to encode.
+ * @returns The escaped text, e.g. `line1\nline2`.
+ */
+export function csharpStringContent(value: string): string {
+  return csharpStringLiteral(value).slice(1, -1);
+}
+
+/**
+ * Escapes a string for a C# verbatim string literal (`@"..."`), where the only
+ * escape is a doubled quote.
+ *
+ * @param value - The string to encode.
+ * @returns The text with every `"` written as `""`.
+ */
+export function csharpVerbatimStringContent(value: string): string {
+  return value.replace(/"/g, '""');
+}
+
+/**
+ * Escapes the characters that are significant in XML text (`&`, `<`, `>`), so
+ * plain documentation text cannot break an XML doc comment.
+ *
+ * @param text - Plain text.
+ * @returns The text with `&`, `<` and `>` replaced by entity references.
+ */
+export function xmlEscape(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 /**
  * Converts a string to camelCase by PascalCasing it then lower-casing the
  * first character.
@@ -83,4 +166,18 @@ export function pascalCase(name: string): string {
 export function camelCase(name: string): string {
   const pascal = pascalCase(name);
   return pascal ? pascal[0].toLowerCase() + pascal.slice(1) : pascal;
+}
+
+/**
+ * Compares two strings by UTF-16 code unit, like C#'s `string.CompareOrdinal`.
+ * Unlike `localeCompare`, the result does not depend on the machine's locale,
+ * so generated output sorts the same everywhere.
+ *
+ * @param a - First string.
+ * @param b - Second string.
+ * @returns A negative number, zero, or a positive number.
+ */
+export function ordinalCompare(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
 }
