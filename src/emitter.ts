@@ -30,9 +30,10 @@ import {
   NoTarget,
   resolvePath,
 } from "@typespec/compiler";
+import { getAllHttpServices } from "@typespec/http";
 import { isMergePatch } from "@typespec/http/experimental/merge-patch";
 import { EmitterOptions, reportDiagnostic } from "./lib.js";
-import { pascalCase } from "./utils.js";
+import { ordinalCompare, pascalCase } from "./utils.js";
 import {
   Renderer,
   TemplateName,
@@ -189,7 +190,11 @@ export async function $onEmit(
     },
   });
 
-  const models = analyzePayloadModels(program, candidates);
+  // Resolving HTTP services is the most expensive step of an emit, so it runs
+  // once here and the result is shared by every emission module.
+  const [services, httpDiagnostics] = getAllHttpServices(program);
+
+  const models = analyzePayloadModels(program, candidates, services);
 
   await emitModelsAndEnums(program, models, enums, renderer, options);
 
@@ -204,12 +209,18 @@ export async function $onEmit(
     fullyQualifiedTypes: options.fullyQualifiedTypes,
   };
 
-  const groups = collectControllers(
-    program,
-    controllerOptions,
-    (ns) => csharpNamespaceFor(ns, options),
-    (ns) => folderSegments(options.effectiveRootNamespace, ns),
-  );
+  // Controllers and services are skipped when the HTTP library reported
+  // problems with the operations, since their routes cannot be trusted.
+  const groups =
+    httpDiagnostics.length > 0
+      ? []
+      : collectControllers(
+          program,
+          services,
+          controllerOptions,
+          (ns) => csharpNamespaceFor(ns, options),
+          (ns) => folderSegments(options.effectiveRootNamespace, ns),
+        );
 
   for (const group of groups) {
     if (options.emitControllers) {
@@ -220,10 +231,10 @@ export async function $onEmit(
     }
   }
 
-  await emitHelpers(program, models, renderer, options);
+  await emitHelpers(program, models, services, renderer, options);
 
   if (options.emitValidators) {
-    await emitValidators(program, options, new Set(models));
+    await emitValidators(program, services, renderer, options, new Set(models));
   }
 }
 
@@ -239,7 +250,7 @@ export function sortUsings(set: Set<string>): string[] {
     const aSystem = a === "System" || a.startsWith("System.");
     const bSystem = b === "System" || b.startsWith("System.");
     if (aSystem !== bSystem) return aSystem ? -1 : 1;
-    return a.localeCompare(b);
+    return ordinalCompare(a, b);
   });
 }
 

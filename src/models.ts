@@ -42,6 +42,7 @@ import {
   ResolvedOptions,
   csharpNamespaceFor,
   folderSegments,
+  sortUsings,
 } from "./emitter.js";
 import {
   ClassView,
@@ -53,7 +54,13 @@ import {
   Renderer,
   renderDocComment,
 } from "./renderer.js";
-import { SCALAR_MAP, FORMAT_MAP, pascalCase, camelCase } from "./utils.js";
+import {
+  SCALAR_MAP,
+  FORMAT_MAP,
+  pascalCase,
+  camelCase,
+  ordinalCompare,
+} from "./utils.js";
 
 /** `using` directives included in every model / interface / enum file. */
 export const SYSTEM_USINGS = [
@@ -119,8 +126,7 @@ export async function emitModelsAndEnums(
     const interfaceFolder = options.namespaceFromPath
       ? []
       : folderSegments(options.effectiveRootNamespace, typespecNs);
-    const classUsings = collectUsings(program, model, options);
-    const interfaceUsings = collectUsings(program, model, options);
+    const usings = collectUsings(program, model, options);
 
     const emittedModelName = csharpModelName(program, model);
     const classFileName = `${emittedModelName}${options.fileExtension}`;
@@ -129,7 +135,7 @@ export async function emitModelsAndEnums(
       content: renderer.renderFile({
         fileName: classFileName,
         namespace: classNs,
-        usings: classUsings,
+        usings,
         body: renderer.renderClass(
           buildClassView(program, model, options, emittedModels),
         ),
@@ -150,7 +156,7 @@ export async function emitModelsAndEnums(
         content: renderer.renderFile({
           fileName: interfaceFileName,
           namespace: interfaceNs,
-          usings: interfaceUsings,
+          usings,
           body: renderer.renderInterface(
             buildInterfaceView(program, model, options),
           ),
@@ -317,22 +323,6 @@ function collectEnumUsings(
 }
 
 /**
- * Sorts a set of `using` namespace strings with `System` namespaces first,
- * then alphabetically within each group.
- *
- * @param set - Unsorted set of namespace strings.
- * @returns Sorted array of namespace strings.
- */
-function sortUsings(set: Set<string>): string[] {
-  return [...set].sort((a, b) => {
-    const aSystem = a === "System" || a.startsWith("System.");
-    const bSystem = b === "System" || b.startsWith("System.");
-    if (aSystem !== bSystem) return aSystem ? -1 : 1;
-    return a.localeCompare(b);
-  });
-}
-
-/**
  * Builds a {@link ClassView} from a TypeSpec model.
  *
  * @param program - The compiled TypeSpec program.
@@ -444,7 +434,7 @@ function buildDiscriminatorView(
       ),
       discriminatorValue,
     }))
-    .sort((a, b) => a.discriminatorValue.localeCompare(b.discriminatorValue));
+    .sort((a, b) => ordinalCompare(a.discriminatorValue, b.discriminatorValue));
 
   return {
     propertyName: camelCase(discriminator.propertyName),

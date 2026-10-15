@@ -11,6 +11,7 @@
  */
 
 import { Model, Program, emitFile, resolvePath } from "@typespec/compiler";
+import { type HttpService } from "@typespec/http";
 import {
   computeModelTypeName,
   csharpNamespaceFor,
@@ -59,18 +60,23 @@ const BOOL_CONVERTER_HELPER_USINGS = [
  *
  * @param program - The compiled TypeSpec program.
  * @param models - Models collected by the emitter, used to discover PATCH bodies.
+ * @param services - The program's HTTP services, from `getAllHttpServices`.
  * @param renderer - Pre-compiled renderer instance.
  * @param options - Resolved emitter options.
  */
 export async function emitHelpers(
   program: Program,
   models: Model[],
+  services: readonly HttpService[],
   renderer: Renderer,
   options: ResolvedOptions,
 ): Promise<void> {
-  const patchRouteModels = collectValidatorModelsFromRoutes(program, models);
-
   if (options.mergePatchStyle === "typed") {
+    const patchRouteModels = collectValidatorModelsFromRoutes(
+      program,
+      services,
+      models,
+    );
     if (patchRouteModels?.patchModels.size) {
       await emitEntityMergePatches(
         program,

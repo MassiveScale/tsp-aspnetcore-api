@@ -42,6 +42,23 @@ export type TemplateName =
   | "entity-merge-patch";
 
 /**
+ * Names of the templates that render a complete validator file. Unlike the
+ * other templates, these are compiled with Handlebars' default HTML escaping,
+ * so values that may contain `<` or `>` must use triple braces.
+ */
+export type ValidatorTemplateName = Extract<
+  TemplateName,
+  | "validator-post"
+  | "validator-patch"
+  | "validator-post-version-aware"
+  | "validator-patch-version-aware"
+  | "validator-initializer"
+>;
+
+/** Name of the shared partial that renders nested MergePatch property rules. */
+const MERGE_PATCH_NESTED_PARTIAL = "mergePatchNestedRules";
+
+/**
  * Partial map of template names to absolute file paths used to override the
  * built-in defaults.  Any template not listed here falls back to its bundled
  * counterpart.
@@ -323,6 +340,11 @@ export interface Renderer {
   renderEnumMemberConverter(): string;
   /** Renders the `BooleanStringJsonConverter` helper class body (for `@encode(string)` on booleans). */
   renderBooleanStringConverter(): string;
+  /**
+   * Renders a complete validator file. The template is read and compiled on
+   * first use, then reused for the rest of the emit run.
+   */
+  renderValidator(name: ValidatorTemplateName, view: object): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +429,29 @@ function compileTemplate(
 }
 
 /**
+ * Reads a template file, normalising CRLF line endings to LF so the generated
+ * output does not depend on how the template was checked out.
+ *
+ * @param path - Absolute path to the template file.
+ * @returns Template source with LF line endings.
+ * @throws If the file cannot be read.
+ */
+function readTemplateSource(path: string): string {
+  return readFileSync(path, "utf-8").replace(/\r\n/g, "\n");
+}
+
+/**
+ * Returns the path of a named template: the override when one is configured,
+ * otherwise the bundled default.
+ *
+ * @param name - Template name (determines the default `.hbs` filename).
+ * @param override - Absolute path to a custom template file, or `undefined`.
+ */
+function templatePath(name: TemplateName, override: string | undefined) {
+  return override ?? resolve(TEMPLATES_DIR, `${name}.hbs`);
+}
+
+/**
  * Loads and compiles a named template, falling back to the bundled default
  * when no override path is provided.
  *
@@ -421,9 +466,7 @@ function loadTemplate(
   name: TemplateName,
   override: string | undefined,
 ): HandlebarsTemplateDelegate {
-  const path = override ?? resolve(TEMPLATES_DIR, `${name}.hbs`);
-  const source = readFileSync(path, "utf-8");
-  return compileTemplate(env, source);
+  return compileTemplate(env, readTemplateSource(templatePath(name, override)));
 }
 
 // ---------------------------------------------------------------------------
@@ -664,6 +707,28 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
     "bool-string-converter",
     overrides["bool-string-converter"],
   );
+  const validatorTemplates = new Map<
+    ValidatorTemplateName,
+    HandlebarsTemplateDelegate
+  >();
+  const validatorTemplate = (name: ValidatorTemplateName) => {
+    let template = validatorTemplates.get(name);
+    if (!template) {
+      if (!env.partials[MERGE_PATCH_NESTED_PARTIAL]) {
+        env.registerPartial(
+          MERGE_PATCH_NESTED_PARTIAL,
+          readTemplateSource(
+            resolve(TEMPLATES_DIR, "validator-merge-patch-nested.hbs"),
+          ),
+        );
+      }
+      template = env.compile(
+        readTemplateSource(templatePath(name, overrides[name])),
+      );
+      validatorTemplates.set(name, template);
+    }
+    return template;
+  };
 
   return {
     renderFile(view) {
@@ -725,6 +790,9 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
     },
     renderBooleanStringConverter() {
       return booleanStringConverterTemplate({});
+    },
+    renderValidator(name, view) {
+      return validatorTemplate(name)(view);
     },
   };
 }

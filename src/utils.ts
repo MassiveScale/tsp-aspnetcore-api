@@ -84,3 +84,17 @@ export function camelCase(name: string): string {
   const pascal = pascalCase(name);
   return pascal ? pascal[0].toLowerCase() + pascal.slice(1) : pascal;
 }
+
+/**
+ * Compares two strings by UTF-16 code unit, like C#'s `string.CompareOrdinal`.
+ * Unlike `localeCompare`, the result does not depend on the machine's locale,
+ * so generated output sorts the same everywhere.
+ *
+ * @param a - First string.
+ * @param b - Second string.
+ * @returns A negative number, zero, or a positive number.
+ */
+export function ordinalCompare(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
