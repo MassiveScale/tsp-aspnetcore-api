@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-15
+
+First stable release. It fixes the release blockers found in the pre-1.0.0 review. Several fixes change generated code or runtime behaviour; the entries marked **Breaking** list what to check when upgrading from a beta.
+
 ### Added
 
 - Output cleanup now keeps a manifest, `.tsp-aspnetcore-api-manifest`, in the emitter output directory. It lists every file a run wrote, and the next run deletes exactly those files. See [Output cleaning — The cleanup manifest](docs/output-cleaning.md#the-cleanup-manifest).
