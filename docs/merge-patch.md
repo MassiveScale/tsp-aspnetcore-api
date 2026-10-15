@@ -136,11 +136,13 @@ await body.PatchAsync(entity, cancellationToken: cancellationToken);
 await repository.SaveAsync(entity);
 ```
 
-Both methods use reflection to match each JSON property name to a writable property on `T`. The lookup checks `[JsonPropertyName]` first, then falls back to the CLR property name (case-insensitive), so properties renamed via `@serverName` or an explicit `[JsonPropertyName]` attribute are resolved correctly. Object values merge recursively into the current object; a missing object is created. Arrays and all other non-object values replace the current value. An explicit `null` removes that JSON member before deserialization, so a generated property initializer restores its default (or the property's normal null/default value is used when there is no initializer).
+Both methods use reflection to match each JSON property name to a writable property of the entity's runtime type. The lookup checks `[JsonPropertyName]` first, then falls back to the CLR property name (case-insensitive), so properties renamed via `@serverName` or an explicit `[JsonPropertyName]` attribute are resolved correctly. Because members come from the runtime type, a `MergePatch<Pet>` applied to a `Dog` also updates the properties only `Dog` declares (such as `barks`).
+
+Object values merge recursively. When the property already holds a model instance, the object is merged into that same instance, so other references to it stay valid and members that aren't serialized (`[JsonIgnore]` properties, for example) keep their values. A missing object is created. Arrays and all other non-object values replace the current value. An explicit `null` removes that JSON member before deserialization, so a generated property initializer restores its default (or the property's normal null/default value is used when there is no initializer).
 
 Inside a dictionary (`Record<T>`, emitted as `IDictionary<string, T>`) or a free-form JSON value (`JsonElement`, `JsonNode`, `object`), the keys are data rather than C# properties. Any key is accepted, keys match exactly (case-sensitive), and the same rules apply per key: `{"labels":{"env":"prod","team":null}}` sets `env` and removes `team`, leaving other keys unchanged. Dictionary values that are objects merge recursively.
 
-All supplied properties are applied in a single serialize/merge/deserialize pass, and property lookups are cached per type. Only when that pass fails is each property retried on its own, so a bad value still can't block its valid siblings.
+The supplied properties of each object are applied in a single serialize/merge/deserialize pass (an object merged into an existing nested instance gets its own pass), and property lookups are cached per type. Only when that pass fails is each property retried on its own, so a bad value still can't block its valid siblings.
 
 `Patch` keeps its existing non-throwing, in-place signature and ignores the diagnostics returned by `TryPatch`. Use `TryPatch` to detect unknown, read-only, or invalid values. It returns `false` and rejected JSON paths; rejected paths are left unchanged while valid siblings are still applied. Raw exception messages are not included. Pass a `JsonSerializerOptions` instance if custom converters are needed.
 
@@ -211,8 +213,11 @@ this.RuleFor(x => x)
 this.RuleFor(x => x)
     .Must(x => (x.GetString("name")?.Length ?? 0) > 0)
     .When(x => x.IsDefined("name") && !x.IsNull("name"))
-    .WithName("name");
+    .WithName("name")
+    .WithMessage("'name' must not be empty.");
 ```
+
+Numeric bounds read the raw JSON number, so exponent notation (`1e2`) is accepted and a value that isn't a JSON number fails. See [Validators — PATCH body shapes](validators.md#patch-body-shapes) for every rule shape.
 
 ## Choosing a style: `merge-patch-style`
 

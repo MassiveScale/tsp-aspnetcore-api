@@ -1,0 +1,141 @@
+{{!--
+  validator-merge-patch-property-rules.hbs — partial registered as `mergePatchPropertyRules`.
+
+  Renders the rules for one property of a PATCH validator over a MergePatch
+  body. The body holds the raw JSON, so each rule reads the value by name and
+  fires only when the property is present (and, for value rules, not null).
+  Included through the `propertyRules` partial.
+
+  ── Template variables (one entry of `properties`) ──────────────────────────
+  See "Validator view models" in docs/custom-templates.md.
+--}}
+{{#if isReadOnly}}
+// {{{name}}} {{#if isImmutable}}cannot be changed after creation{{else}}is read-only and cannot be modified via patch{{/if}}
+this.RuleFor(x => x)
+    .Must(x => !x.IsDefined("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' {{#if isImmutable}}cannot be changed after creation{{else}}is read-only and cannot be modified{{/if}}.");
+
+{{else}}
+{{#if rejectNull}}
+// {{{name}}} is required and cannot be removed
+this.RuleFor(x => x)
+    .Must(x => !x.IsNull("{{{jsonName}}}"))
+    .When(x => x.IsDefined("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' is required and cannot be null.");
+
+{{/if}}
+{{#if notEmpty}}
+// {{{name}}} must not be empty when provided
+this.RuleFor(x => x)
+    .Must(x => (x.GetString("{{{jsonName}}}")?.Length ?? 0) > 0)
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' must not be empty.");
+
+{{/if}}
+{{#if minLength}}
+// {{{name}}} must be at least {{minLength}} characters when provided
+this.RuleFor(x => x)
+    .Must(x => (x.GetString("{{{jsonName}}}")?.Length ?? 0) >= {{minLength}})
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' must be at least {{minLength}} characters.");
+
+{{/if}}
+{{#if maxLength}}
+// {{{name}}} cannot exceed a MaxLength of {{maxLength}} when provided
+this.RuleFor(x => x)
+    .Must(x => (x.GetString("{{{jsonName}}}")?.Length ?? 0) <= {{maxLength}})
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' must be {{maxLength}} characters or fewer.");
+
+{{/if}}
+{{#if pattern}}
+// {{{name}}} must match the pattern '{{pattern}}' when provided
+this.RuleFor(x => x)
+    .Must(x => IsMatch({{{patternField}}}, x.GetString("{{{jsonName}}}")))
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' is not in the correct format.");
+
+{{/if}}
+{{#if emailAddress}}
+// {{{name}}} must be a valid email address when provided
+this.RuleFor(x => x)
+    .Must(x => System.Net.Mail.MailAddress.TryCreate(x.GetString("{{{jsonName}}}") ?? string.Empty, out _))
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' is not a valid email address.");
+
+{{/if}}
+{{#if minValue}}
+// {{{name}}} must be greater than or equal to {{minValue.display}} when provided
+this.RuleFor(x => x)
+    .Must(x => TryGetNumber(x, "{{{jsonName}}}", out var n) && n >= {{{minValue.decimalLiteral}}})
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' must be a number greater than or equal to {{minValue.display}}.");
+
+{{/if}}
+{{#if minValueExclusive}}
+// {{{name}}} must be greater than {{minValueExclusive.display}} when provided
+this.RuleFor(x => x)
+    .Must(x => TryGetNumber(x, "{{{jsonName}}}", out var n) && n > {{{minValueExclusive.decimalLiteral}}})
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' must be a number greater than {{minValueExclusive.display}}.");
+
+{{/if}}
+{{#if maxValue}}
+// {{{name}}} cannot exceed a MaxValue of {{maxValue.display}} when provided
+this.RuleFor(x => x)
+    .Must(x => TryGetNumber(x, "{{{jsonName}}}", out var n) && n <= {{{maxValue.decimalLiteral}}})
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' must be a number less than or equal to {{maxValue.display}}.");
+
+{{/if}}
+{{#if maxValueExclusive}}
+// {{{name}}} must be less than {{maxValueExclusive.display}} when provided
+this.RuleFor(x => x)
+    .Must(x => TryGetNumber(x, "{{{jsonName}}}", out var n) && n < {{{maxValueExclusive.decimalLiteral}}})
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' must be a number less than {{maxValueExclusive.display}}.");
+
+{{/if}}
+{{#if minItems}}
+// {{{name}}} must contain at least {{minItems}} items when provided
+this.RuleFor(x => x)
+    .Must(x => x.Properties.TryGetValue("{{{jsonName}}}", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() >= {{minItems}})
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' must be an array with at least {{minItems}} items.");
+
+{{/if}}
+{{#if maxItems}}
+// {{{name}}} cannot contain more than {{maxItems}} items when provided
+this.RuleFor(x => x)
+    .Must(x => x.Properties.TryGetValue("{{{jsonName}}}", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() <= {{maxItems}})
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' must be an array with no more than {{maxItems}} items.");
+
+{{/if}}
+{{#if isInEnum}}
+// {{{name}}} must be a valid {{{enumTypeName}}} value when provided
+this.RuleFor(x => x)
+    .Must(x => x.TryGetValue<{{{enumTypeName}}}?>("{{{jsonName}}}", out _))
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .WithName("{{{name}}}")
+    .WithMessage("'{{{name}}}' is not a valid value.");
+
+{{/if}}
+{{#if referencedModelName}}
+{{> mergePatchNestedRules}}
+
+{{/if}}
+{{/if}}

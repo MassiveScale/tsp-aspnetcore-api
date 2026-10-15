@@ -24,87 +24,147 @@ namespace MarketOnce.Community.Campaign.Api.Validators;
 public partial class CustomerPatchValidator : AbstractValidator<MergePatch<Customer>>
 {
     private static readonly string[] _versions = new[] { "v1.0", "v2.0" };
+    private static readonly string[] _normalizedVersions = System.Array.ConvertAll(_versions, NormalizeVersion);
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
     /// <summary>
     /// Initializes a new instance of <see cref="CustomerPatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
     public CustomerPatchValidator(IHttpContextAccessor httpContextAccessor)
     {
-        var _apiVersion = ResolveApiVersion(httpContextAccessor.HttpContext, "v1.0");
+        _httpContextAccessor = httpContextAccessor;
+
+        // Id is read-only and cannot be modified via patch
+        this.RuleFor(x => x)
+            .Must(x => !x.IsDefined("Id"))
+            .WithName("Id")
+            .WithMessage("'Id' is read-only and cannot be modified.");
+
+        // CreatedDateTime is read-only and cannot be modified via patch
+        this.RuleFor(x => x)
+            .Must(x => !x.IsDefined("CreatedDateTime"))
+            .WithName("CreatedDateTime")
+            .WithMessage("'CreatedDateTime' is read-only and cannot be modified.");
+
+        // LastModifiedDateTime is read-only and cannot be modified via patch
+        this.RuleFor(x => x)
+            .Must(x => !x.IsDefined("LastModifiedDateTime"))
+            .WithName("LastModifiedDateTime")
+            .WithMessage("'LastModifiedDateTime' is read-only and cannot be modified.");
 
         // FirstName is required and cannot be removed
         this.RuleFor(x => x)
-            .Must(x => !x.IsNull("firstName"))
-            .When(x => x.IsDefined("firstName"))
+            .Must(x => !x.IsNull("FirstName"))
+            .When(x => x.IsDefined("FirstName"))
             .WithName("FirstName")
             .WithMessage("'FirstName' is required and cannot be null.");
 
         // FirstName must not be empty when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("firstName")?.Length ?? 0) > 0)
-            .When(x => x.IsDefined("firstName") && !x.IsNull("firstName"))
-            .WithName("FirstName");
+            .Must(x => (x.GetString("FirstName")?.Length ?? 0) > 0)
+            .When(x => x.IsDefined("FirstName") && !x.IsNull("FirstName"))
+            .WithName("FirstName")
+            .WithMessage("'FirstName' must not be empty.");
 
         // FirstName cannot exceed a MaxLength of 100 when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("firstName")?.Length ?? 0) <= 100)
-            .When(x => x.IsDefined("firstName") && !x.IsNull("firstName"))
-            .WithName("FirstName");
+            .Must(x => (x.GetString("FirstName")?.Length ?? 0) <= 100)
+            .When(x => x.IsDefined("FirstName") && !x.IsNull("FirstName"))
+            .WithName("FirstName")
+            .WithMessage("'FirstName' must be 100 characters or fewer.");
 
         // LastName is required and cannot be removed
         this.RuleFor(x => x)
-            .Must(x => !x.IsNull("lastName"))
-            .When(x => x.IsDefined("lastName"))
+            .Must(x => !x.IsNull("LastName"))
+            .When(x => x.IsDefined("LastName"))
             .WithName("LastName")
             .WithMessage("'LastName' is required and cannot be null.");
 
         // LastName must not be empty when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("lastName")?.Length ?? 0) > 0)
-            .When(x => x.IsDefined("lastName") && !x.IsNull("lastName"))
-            .WithName("LastName");
+            .Must(x => (x.GetString("LastName")?.Length ?? 0) > 0)
+            .When(x => x.IsDefined("LastName") && !x.IsNull("LastName"))
+            .WithName("LastName")
+            .WithMessage("'LastName' must not be empty.");
 
         // LastName cannot exceed a MaxLength of 100 when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("lastName")?.Length ?? 0) <= 100)
-            .When(x => x.IsDefined("lastName") && !x.IsNull("lastName"))
-            .WithName("LastName");
+            .Must(x => (x.GetString("LastName")?.Length ?? 0) <= 100)
+            .When(x => x.IsDefined("LastName") && !x.IsNull("LastName"))
+            .WithName("LastName")
+            .WithMessage("'LastName' must be 100 characters or fewer.");
 
         // Email cannot exceed a MaxLength of 255 when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("email")?.Length ?? 0) <= 255)
-            .When(x => x.IsDefined("email") && !x.IsNull("email"))
-            .WithName("Email");
+            .Must(x => (x.GetString("Email")?.Length ?? 0) <= 255)
+            .When(x => x.IsDefined("Email") && !x.IsNull("Email"))
+            .WithName("Email")
+            .WithMessage("'Email' must be 255 characters or fewer.");
 
         // Email must be a valid email address when provided
         this.RuleFor(x => x)
-            .Must(x => System.Net.Mail.MailAddress.TryCreate(x.GetString("email") ?? string.Empty, out _))
-            .When(x => x.IsDefined("email") && !x.IsNull("email"))
-            .WithName("Email");
+            .Must(x => System.Net.Mail.MailAddress.TryCreate(x.GetString("Email") ?? string.Empty, out _))
+            .When(x => x.IsDefined("Email") && !x.IsNull("Email"))
+            .WithName("Email")
+            .WithMessage("'Email' is not a valid email address.");
 
         // PhoneNumber cannot exceed a MaxLength of 20 when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("phoneNumber")?.Length ?? 0) <= 20)
-            .When(x => x.IsDefined("phoneNumber") && !x.IsNull("phoneNumber"))
-            .WithName("PhoneNumber");
+            .Must(x => (x.GetString("PhoneNumber")?.Length ?? 0) <= 20)
+            .When(x => x.IsDefined("PhoneNumber") && !x.IsNull("PhoneNumber"))
+            .WithName("PhoneNumber")
+            .WithMessage("'PhoneNumber' must be 20 characters or fewer.");
 
         ExtendRules();
     }
 
-    private static string ResolveApiVersion(HttpContext? context, string defaultVersion)
+    /// <summary>
+    /// Returns <see langword="true"/> when the request's API version is <paramref name="since"/>
+    /// or later, and earlier than <paramref name="until"/> when it is set.
+    /// </summary>
+    private bool IsVersionInRange(string since, string? until)
     {
-        if (context is null) return defaultVersion;
-        if (context.Request.RouteValues.TryGetValue("version", out var rv) && rv is string rs && rs.Length > 0) return rs;
-        if (context.Request.Headers.TryGetValue("api-version", out var hv) && hv.Count > 0) return hv[0] ?? defaultVersion;
-        if (context.Request.Query.TryGetValue("api-version", out var qv) && qv.Count > 0) return qv[0] ?? defaultVersion;
-        return defaultVersion;
+        var current = CurrentVersionIndex();
+        return current >= System.Array.IndexOf(_versions, since)
+            && (until is null || current < System.Array.IndexOf(_versions, until));
     }
 
-    private static bool IsAtLeast(string target, string current, string[] orderedVersions)
+    /// <summary>
+    /// Returns the position in <c>_versions</c> of the API version requested by the current
+    /// HTTP request. A request without a version uses v1.0; a version that
+    /// matches none of the known versions is validated against the latest one.
+    /// </summary>
+    private int CurrentVersionIndex()
     {
-        var ti = System.Array.IndexOf(orderedVersions, target);
-        var ci = System.Array.IndexOf(orderedVersions, current);
-        return ci >= 0 && ti >= 0 && ci >= ti;
+        var requested = ResolveApiVersion(_httpContextAccessor.HttpContext);
+        if (requested is null) return System.Array.IndexOf(_versions, "v1.0");
+        var index = System.Array.IndexOf(_normalizedVersions, NormalizeVersion(requested));
+        return index >= 0 ? index : _versions.Length - 1;
+    }
+
+    /// <summary>
+    /// Reads the API version from the <c>version</c> route value, the <c>api-version</c>
+    /// header, or the <c>api-version</c> query parameter, in that order.
+    /// </summary>
+    private static string? ResolveApiVersion(HttpContext? context)
+    {
+        if (context is null) return null;
+        if (context.Request.RouteValues.TryGetValue("version", out var rv) && rv is string rs && rs.Length > 0) return rs;
+        if (context.Request.Headers.TryGetValue("api-version", out var hv) && hv.Count > 0 && !string.IsNullOrEmpty(hv[0])) return hv[0];
+        if (context.Request.Query.TryGetValue("api-version", out var qv) && qv.Count > 0 && !string.IsNullOrEmpty(qv[0])) return qv[0];
+        return null;
+    }
+
+    /// <summary>
+    /// Normalizes a version for comparison: case-insensitive, without a leading <c>v</c>
+    /// and without trailing <c>.0</c> parts, so <c>v2.0</c>, <c>V2</c> and <c>2.0</c> match.
+    /// </summary>
+    private static string NormalizeVersion(string version)
+    {
+        var normalized = version.Trim().ToLowerInvariant();
+        if (normalized.StartsWith('v')) normalized = normalized[1..];
+        while (normalized.Length > 2 && normalized.EndsWith(".0", System.StringComparison.Ordinal)) normalized = normalized[..^2];
+        return normalized;
     }
 
     /// <summary>

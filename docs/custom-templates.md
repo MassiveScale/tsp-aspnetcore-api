@@ -53,13 +53,36 @@ The validator templates (`validator-post`, `validator-patch`, `validator-post-ve
 | `qualifiedPatchBodyTypeName` | PATCH only. Type argument of `AbstractValidator<T>` (e.g. `MergePatch<Pet>`).                                                                                                          |
 | `isMergePatchBody`           | PATCH only. `true` for a `MergePatchUpdate<T>` body.                                                                                                                                   |
 | `usesJsonOptions`            | PATCH only. `true` when the constructor takes `IOptions<Microsoft.AspNetCore.Mvc.JsonOptions> jsonOptions` and declares `jsonSerializerOptions` for nested rules.                      |
+| `isPatch`                    | `true` for PATCH validators.                                                                                                                                                           |
 | `properties`                 | Property rules (version-aware templates use `baseProperties` and `versionGroups` instead).                                                                                             |
-| `referencedValidators`       | Injected child validators: `{ qualifiedValidatorTypeName, paramName }`.                                                                                                                |
-| `derivedTypeValidators`      | POST only. Derived-type validators for polymorphic dispatch.                                                                                                                           |
+| `baseProperties`             | Version-aware only. Rules that apply in every version.                                                                                                                                 |
+| `versionGroups`              | Version-aware only. `{ label, condition, sinceVersion, untilVersion?, properties }` for rules that apply only in some versions; `condition` is a C# expression for `When(_ => ...)`.   |
+| `allVersions`                | Version-aware only. Every API version, oldest first.                                                                                                                                   |
+| `defaultVersion`             | Version-aware only. The version used when a request has none.                                                                                                                          |
+| `constructorParameters`      | Every constructor parameter, in order: `{ type, name }`. Use it to declare the constructor.                                                                                            |
+| `usesServiceProvider`        | `true` when a child validator is resolved from `serviceProvider` to break a [loop](validators.md#recursive-models). Emit `using Microsoft.Extensions.DependencyInjection;`.            |
+| `referencedValidators`       | Child validators the properties reference: `{ qualifiedValidatorTypeName, paramName }`. Prefer `constructorParameters`, which leaves out self-references and lazily resolved ones.     |
+| `derivedTypeValidators`      | POST only. Derived-type validators for polymorphic dispatch: `{ qualifiedTypeName, paramName, validatorExpression, lazy }`.                                                            |
+| `patternFields`              | `{ field, pattern }` for each compiled `@pattern` `Regex` field.                                                                                                                       |
+| `hasFields`                  | `true` when the class declares fields before its constructor.                                                                                                                          |
+| `usesPatterns`               | `true` when the class needs the `IsMatch` helper.                                                                                                                                      |
+| `usesNumberRules`            | MergePatch only. `true` when the class needs the `TryGetNumber` helper.                                                                                                                |
 
 Each entry in `properties` carries `name`, the C# property identifier, and `jsonName`, the JSON wire name escaped for a C# regular string literal. MergePatch rules must look properties up by wire name: `IsDefined("{{{jsonName}}}")`. `pattern` is escaped for a C# verbatim string, so write it as `@"{{{pattern}}}"`.
 
-The `mergePatchNestedRules` partial renders the rule for a model-typed property of a MergePatch body. Include it from a custom PATCH template inside `{{#each properties}}` with `{{> mergePatchNestedRules}}` on its own line; every rendered line gets that line's indent.
+Each property entry carries the rule data (`notEmpty`, `notNull`, `rejectNull`, `minLength`, `maxLength`, `pattern`, `patternField`, `emailAddress`, `minValue`, `maxValue`, `minValueExclusive`, `maxValueExclusive`, `minItems`, `maxItems`, `isInEnum`, …). A numeric bound is `{ value, formatted, decimalLiteral, display }`: `formatted` is a C# literal of the property's type for typed rules, `decimalLiteral` is the `decimal` literal MergePatch rules compare against. A model reference sets `isCollectionReference` or `isRecordReference`, and `referencedValidatorExpression` (with `referencedValidatorLazy`) or `mergePatchValidatorExpression` holds the C# expression for the child validator: the constructor parameter, `this`, or a lazy `serviceProvider` lookup.
+
+The built-in validator templates are assembled from partials that custom templates can include too. Include a partial on its own line; every rendered line gets that line's indent.
+
+| Partial                   | Renders                                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `validatorFields`         | The fields declared before the constructor: API versions, derived types, compiled `Regex` patterns.                       |
+| `validatorRules`          | Every property rule: `properties`, or `baseProperties` plus one `When` block per version group.                           |
+| `propertyRules`           | The rules for one property; picks `mergePatchPropertyRules` or `typedPropertyRules`.                                      |
+| `typedPropertyRules`      | POST and plain-PATCH rules for one property (`RuleFor(x => x.Name)...`).                                                  |
+| `mergePatchPropertyRules` | MergePatch rules for one property.                                                                                        |
+| `mergePatchNestedRules`   | The rule for a model-typed property of a MergePatch body. The enclosing constructor must declare `jsonSerializerOptions`. |
+| `validatorHelpers`        | The private helper methods after the constructor: `IsMatch`, `TryGetNumber`, and the API-version helpers.                 |
 
 ### Upgrading custom templates
 
@@ -77,6 +100,12 @@ Generated references are short names by default, so a custom template copied fro
 ```
 
 Custom PATCH templates should also use `{{{validatorName}}}` instead of `{{{modelName}}}PatchValidator`, and add the `jsonOptions` constructor parameter when `usesJsonOptions` is set.
+
+Custom validator templates from 1.0.0-beta.1 or earlier also need these changes:
+
+- Declare the constructor from `constructorParameters`, so self-references and loops of validators resolve, and a child validator is never injected twice.
+- Version-aware templates: assign `_httpContextAccessor = httpContextAccessor;` instead of computing `_apiVersion` in the constructor, and render version groups with `When(_ => {{{condition}}}, ...)` instead of `IsAtLeast`. Include `{{> validatorFields}}` and `{{> validatorHelpers}}` for the version helpers, or render the rules with `{{> validatorRules}}`.
+- Use `{{{formatted}}}` (triple braces) for numeric bounds, which may now contain a cast such as `(short)1`.
 
 ## Shared sub-types
 
@@ -103,6 +132,6 @@ Custom PATCH templates should also use `{{{validatorName}}}` instead of `{{{mode
 | `bool-string-converter`         | `BooleanStringJsonConverter` helper class (for `@encode(string)` on booleans).           |
 | `validator-post`                | Standard POST validator (`AbstractValidator<{Model}>`).                                  |
 | `validator-patch`               | Standard PATCH validator with conditional patch-aware rules.                             |
-| `validator-post-version-aware`  | Version-aware POST validator with `When(() => IsAtLeast(...))` guards.                   |
-| `validator-patch-version-aware` | Version-aware PATCH validator with `When(() => IsAtLeast(...))` guards.                  |
+| `validator-post-version-aware`  | Version-aware POST validator with `When(_ => IsVersionInRange(...))` guards.             |
+| `validator-patch-version-aware` | Version-aware PATCH validator with `When(_ => IsVersionInRange(...))` guards.            |
 | `validator-initializer`         | `ValidatorsInitializer` DI registration class.                                           |

@@ -1,7 +1,7 @@
 /**
  * @module validators
  *
- * Emits FluentValidation-style `AbstractValidator<T>` classes for POST and
+ * Emits FluentValidation-style `AbstractValidator<T>` classes for POST, PUT and
  * PATCH request bodies (ported from tsp-fluent-validators), plus the
  * `ValidatorsInitializer` that registers them for DI.
  *
@@ -22,11 +22,16 @@ import {
   getDiscriminator,
   getFormat,
   getLifecycleVisibilityEnum,
+  getMaxItems,
   getMaxLength,
   getMaxValue,
+  getMaxValueExclusive,
+  getMinItems,
   getMinLength,
   getMinValue,
+  getMinValueExclusive,
   getPattern,
+  isArrayModelType,
   isTemplateDeclaration,
   isTemplateInstance,
   isVisible,
@@ -43,6 +48,7 @@ import {
 import {
   getAllVersions,
   getAvailabilityMap,
+  getMadeOptionalOn,
   Availability,
 } from "@typespec/versioning";
 import type { Version } from "@typespec/versioning";
@@ -64,11 +70,12 @@ import {
   TemplateOverrides,
   compileTemplate,
 } from "./renderer.js";
-import { classProperties } from "./payloads.js";
+import { classProperties, emittedBaseModel } from "./payloads.js";
 import {
   csharpStringContent,
   csharpVerbatimStringContent,
   pascalCase,
+  SCALAR_MAP,
 } from "./utils.js";
 
 /** Absolute path to the bundled templates directory (shared with renderer). */
@@ -87,8 +94,19 @@ let _compiledValidatorPatchVersionAwareTemplate:
 let _compiledValidatorInitializerTemplate:
   Handlebars.TemplateDelegate | undefined;
 
-/** Name of the shared partial that renders nested MergePatch property rules. */
-const MERGE_PATCH_NESTED_PARTIAL = "mergePatchNestedRules";
+/**
+ * Partials shared by the built-in validator templates, keyed by partial name.
+ * Custom templates can include them too (see `docs/custom-templates.md`).
+ */
+const VALIDATOR_PARTIALS: Record<string, string> = {
+  mergePatchNestedRules: "validator-merge-patch-nested.hbs",
+  mergePatchPropertyRules: "validator-merge-patch-property-rules.hbs",
+  typedPropertyRules: "validator-typed-property-rules.hbs",
+  propertyRules: "validator-property-rules.hbs",
+  validatorRules: "validator-rules.hbs",
+  validatorFields: "validator-fields.hbs",
+  validatorHelpers: "validator-helpers.hbs",
+};
 
 /**
  * Compiles a validator template, first registering the partials that the
@@ -108,14 +126,13 @@ function loadValidatorTemplate(
   path: string,
 ): Handlebars.TemplateDelegate {
   try {
-    if (!Handlebars.partials[MERGE_PATCH_NESTED_PARTIAL]) {
-      Handlebars.registerPartial(
-        MERGE_PATCH_NESTED_PARTIAL,
-        readFileSync(
-          resolve(TEMPLATES_DIR, "validator-merge-patch-nested.hbs"),
-          "utf-8",
-        ),
-      );
+    for (const [partial, file] of Object.entries(VALIDATOR_PARTIALS)) {
+      if (!Handlebars.partials[partial]) {
+        Handlebars.registerPartial(
+          partial,
+          readFileSync(resolve(TEMPLATES_DIR, file), "utf-8"),
+        );
+      }
     }
     return compileTemplate(Handlebars, readFileSync(path, "utf-8"));
   } catch (err) {
@@ -196,12 +213,20 @@ function getValidatorInitializerTemplate(
 }
 
 /**
- * Carries the formatted value of a numeric constraint so that Handlebars'
+ * A numeric bound, carried as an object so that Handlebars'
  * `{{#if numericRule}}` resolves to `true` even when the value is `0`.
  */
 interface NumericRule {
   value: number;
+  /**
+   * C# literal typed to the property (`0.5m`, `2.5f`, `5L`, `(short)5`), so
+   * FluentValidation's comparison rules compile for every numeric type.
+   */
   formatted: string;
+  /** The bound as a `decimal` literal (`0.5m`), compared against MergePatch JSON numbers. */
+  decimalLiteral: string;
+  /** The bound as plain text for comments and messages (`0.5`). */
+  display: string;
 }
 
 /** Structured rule data for a single model property. */
@@ -240,28 +265,53 @@ interface PropertyData {
   isImmutable?: boolean;
   /**
    * True when the C# property can hold `null` after deserialization of an
-   * absent field. When `false`, `.Null()` would always fail — the read-only
-   * rejection rule is skipped for this property in POST validators.
+   * absent field.
    */
   nullable: boolean;
+  /**
+   * True when a typed (POST or plain PATCH) validator rejects a supplied
+   * read-only value with `Null()`. False when the property cannot hold `null`,
+   * or when it has a default value: the model's initializer sets that default
+   * whenever the field is absent, so `Null()` would reject every request.
+   */
+  rejectWithNull?: boolean;
   minLength?: number;
   maxLength?: number;
   /** `@pattern` regex, escaped for a C# verbatim string (`@"{{{pattern}}}"`). */
   pattern?: string;
+  /** Name of the `static readonly Regex` field that holds `pattern`. */
+  patternField?: string;
   emailAddress: boolean;
   isInEnum: boolean;
   enumTypeName?: string;
   minValue?: NumericRule;
   maxValue?: NumericRule;
+  minValueExclusive?: NumericRule;
+  maxValueExclusive?: NumericRule;
+  minItems?: number;
+  maxItems?: number;
   referencedModelName?: string;
   /** Kept for FQ name computation; not serialized to Handlebars templates. */
   referencedModel?: Model;
   referencedQualifiedModelName?: string;
   referencedParamName?: string;
+  /** True for an array of models; each item is validated. */
   isCollectionReference?: boolean;
+  /** True for a `Record<Model>`; each value is validated. */
+  isRecordReference?: boolean;
+  /**
+   * C# expression for the child validator in POST and plain PATCH validators:
+   * the constructor parameter, `this` for a self-reference, or a lazy lookup
+   * from `serviceProvider` for a reference that closes a cycle.
+   */
+  referencedValidatorExpression?: string;
+  /** True when `referencedValidatorExpression` is a lazy lookup that must be wrapped in a lambda. */
+  referencedValidatorLazy?: boolean;
   mergePatchValidatorTypeName?: string;
   mergePatchValidatorParamName?: string;
   mergePatchFactoryTypeName?: string;
+  /** Like `referencedValidatorExpression`, for the nested rules of a MergePatch validator. */
+  mergePatchValidatorExpression?: string;
 }
 
 /** Validator for a referenced child model (injected as constructor parameter). */
@@ -280,10 +330,26 @@ interface DerivedTypeValidator {
   qualifiedTypeName: string;
   /** Constructor parameter name (e.g. "catValidator"). */
   paramName: string;
+  /** C# expression for the derived validator; see {@link PropertyData.referencedValidatorExpression}. */
+  validatorExpression?: string;
+  /** True when `validatorExpression` must be wrapped in a lambda. */
+  lazy?: boolean;
 }
 
-/** Data passed to the Handlebars POST / PATCH validator template. */
-interface ValidatorTemplateData {
+/** One constructor parameter of a generated validator. */
+interface ConstructorParameter {
+  type: string;
+  name: string;
+}
+
+/** A `static readonly Regex` field holding a property's `@pattern`. */
+interface PatternField {
+  field: string;
+  pattern: string;
+}
+
+/** Template data shared by every validator template. */
+interface ValidatorTemplateDataBase {
   namespace?: string;
   modelsNamespace: string;
   helpersNamespace: string;
@@ -292,6 +358,8 @@ interface ValidatorTemplateData {
   modelName: string;
   /** Fully-qualified C# type name of the validated model (e.g. `MyApp.Models.Pet`). */
   qualifiedModelName: string;
+  /** True for PATCH validators. */
+  isPatch?: boolean;
   /** C# type name of the validated PATCH body (e.g. `MergePatch<Pet>`). Only set for patch validators. */
   patchBodyTypeName?: string;
   /** Fully-qualified C# type name of the PATCH body (e.g. `MergePatch<MyApp.Models.Pet>`). Only set for patch validators. */
@@ -305,48 +373,47 @@ interface ValidatorTemplateData {
    * application's `IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>` in its constructor.
    */
   usesJsonOptions?: boolean;
-  properties: PropertyData[];
   referencedValidators?: ReferencedValidator[];
   /** Derived type validators for polymorphic dispatch (SetInheritanceValidator). */
   derivedTypeValidators?: DerivedTypeValidator[];
+  /** Every constructor parameter, in order. Filled in by {@link resolveValidatorDependencies}. */
+  constructorParameters: ConstructorParameter[];
+  /** True when a child validator is resolved lazily from `serviceProvider`. */
+  usesServiceProvider?: boolean;
+  /** `static readonly Regex` fields for `@pattern` rules. */
+  patternFields: PatternField[];
+  /** True when the class needs the `IsMatch` helper. */
+  usesPatterns?: boolean;
+  /** True when a MergePatch validator needs the `TryGetNumber` helper. */
+  usesNumberRules?: boolean;
+  /** True when the class declares fields before its constructor. */
+  hasFields?: boolean;
 }
 
-/** A group of properties added in a specific API version. */
+/** Data passed to the Handlebars POST / PATCH validator template. */
+interface ValidatorTemplateData extends ValidatorTemplateDataBase {
+  properties: PropertyData[];
+}
+
+/** A group of properties validated only in some API versions. */
 interface VersionGroup {
+  /** First version the group applies to. */
   sinceVersion: string;
+  /** First version the group no longer applies to; `undefined` when it applies to the latest. */
+  untilVersion?: string;
+  /** Human-readable range for the generated comment (e.g. `v2.0 and later`). */
+  label: string;
+  /** C# condition that is true for the group's versions. */
+  condition: string;
   properties: PropertyData[];
 }
 
 /** Data passed to the version-aware Handlebars validator templates. */
-interface VersionAwareValidatorTemplateData {
-  namespace?: string;
-  modelsNamespace: string;
-  helpersNamespace: string;
-  fullyQualifiedTypes: boolean;
-  useHelpersNamespace: boolean;
-  modelName: string;
-  /** Fully-qualified C# type name of the validated model (e.g. `MyApp.Models.Pet`). */
-  qualifiedModelName: string;
-  /** C# type name of the validated PATCH body (e.g. `MergePatch<Pet>`). Only set for patch validators. */
-  patchBodyTypeName?: string;
-  /** Fully-qualified C# type name of the PATCH body (e.g. `MergePatch<MyApp.Models.Pet>`). Only set for patch validators. */
-  qualifiedPatchBodyTypeName?: string;
-  /** True when the PATCH body is a `MergePatch<T>` — suppresses property-accessor-based rules that won't compile. */
-  isMergePatchBody?: boolean;
-  /** C# class name of the PATCH validator (e.g. `PetPatchValidator`). Only set for patch validators. */
-  validatorName?: string;
-  /**
-   * True when a MergePatch validator deserializes nested values and so takes the
-   * application's `IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>` in its constructor.
-   */
-  usesJsonOptions?: boolean;
+interface VersionAwareValidatorTemplateData extends ValidatorTemplateDataBase {
   allVersions: string[];
   defaultVersion: string;
   baseProperties: PropertyData[];
   versionGroups: VersionGroup[];
-  referencedValidators?: ReferencedValidator[];
-  /** Derived type validators for polymorphic dispatch (SetInheritanceValidator). */
-  derivedTypeValidators?: DerivedTypeValidator[];
 }
 
 /** One entry in the generated `ValidatorsInitializer`. */
@@ -369,6 +436,12 @@ interface InitializerTemplateData {
 
 interface ValidatorRouteModels {
   postModels: Set<Model>;
+  /**
+   * Models that are a PUT body. They are validated by the same validator as a
+   * POST body, but without the create-only rejection rules, because a PUT
+   * may create or replace a resource.
+   */
+  putModels: Set<Model>;
   /** Raw PATCH body type names per model; see {@link collectValidatorModelsFromRoutes}. */
   patchModels: Map<Model, Set<string>>;
   nestedPostModels: Set<Model>;
@@ -481,6 +554,101 @@ function isNullableForValidator(
   return true;
 }
 
+/** How a bound is written for one C# numeric type. */
+interface NumericBoundType {
+  /** True for integer types: fractional bounds are rounded to the nearest valid integer. */
+  integer: boolean;
+  /** True for unsigned types: negative literals don't compile. */
+  unsigned?: boolean;
+  /** Turns the bound's text into a C# literal of this type. */
+  literal: (text: string) => string;
+}
+
+/** C# numeric types that bound rules are emitted for, keyed by C# type name. */
+const NUMERIC_BOUND_TYPES: Record<string, NumericBoundType> = {
+  sbyte: { integer: true, literal: (text) => `(sbyte)${text}` },
+  byte: { integer: true, unsigned: true, literal: (text) => `(byte)${text}` },
+  short: { integer: true, literal: (text) => `(short)${text}` },
+  ushort: {
+    integer: true,
+    unsigned: true,
+    literal: (text) => `(ushort)${text}`,
+  },
+  int: { integer: true, literal: (text) => text },
+  uint: { integer: true, unsigned: true, literal: (text) => `${text}u` },
+  long: { integer: true, literal: (text) => `${text}L` },
+  ulong: { integer: true, unsigned: true, literal: (text) => `${text}UL` },
+  float: { integer: false, literal: (text) => `${text}f` },
+  double: { integer: false, literal: (text) => `${text}d` },
+  decimal: { integer: false, literal: (text) => `${text}m` },
+};
+
+/**
+ * Returns how bounds are written for `type`, by walking its base-scalar chain
+ * to the first scalar with a known C# mapping. Returns `undefined` for
+ * non-numeric types.
+ */
+function numericBoundType(type: Type): NumericBoundType | undefined {
+  const nonNull = getNonNullType(type);
+  if (nonNull?.kind !== "Scalar") return undefined;
+  for (
+    let current: Scalar | undefined = nonNull as Scalar;
+    current;
+    current = current.baseScalar
+  ) {
+    const csharpType = SCALAR_MAP[current.name];
+    if (csharpType) return NUMERIC_BOUND_TYPES[csharpType];
+  }
+  return undefined;
+}
+
+/** How a bound compares against the value; decides the rounding of integer bounds. */
+type BoundKind = "min" | "max" | "minExclusive" | "maxExclusive";
+
+/**
+ * Builds the {@link NumericRule} for a `@minValue` / `@maxValue` family bound.
+ *
+ * For an integer property, a fractional bound is rounded to the integer bound
+ * that accepts exactly the same integers (`>= 0.5` → `>= 1`, `> 0.5` → `> 0`),
+ * because a fractional literal does not convert to an integer type. Returns
+ * `undefined` when the bound is negative on an unsigned type, where it accepts
+ * every value and its literal would not compile.
+ */
+function numericRule(
+  value: number | undefined,
+  kind: BoundKind,
+  boundType: NumericBoundType | undefined,
+): NumericRule | undefined {
+  if (value === undefined) return undefined;
+  if (!boundType) {
+    const text = String(value);
+    return {
+      value,
+      formatted: text,
+      decimalLiteral: `${text}m`,
+      display: text,
+    };
+  }
+  let bound = value;
+  if (boundType.integer && !Number.isInteger(bound)) {
+    bound =
+      kind === "min" || kind === "maxExclusive"
+        ? Math.ceil(bound)
+        : Math.floor(bound);
+  }
+  if (boundType.unsigned && bound < 0) return undefined;
+  const text =
+    boundType.integer && !Number.isSafeInteger(bound)
+      ? BigInt(bound).toString()
+      : String(bound);
+  return {
+    value: bound,
+    formatted: boundType.literal(text),
+    decimalLiteral: `${text}m`,
+    display: text,
+  };
+}
+
 /**
  * Returns true if the model should be excluded from validator emission:
  * anonymous models, generic template declarations, template instances,
@@ -500,14 +668,18 @@ function shouldSkipValidatorModel(model: Model): boolean {
   return filePath.replace(/\\/g, "/").includes("node_modules/");
 }
 
+/** How a property holds a referenced model: directly, as array items, or as record values. */
+type ModelReferenceKind = "object" | "array" | "record";
+
 /**
- * If `type` is a user-defined model or an array of user-defined models, returns
- * the referenced model and whether it is a collection. Returns `undefined` for
- * scalars, enums, unions, built-in models, and arrays of non-models.
+ * If `type` is a user-defined model, an array of user-defined models, or a
+ * `Record` of user-defined models, returns the referenced model and how it is
+ * held. Returns `undefined` for scalars, enums, unions, built-in models, and
+ * collections of non-models.
  */
 function getValidatorModelReference(
   type: Type,
-): { model: Model; isCollection: boolean } | undefined {
+): { model: Model; kind: ModelReferenceKind } | undefined {
   const nonNullType = getNonNullType(type);
   if (nonNullType?.kind !== "Model") return undefined;
   const m = nonNullType as Model;
@@ -518,10 +690,13 @@ function getValidatorModelReference(
     if (!elemType || elemType.kind !== "Model") return undefined;
     const elemModel = elemType as Model;
     if (shouldSkipValidatorModel(elemModel)) return undefined;
-    return { model: elemModel, isCollection: true };
+    return {
+      model: elemModel,
+      kind: isArrayModelType(m) ? "array" : "record",
+    };
   }
   if (shouldSkipValidatorModel(m)) return undefined;
-  return { model: m, isCollection: false };
+  return { model: m, kind: "object" };
 }
 
 /** Unwraps a nullable union containing exactly one non-null type. */
@@ -536,11 +711,42 @@ function getNonNullType(type: Type): Type | undefined {
 }
 
 /**
+ * Returns the properties a validator for `model` checks: the properties of
+ * its C# class plus those it inherits from emitted base classes, base-most
+ * first. A property redeclared by a derived model replaces the inherited one
+ * in place.
+ */
+function validatorProperties(program: Program, model: Model): ModelProperty[] {
+  const chain: Model[] = [];
+  for (
+    let current: Model | undefined = model;
+    current;
+    current = emittedBaseModel(program, current)
+  ) {
+    chain.unshift(current);
+  }
+  const byName = new Map<string, ModelProperty>();
+  for (const owner of chain) {
+    for (const prop of classProperties(program, owner)) {
+      byName.set(prop.name, prop);
+    }
+  }
+  return [...byName.values()];
+}
+
+/** Lower-cases the first character, for parameter and field names. */
+function camelFirst(name: string): string {
+  return name.charAt(0).toLowerCase() + name.slice(1);
+}
+
+/**
  * Extracts all constraint data for a single model property.
  *
  * @param isReadOnly - The property must be rejected when supplied.
  * @param isImmutable - The rejection is because the property belongs to a
  *   different lifecycle phase (see {@link PropertyData.isImmutable}).
+ * @param optional - Overrides `prop.optional`, for a version in which the
+ *   property was still required (`@madeOptional`).
  */
 function buildSinglePropertyData(
   program: Program,
@@ -549,6 +755,7 @@ function buildSinglePropertyData(
   options: ResolvedOptions,
   isReadOnly = false,
   isImmutable = false,
+  optional = prop.optional,
 ): PropertyData {
   const hasDefault = prop.defaultValue !== undefined;
   const nullable = isNullableForValidator(
@@ -556,12 +763,34 @@ function buildSinglePropertyData(
     prop,
     options.nullableProperties,
   );
-  const isRequired = !isReadOnly && !prop.optional && !hasDefault;
+  const isRequired = !isReadOnly && !optional && !hasDefault;
   const notEmpty =
     isRequired &&
     (isStringScalar(prop.type) || isStringLiteralUnion(prop.type));
   const rejectNull = isRequired && !typeAllowsNull(prop.type);
   const notNull = rejectNull && !notEmpty && nullable;
+  const name = propertyIdentifier(program, model, prop);
+  const jsonName = csharpStringContent(
+    resolveEncodedName(program, prop, "application/json"),
+  );
+
+  if (isReadOnly) {
+    return {
+      name,
+      jsonName,
+      hasRules: true,
+      notEmpty,
+      notNull,
+      rejectNull,
+      isReadOnly: true,
+      isImmutable: isImmutable || undefined,
+      nullable,
+      rejectWithNull: nullable && !hasDefault,
+      emailAddress: false,
+      isInEnum: false,
+    };
+  }
+
   const minLength =
     getMinLength(program, prop) ?? getMinLength(program, prop.type);
   const maxLength =
@@ -569,6 +798,10 @@ function buildSinglePropertyData(
   const pattern = getPattern(program, prop) ?? getPattern(program, prop.type);
   const format = getFormat(program, prop) ?? getFormat(program, prop.type);
   const emailAddress = format === "email";
+  const minItems =
+    getMinItems(program, prop) ?? getMinItems(program, prop.type);
+  const maxItems =
+    getMaxItems(program, prop) ?? getMaxItems(program, prop.type);
 
   const isInEnum = prop.type.kind === "Enum";
   const enumTypeName = isInEnum
@@ -579,54 +812,65 @@ function buildSinglePropertyData(
       )
     : undefined;
 
-  const rawMin = getMinValue(program, prop) ?? getMinValue(program, prop.type);
-  const rawMax = getMaxValue(program, prop) ?? getMaxValue(program, prop.type);
-  const minValue: NumericRule | undefined =
-    rawMin !== undefined
-      ? { value: rawMin, formatted: String(rawMin) }
-      : undefined;
-  const maxValue: NumericRule | undefined =
-    rawMax !== undefined
-      ? { value: rawMax, formatted: String(rawMax) }
-      : undefined;
+  const boundType = numericBoundType(prop.type);
+  const minValue = numericRule(
+    getMinValue(program, prop) ?? getMinValue(program, prop.type),
+    "min",
+    boundType,
+  );
+  const maxValue = numericRule(
+    getMaxValue(program, prop) ?? getMaxValue(program, prop.type),
+    "max",
+    boundType,
+  );
+  const minValueExclusive = numericRule(
+    getMinValueExclusive(program, prop) ??
+      getMinValueExclusive(program, prop.type),
+    "minExclusive",
+    boundType,
+  );
+  const maxValueExclusive = numericRule(
+    getMaxValueExclusive(program, prop) ??
+      getMaxValueExclusive(program, prop.type),
+    "maxExclusive",
+    boundType,
+  );
 
   const modelRef = getValidatorModelReference(prop.type);
   const referencedModelName = modelRef
     ? csharpModelName(program, modelRef.model)
     : undefined;
-  const referencedParamName = referencedModelName
-    ? referencedModelName.charAt(0).toLowerCase() +
-      referencedModelName.slice(1) +
-      "Validator"
-    : undefined;
-  const isCollectionReference = modelRef?.isCollection;
   const referencedQualifiedModelName = modelRef
     ? computeModelTypeName(program, modelRef.model, options)
     : undefined;
+  // Array items replace the whole array, so they are validated as complete
+  // models. Objects and record values are merged, so they are validated as
+  // nested patches.
   const mergePatchValidator = modelRef
-    ? isCollectionReference
+    ? modelRef.kind === "array"
       ? {
           typeName: referencedQualifiedModelName!,
-          paramName: `${referencedModelName!.charAt(0).toLowerCase()}${referencedModelName!.slice(1)}Validator`,
+          paramName: `${camelFirst(referencedModelName!)}Validator`,
           factoryTypeName: undefined,
         }
-      : (() => {
-          const bodyInfo = resolvePatchBodyInfo(
+      : {
+          typeName: resolvePatchBodyInfo(
             `MergePatch<${referencedModelName}>`,
             referencedModelName!,
             referencedQualifiedModelName!,
             options,
-          );
-          return {
-            typeName: bodyInfo.qualifiedPatchBodyTypeName,
-            paramName: `${referencedModelName!.charAt(0).toLowerCase()}${referencedModelName!.slice(1)}PatchValidator`,
-            factoryTypeName: bodyInfo.qualifiedPatchBodyTypeName,
-          };
-        })()
+          ).qualifiedPatchBodyTypeName,
+          paramName: `${camelFirst(referencedModelName!)}PatchValidator`,
+          factoryTypeName: resolvePatchBodyInfo(
+            `MergePatch<${referencedModelName}>`,
+            referencedModelName!,
+            referencedQualifiedModelName!,
+            options,
+          ).qualifiedPatchBodyTypeName,
+        }
     : undefined;
 
   const hasRules =
-    isReadOnly ||
     isRequired ||
     minLength !== undefined ||
     maxLength !== undefined ||
@@ -635,51 +879,90 @@ function buildSinglePropertyData(
     isInEnum ||
     minValue !== undefined ||
     maxValue !== undefined ||
+    minValueExclusive !== undefined ||
+    maxValueExclusive !== undefined ||
+    minItems !== undefined ||
+    maxItems !== undefined ||
     referencedModelName !== undefined;
 
   return {
-    name: propertyIdentifier(program, model, prop),
-    jsonName: csharpStringContent(
-      resolveEncodedName(program, prop, "application/json"),
-    ),
+    name,
+    jsonName,
     hasRules,
     notEmpty,
     notNull,
     rejectNull,
-    isReadOnly: isReadOnly || undefined,
-    isImmutable: (isReadOnly && isImmutable) || undefined,
     nullable,
     minLength,
     maxLength,
     pattern:
       pattern === undefined ? undefined : csharpVerbatimStringContent(pattern),
+    patternField:
+      pattern !== undefined ? `_${camelFirst(name)}Pattern` : undefined,
     emailAddress,
-    isInEnum: isReadOnly ? false : isInEnum,
-    enumTypeName: isReadOnly ? undefined : enumTypeName,
-    minValue: isReadOnly ? undefined : minValue,
-    maxValue: isReadOnly ? undefined : maxValue,
-    referencedModelName: isReadOnly ? undefined : referencedModelName,
-    referencedModel: isReadOnly ? undefined : modelRef?.model,
-    referencedQualifiedModelName: isReadOnly
-      ? undefined
-      : referencedQualifiedModelName,
-    referencedParamName: isReadOnly ? undefined : referencedParamName,
-    isCollectionReference: isReadOnly ? undefined : isCollectionReference,
-    mergePatchValidatorTypeName: isReadOnly
-      ? undefined
-      : mergePatchValidator?.typeName,
-    mergePatchValidatorParamName: isReadOnly
-      ? undefined
-      : mergePatchValidator?.paramName,
-    mergePatchFactoryTypeName: isReadOnly
-      ? undefined
-      : mergePatchValidator?.factoryTypeName,
+    isInEnum,
+    enumTypeName,
+    minValue,
+    maxValue,
+    minValueExclusive,
+    maxValueExclusive,
+    minItems,
+    maxItems,
+    referencedModelName,
+    referencedModel: modelRef?.model,
+    referencedQualifiedModelName,
+    referencedParamName: referencedModelName
+      ? `${camelFirst(referencedModelName)}Validator`
+      : undefined,
+    isCollectionReference: modelRef?.kind === "array" || undefined,
+    isRecordReference: modelRef?.kind === "record" || undefined,
+    mergePatchValidatorTypeName: mergePatchValidator?.typeName,
+    mergePatchValidatorParamName: mergePatchValidator?.paramName,
+    mergePatchFactoryTypeName: mergePatchValidator?.factoryTypeName,
   };
 }
 
 /**
+ * Keeps only the required-ness rules of `data`, for the versions before a
+ * `@madeOptional` property became optional. Returns `undefined` when there is
+ * no such rule.
+ */
+function requiredRulesOnly(data: PropertyData): PropertyData | undefined {
+  if (!data.notEmpty && !data.notNull && !data.rejectNull) return undefined;
+  return {
+    name: data.name,
+    jsonName: data.jsonName,
+    hasRules: true,
+    notEmpty: data.notEmpty,
+    notNull: data.notNull,
+    rejectNull: data.rejectNull,
+    nullable: data.nullable,
+    emailAddress: false,
+    isInEnum: false,
+  };
+}
+
+/** Index of the version a `@madeOptional` property became optional in, if any. */
+function madeOptionalIndex(
+  program: Program,
+  prop: ModelProperty,
+  allVersions: readonly Version[],
+): number | undefined {
+  const version = getMadeOptionalOn(program, prop);
+  if (!version) return undefined;
+  const index = allVersions.findIndex((v) => v.name === version.name);
+  return index >= 0 ? index : undefined;
+}
+
+/** The API version a non-version-aware validator set is emitted for. */
+interface TargetVersion {
+  allVersions: readonly Version[];
+  index: number;
+}
+
+/**
  * Builds the `PropertyData` array for all properties of a model,
- * respecting lifecycle visibility and an optional version filter.
+ * respecting lifecycle visibility and an optional target version.
  * Read-only (non-writable) properties are included with `isReadOnly: true`
  * so validators can emit a rejection rule for them.
  */
@@ -689,14 +972,20 @@ function buildValidatorProperties(
   writeMembers: Set<EnumMember>,
   options: ResolvedOptions,
   visibilityMember?: EnumMember,
-  versionFilter?: (prop: ModelProperty) => boolean,
+  targetVersion?: TargetVersion,
 ): PropertyData[] {
   const result: PropertyData[] = [];
   const discriminatorPropertyName = discriminatorPropertyNameInHierarchy(
     program,
     model,
   );
-  for (const prop of classProperties(program, model)) {
+  const versionFilter = targetVersion
+    ? makeValidatorVersionFilter(
+        program,
+        targetVersion.allVersions[targetVersion.index].name,
+      )
+    : undefined;
+  for (const prop of validatorProperties(program, model)) {
     if (prop.name === discriminatorPropertyName) continue;
 
     const isWritable =
@@ -720,33 +1009,108 @@ function buildValidatorProperties(
       continue;
     }
     if (versionFilter && !versionFilter(prop)) continue;
-    result.push(buildSinglePropertyData(program, model, prop, options, false));
+    const optionalSince = targetVersion
+      ? madeOptionalIndex(program, prop, targetVersion.allVersions)
+      : undefined;
+    const optional =
+      optionalSince !== undefined && targetVersion!.index < optionalSince
+        ? false
+        : prop.optional;
+    result.push(
+      buildSinglePropertyData(
+        program,
+        model,
+        prop,
+        options,
+        false,
+        false,
+        optional,
+      ),
+    );
   }
   return result;
 }
 
 /**
+ * Returns the half-open index ranges `[start, end)` of `allVersions` in which
+ * `prop` exists. A property without version metadata exists in every version.
+ */
+function availabilityRuns(
+  program: Program,
+  prop: ModelProperty,
+  allVersions: readonly Version[],
+): [number, number][] {
+  const availability = getAvailabilityMap(program, prop);
+  if (availability === undefined) return [[0, allVersions.length]];
+  const runs: [number, number][] = [];
+  let start: number | undefined;
+  allVersions.forEach((version, index) => {
+    const state = availability.get(version.name);
+    const available =
+      state === Availability.Added || state === Availability.Available;
+    if (available && start === undefined) start = index;
+    if (!available && start !== undefined) {
+      runs.push([start, index]);
+      start = undefined;
+    }
+  });
+  if (start !== undefined) runs.push([start, allVersions.length]);
+  return runs;
+}
+
+/** Intersects version ranges with `[0, end)`. */
+function runsBefore(
+  runs: readonly [number, number][],
+  end: number,
+): [number, number][] {
+  return runs
+    .filter(([start]) => start < end)
+    .map(([start, runEnd]) => [start, Math.min(runEnd, end)]);
+}
+
+/**
  * Builds version-aware property data (base properties + versioned groups)
  * for the `"version-aware"` strategy.
- * Read-only (non-writable) properties are included with `isReadOnly: true`
- * so validators can emit a rejection rule for them.
+ *
+ * A property is validated only in the versions it exists in: from the version
+ * it was `@added` in up to the version it was `@removed` in. A `@madeOptional`
+ * property keeps its required rules in the versions before it became
+ * optional. Read-only (non-writable) properties are included with
+ * `isReadOnly: true` in every version, so validators can reject them.
  */
 function buildVersionAwareValidatorProperties(
   program: Program,
   model: Model,
   writeMembers: Set<EnumMember>,
   visibilityMember: EnumMember | undefined,
-  allVersions: Version[],
+  allVersions: readonly Version[],
   options: ResolvedOptions,
 ): { baseProperties: PropertyData[]; versionGroups: VersionGroup[] } {
   const baseProperties: PropertyData[] = [];
-  const groupMap = new Map<string, PropertyData[]>();
+  const groups = new Map<
+    string,
+    { runs: [number, number][]; properties: PropertyData[] }
+  >();
   const discriminatorPropertyName = discriminatorPropertyNameInHierarchy(
     program,
     model,
   );
+  const addToRuns = (runs: [number, number][], data: PropertyData) => {
+    if (
+      runs.length === 1 &&
+      runs[0][0] === 0 &&
+      runs[0][1] === allVersions.length
+    ) {
+      baseProperties.push(data);
+      return;
+    }
+    const key = runs.map(([start, end]) => `${start}-${end}`).join(",");
+    const group = groups.get(key) ?? { runs, properties: [] };
+    group.properties.push(data);
+    groups.set(key, group);
+  };
 
-  for (const prop of classProperties(program, model)) {
+  for (const prop of validatorProperties(program, model)) {
     if (prop.name === discriminatorPropertyName) continue;
 
     const isWritable =
@@ -768,42 +1132,66 @@ function buildVersionAwareValidatorProperties(
       );
       continue;
     }
-    const propData = buildSinglePropertyData(
-      program,
-      model,
-      prop,
-      options,
-      false,
+    const runs = availabilityRuns(program, prop, allVersions);
+    if (runs.length === 0) continue;
+    addToRuns(runs, buildSinglePropertyData(program, model, prop, options));
+
+    const optionalSince = madeOptionalIndex(program, prop, allVersions);
+    if (optionalSince === undefined) continue;
+    const requiredRuns = runsBefore(runs, optionalSince);
+    const requiredData = requiredRulesOnly(
+      buildSinglePropertyData(
+        program,
+        model,
+        prop,
+        options,
+        false,
+        false,
+        false,
+      ),
     );
-    const availMap = getAvailabilityMap(program, prop);
-    if (availMap === undefined) {
-      baseProperties.push(propData);
-      continue;
-    }
-    let addedVersionName: string | undefined;
-    for (const ver of allVersions) {
-      if (availMap.get(ver.name) === Availability.Added) {
-        addedVersionName = ver.name;
-        break;
-      }
-    }
-    if (!addedVersionName || addedVersionName === allVersions[0].name) {
-      baseProperties.push(propData);
-    } else {
-      const bucket = groupMap.get(addedVersionName) ?? [];
-      bucket.push(propData);
-      groupMap.set(addedVersionName, bucket);
+    if (requiredRuns.length > 0 && requiredData) {
+      addToRuns(requiredRuns, requiredData);
     }
   }
 
-  const versionGroups: VersionGroup[] = [];
-  for (const ver of allVersions.slice(1)) {
-    const props = groupMap.get(ver.name);
-    if (props && props.length > 0) {
-      versionGroups.push({ sinceVersion: ver.value, properties: props });
-    }
-  }
+  const versionGroups = [...groups.values()]
+    .sort((a, b) => a.runs[0][0] - b.runs[0][0] || a.runs[0][1] - b.runs[0][1])
+    .map(({ runs, properties }) => versionGroup(runs, properties, allVersions));
   return { baseProperties, versionGroups };
+}
+
+/** Builds the comment label and C# condition for a group of version ranges. */
+function versionGroup(
+  runs: readonly [number, number][],
+  properties: PropertyData[],
+  allVersions: readonly Version[],
+): VersionGroup {
+  const count = allVersions.length;
+  const value = (index: number) => allVersions[index].value;
+  const label = runs
+    .map(([start, end]) =>
+      end === count
+        ? `${value(start)} and later`
+        : start === 0
+          ? `versions before ${value(end)}`
+          : `${value(start)} up to (not including) ${value(end)}`,
+    )
+    .join(", ");
+  const condition = runs
+    .map(
+      ([start, end]) =>
+        `IsVersionInRange("${value(start)}", ${end === count ? "null" : `"${value(end)}"`})`,
+    )
+    .join(" || ");
+  const [firstStart, firstEnd] = runs[0];
+  return {
+    sinceVersion: value(firstStart),
+    untilVersion: firstEnd === count ? undefined : value(firstEnd),
+    label,
+    condition,
+    properties,
+  };
 }
 
 /**
@@ -913,11 +1301,15 @@ function buildDerivedTypeValidators(
       derivedModel,
       options,
     );
-    const paramName =
-      typeName.charAt(0).toLowerCase() + typeName.slice(1) + "Validator";
-    derived.push({ typeName, qualifiedTypeName, paramName });
+    derived.push({
+      typeName,
+      qualifiedTypeName,
+      paramName: `${camelFirst(typeName)}Validator`,
+    });
   }
-  derived.sort((a, b) => a.typeName.localeCompare(b.typeName));
+  derived.sort((a, b) =>
+    a.typeName < b.typeName ? -1 : a.typeName > b.typeName ? 1 : 0,
+  );
   return derived.length > 0 ? derived : undefined;
 }
 
@@ -947,7 +1339,7 @@ function collectValidatorTransitiveDeps(
   initialModels.forEach(add);
   while (queue.length > 0) {
     const model = queue.shift()!;
-    for (const prop of classProperties(program, model)) {
+    for (const prop of validatorProperties(program, model)) {
       if (versionFilter && !versionFilter(prop)) continue;
       const ref = getValidatorModelReference(prop.type);
       if (ref) add(ref.model);
@@ -985,9 +1377,12 @@ function addModelWithDescendants(
 }
 
 /**
- * Collects the sets of models that appear as POST and PATCH request bodies
- * across all HTTP services. Returns `undefined` when no HTTP operations exist,
- * signalling the caller to fall back to all models.
+ * Collects the sets of models that appear as POST, PUT and PATCH request
+ * bodies across all HTTP services. Returns `undefined` when no HTTP
+ * operations exist, signalling the caller to fall back to all models.
+ *
+ * POST and PUT bodies share one validator per model (`postModels`); PUT
+ * bodies are also listed in `putModels`.
  *
  * For PATCH, `patchModels` maps each source model to the raw C# names of every
  * PATCH body type it is validated as: `"MergePatch<Pet>"` for a MergePatch body
@@ -1009,19 +1404,25 @@ export function collectValidatorModelsFromRoutes(
   if (!hasAnyOperations) return undefined;
 
   const postModels = new Set<Model>();
+  const putModels = new Set<Model>();
   const patchModels = new Map<Model, Set<string>>();
   const nestedPostModels = new Set<Model>();
 
   for (const service of services) {
     for (const op of service.operations) {
-      if (op.verb !== "post" && op.verb !== "patch") continue;
+      if (op.verb !== "post" && op.verb !== "put" && op.verb !== "patch") {
+        continue;
+      }
       const body = op.parameters.body;
       if (!body || body.bodyKind !== "single") continue;
       const bodyType = (body as HttpOperationBody).type;
       if (bodyType.kind !== "Model") continue;
       const bodyModel = bodyType as Model;
-      if (op.verb === "post") {
+      if (op.verb === "post" || op.verb === "put") {
         addModelWithDescendants(allModels, bodyModel, postModels);
+        if (op.verb === "put") {
+          addModelWithDescendants(allModels, bodyModel, putModels);
+        }
         continue;
       }
 
@@ -1045,10 +1446,10 @@ export function collectValidatorModelsFromRoutes(
         const current = pending.shift()!;
         if (visited.has(current)) continue;
         visited.add(current);
-        for (const prop of classProperties(program, current)) {
+        for (const prop of validatorProperties(program, current)) {
           const reference = getValidatorModelReference(prop.type);
           if (!reference) continue;
-          if (!isMergePatchBody || reference.isCollection) {
+          if (!isMergePatchBody || reference.kind === "array") {
             nestedPostModels.add(reference.model);
             continue;
           }
@@ -1058,7 +1459,7 @@ export function collectValidatorModelsFromRoutes(
       }
     }
   }
-  return { postModels, patchModels, nestedPostModels };
+  return { postModels, putModels, patchModels, nestedPostModels };
 }
 
 /** Records that `model` is validated as a MergePatch body or as a plain PATCH body. */
@@ -1169,8 +1570,210 @@ function resolvePatchBodyInfo(
   };
 }
 
+/** A child validator that a generated validator needs. */
+interface ValidatorDependency {
+  /** Type argument of the `AbstractValidator<T>` the dependency is resolved as. */
+  serviceType: string;
+  /** Constructor parameter name used when the dependency is injected. */
+  paramName: string;
+  /**
+   * Writes the resolved C# expression into the template view model.
+   * `lazy` is true when the expression must be evaluated per validation.
+   */
+  apply: (expression: string, lazy: boolean) => void;
+}
+
+/** A validator ready to render once its dependencies are resolved. */
+interface ValidatorSpec {
+  /** Type argument of the validator's `AbstractValidator<T>`; its DI key. */
+  serviceType: string;
+  path: string;
+  template: Handlebars.TemplateDelegate;
+  data: ValidatorTemplateData | VersionAwareValidatorTemplateData;
+  /** Constructor parameters that come before the child validators. */
+  leadingParameters: ConstructorParameter[];
+  dependencies: ValidatorDependency[];
+}
+
+/**
+ * Lists the child validators that `properties` (and, for a discriminated
+ * base, its derived types) need.
+ */
+function collectDependencies(
+  propertyGroups: PropertyData[][],
+  isMergePatchBody: boolean,
+  derivedTypeValidators: DerivedTypeValidator[] | undefined,
+): ValidatorDependency[] {
+  const dependencies: ValidatorDependency[] = [];
+  for (const props of propertyGroups) {
+    for (const prop of props) {
+      if (!prop.referencedModelName) continue;
+      if (isMergePatchBody) {
+        dependencies.push({
+          serviceType: prop.mergePatchValidatorTypeName!,
+          paramName: prop.mergePatchValidatorParamName!,
+          apply: (expression) => {
+            prop.mergePatchValidatorExpression = expression;
+          },
+        });
+      } else {
+        dependencies.push({
+          serviceType: prop.referencedQualifiedModelName!,
+          paramName: prop.referencedParamName!,
+          apply: (expression, lazy) => {
+            prop.referencedValidatorExpression = expression;
+            prop.referencedValidatorLazy = lazy || undefined;
+          },
+        });
+      }
+    }
+  }
+  for (const derived of derivedTypeValidators ?? []) {
+    dependencies.push({
+      serviceType: derived.qualifiedTypeName,
+      paramName: derived.paramName,
+      apply: (expression, lazy) => {
+        derived.validatorExpression = expression;
+        derived.lazy = lazy || undefined;
+      },
+    });
+  }
+  return dependencies;
+}
+
+/**
+ * Decides how every validator gets its child validators, then fills in each
+ * template's constructor parameters and validator expressions.
+ *
+ * Validators are resolved from dependency injection through their
+ * constructors, so a cycle of constructor dependencies could never be
+ * resolved. A validator that needs itself (`model Node { children?: Node[] }`)
+ * uses `this`. In a longer cycle (`A → B → A`, or a discriminated base whose
+ * derived type references the base), the edge that closes the cycle is
+ * resolved lazily from `IServiceProvider` at validation time instead of being
+ * injected. A child validator needed by several properties, or both by a
+ * property and for polymorphic dispatch, is injected once.
+ */
+function resolveValidatorDependencies(specs: readonly ValidatorSpec[]): void {
+  // The last registration for a service type is the one DI resolves.
+  const byServiceType = new Map(specs.map((spec) => [spec.serviceType, spec]));
+  const lazyServiceTypes = new Map<ValidatorSpec, Set<string>>();
+  const state = new Map<ValidatorSpec, "visiting" | "done">();
+
+  const visit = (spec: ValidatorSpec): void => {
+    state.set(spec, "visiting");
+    for (const { serviceType } of spec.dependencies) {
+      const target = byServiceType.get(serviceType);
+      if (!target || target === spec) continue;
+      const targetState = state.get(target);
+      if (targetState === "visiting") {
+        const lazy = lazyServiceTypes.get(spec) ?? new Set<string>();
+        lazy.add(serviceType);
+        lazyServiceTypes.set(spec, lazy);
+      } else if (targetState === undefined) {
+        visit(target);
+      }
+    }
+    state.set(spec, "done");
+  };
+  for (const spec of specs) {
+    if (!state.has(spec)) visit(spec);
+  }
+
+  for (const spec of specs) {
+    const lazy = lazyServiceTypes.get(spec) ?? new Set<string>();
+    const parameters = [...spec.leadingParameters];
+    if (lazy.size > 0) {
+      parameters.push({
+        type: "System.IServiceProvider",
+        name: "serviceProvider",
+      });
+    }
+    const injected = new Map<string, string>();
+    for (const dependency of spec.dependencies) {
+      if (dependency.serviceType === spec.serviceType) {
+        dependency.apply("this", false);
+      } else if (lazy.has(dependency.serviceType)) {
+        dependency.apply(
+          `serviceProvider.GetRequiredService<AbstractValidator<${dependency.serviceType}>>()`,
+          true,
+        );
+      } else {
+        let paramName = injected.get(dependency.serviceType);
+        if (paramName === undefined) {
+          paramName = dependency.paramName;
+          injected.set(dependency.serviceType, paramName);
+          parameters.push({
+            type: `AbstractValidator<${dependency.serviceType}>`,
+            name: paramName,
+          });
+        }
+        dependency.apply(paramName, false);
+      }
+    }
+    spec.data.constructorParameters = parameters;
+    spec.data.usesServiceProvider = lazy.size > 0 || undefined;
+  }
+}
+
+/**
+ * Fills in the field and helper flags of a validator's template data from
+ * its properties.
+ */
+function finishTemplateData(
+  data: ValidatorTemplateDataBase,
+  propertyGroups: PropertyData[][],
+  isVersionAware: boolean,
+): void {
+  const fields = new Map<string, PatternField>();
+  let usesNumberRules = false;
+  for (const props of propertyGroups) {
+    for (const prop of props) {
+      if (prop.patternField && prop.pattern !== undefined) {
+        fields.set(prop.patternField, {
+          field: prop.patternField,
+          pattern: prop.pattern,
+        });
+      }
+      if (
+        prop.minValue ||
+        prop.maxValue ||
+        prop.minValueExclusive ||
+        prop.maxValueExclusive
+      ) {
+        usesNumberRules = true;
+      }
+    }
+  }
+  data.patternFields = [...fields.values()];
+  data.usesPatterns = data.patternFields.length > 0 || undefined;
+  data.usesNumberRules =
+    (data.isMergePatchBody && usesNumberRules) || undefined;
+  data.hasFields =
+    isVersionAware ||
+    data.derivedTypeValidators !== undefined ||
+    data.patternFields.length > 0 ||
+    undefined;
+}
+
+/** Renders resolved validator specs. */
+async function renderValidatorSpecs(
+  program: Program,
+  specs: readonly ValidatorSpec[],
+): Promise<void> {
+  resolveValidatorDependencies(specs);
+  for (const spec of specs) {
+    await emitFile(program, {
+      path: spec.path,
+      // Indented partials also indent their blank lines; drop that whitespace.
+      content: spec.template(spec.data).replace(/[ \t]+$/gm, ""),
+    });
+  }
+}
+
 interface EmitValidatorSingleOptions {
-  versionFilter?: (prop: ModelProperty) => boolean;
+  /** The API version this validator set is for, when the spec is versioned. */
+  targetVersion?: TargetVersion;
   versionDirName?: string;
   versionNsSuffix?: string;
 }
@@ -1186,6 +1789,32 @@ function resolveValidatorNamespace(
   return ns;
 }
 
+/** True when `model` gets the POST (create / replace) validator. */
+function needsPostValidator(
+  model: Model,
+  routeModels: ValidatorRouteModels | undefined,
+  emitPost: boolean,
+  emitPatch: boolean,
+): boolean {
+  return (
+    (emitPost &&
+      (routeModels === undefined || routeModels.postModels.has(model))) ||
+    (emitPatch && (routeModels?.nestedPostModels.has(model) ?? false))
+  );
+}
+
+/**
+ * The lifecycle phase whose phase-specific rules the POST validator applies.
+ * A PUT body may create or replace a resource, so it gets none.
+ */
+function postVisibilityMember(
+  model: Model,
+  routeModels: ValidatorRouteModels | undefined,
+  createMember: EnumMember | undefined,
+): EnumMember | undefined {
+  return routeModels?.putModels.has(model) ? undefined : createMember;
+}
+
 /** Emits standard (non-version-aware) POST and/or PATCH validators. */
 async function emitValidatorModels(
   program: Program,
@@ -1198,36 +1827,28 @@ async function emitValidatorModels(
   emitPatch: boolean,
   singleOpts: EmitValidatorSingleOptions = {},
 ): Promise<void> {
-  const { versionFilter, versionDirName, versionNsSuffix } = singleOpts;
+  const { targetVersion, versionDirName, versionNsSuffix } = singleOpts;
   const namespace = resolveValidatorNamespace(options, versionNsSuffix);
   const writeMembers = new Set(
     [createMember, updateMember].filter(
       (m): m is EnumMember => m !== undefined,
     ),
   );
+  const versionDir = versionDirName ? `${versionDirName}/` : "";
+  const specs: ValidatorSpec[] = [];
 
   for (const model of allModels) {
-    const versionDir = versionDirName ? `${versionDirName}/` : "";
-
-    const doPost =
-      (emitPost &&
-        (routeModels === undefined || routeModels.postModels.has(model))) ||
-      (emitPatch && routeModels?.nestedPostModels.has(model));
-    const patchValidators = emitPatch
-      ? patchValidatorsFor(program, model, routeModels)
-      : [];
-
     const qualifiedModelName = computeModelTypeName(program, model, options);
     const modelName = csharpModelName(program, model);
 
-    if (doPost) {
+    if (needsPostValidator(model, routeModels, emitPost, emitPatch)) {
       const postProps = buildValidatorProperties(
         program,
         model,
         writeMembers,
         options,
-        createMember,
-        versionFilter,
+        postVisibilityMember(model, routeModels, createMember),
+        targetVersion,
       );
       const postRefs = deriveReferencedValidators(program, options, postProps);
       const derivedTypeValidators = buildDerivedTypeValidators(
@@ -1247,18 +1868,30 @@ async function emitValidatorModels(
         properties: postProps,
         referencedValidators: postRefs.length > 0 ? postRefs : undefined,
         derivedTypeValidators,
+        constructorParameters: [],
+        patternFields: [],
       };
-      await emitFile(program, {
+      finishTemplateData(data, [postProps], false);
+      specs.push({
+        serviceType: qualifiedModelName,
         path: resolvePath(
           options.validatorsOutputDir,
           `${versionDir}${modelName}Validator${options.fileExtension}`,
         ),
-        content: getValidatorPostTemplate(options.templates["validator-post"])(
-          data,
+        template: getValidatorPostTemplate(options.templates["validator-post"]),
+        data,
+        leadingParameters: [],
+        dependencies: collectDependencies(
+          [postProps],
+          false,
+          derivedTypeValidators,
         ),
       });
     }
 
+    const patchValidators = emitPatch
+      ? patchValidatorsFor(program, model, routeModels)
+      : [];
     for (const { rawBodyTypeName, validatorName } of patchValidators) {
       const { patchBodyTypeName, qualifiedPatchBodyTypeName } =
         resolvePatchBodyInfo(
@@ -1274,11 +1907,12 @@ async function emitValidatorModels(
         writeMembers,
         options,
         updateMember,
-        versionFilter,
+        targetVersion,
       );
       const patchRefs = isMergePatchBody
         ? deriveMergePatchReferencedValidators(program, options, patchProps)
         : deriveReferencedValidators(program, options, patchProps);
+      const usesJsonOptions = isMergePatchBody && patchRefs.length > 0;
       const data: ValidatorTemplateData = {
         namespace,
         modelsNamespace: options.modelsNamespace,
@@ -1290,27 +1924,51 @@ async function emitValidatorModels(
           options.mergePatchStyle === "generic",
         modelName,
         qualifiedModelName,
+        isPatch: true,
         validatorName,
         patchBodyTypeName,
         qualifiedPatchBodyTypeName,
         isMergePatchBody: isMergePatchBody || undefined,
-        usesJsonOptions:
-          (isMergePatchBody && patchRefs.length > 0) || undefined,
+        usesJsonOptions: usesJsonOptions || undefined,
         properties: patchProps,
         referencedValidators: patchRefs.length > 0 ? patchRefs : undefined,
+        constructorParameters: [],
+        patternFields: [],
       };
-      await emitFile(program, {
+      finishTemplateData(data, [patchProps], false);
+      specs.push({
+        serviceType: qualifiedPatchBodyTypeName,
         path: resolvePath(
           options.validatorsOutputDir,
           `${versionDir}${validatorName}${options.fileExtension}`,
         ),
-        content: getValidatorPatchTemplate(
+        template: getValidatorPatchTemplate(
           options.templates["validator-patch"],
-        )(data),
+        ),
+        data,
+        leadingParameters: usesJsonOptions ? [JSON_OPTIONS_PARAMETER] : [],
+        dependencies: collectDependencies(
+          [patchProps],
+          isMergePatchBody,
+          undefined,
+        ),
       });
     }
   }
+  await renderValidatorSpecs(program, specs);
 }
+
+/** Constructor parameter of MergePatch validators that deserialize nested values. */
+const JSON_OPTIONS_PARAMETER: ConstructorParameter = {
+  type: "Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>",
+  name: "jsonOptions",
+};
+
+/** Constructor parameter of version-aware validators. */
+const HTTP_CONTEXT_ACCESSOR_PARAMETER: ConstructorParameter = {
+  type: "IHttpContextAccessor",
+  name: "httpContextAccessor",
+};
 
 /** Emits version-aware POST and/or PATCH validators. */
 async function emitVersionAwareValidatorModels(
@@ -1332,34 +1990,30 @@ async function emitVersionAwareValidatorModels(
       (m): m is EnumMember => m !== undefined,
     ),
   );
+  const specs: ValidatorSpec[] = [];
 
   for (const model of allModels) {
-    const doPost =
-      (emitPost &&
-        (routeModels === undefined || routeModels.postModels.has(model))) ||
-      (emitPatch && routeModels?.nestedPostModels.has(model));
-    const patchValidators = emitPatch
-      ? patchValidatorsFor(program, model, routeModels)
-      : [];
-
     const qualifiedModelName = computeModelTypeName(program, model, options);
     const modelName = csharpModelName(program, model);
 
-    if (doPost) {
+    if (needsPostValidator(model, routeModels, emitPost, emitPatch)) {
       const { baseProperties, versionGroups } =
         buildVersionAwareValidatorProperties(
           program,
           model,
           writeMembers,
-          createMember,
+          postVisibilityMember(model, routeModels, createMember),
           allVersions,
           options,
         );
+      const propertyGroups = [
+        baseProperties,
+        ...versionGroups.map((g) => g.properties),
+      ];
       const postRefs = deriveReferencedValidators(
         program,
         options,
-        baseProperties,
-        ...versionGroups.map((g) => g.properties),
+        ...propertyGroups,
       );
       const derivedTypeValidators = buildDerivedTypeValidators(
         program,
@@ -1381,18 +2035,32 @@ async function emitVersionAwareValidatorModels(
         versionGroups,
         referencedValidators: postRefs.length > 0 ? postRefs : undefined,
         derivedTypeValidators,
+        constructorParameters: [],
+        patternFields: [],
       };
-      await emitFile(program, {
+      finishTemplateData(data, propertyGroups, true);
+      specs.push({
+        serviceType: qualifiedModelName,
         path: resolvePath(
           options.validatorsOutputDir,
           `${modelName}Validator${options.fileExtension}`,
         ),
-        content: getValidatorPostVersionAwareTemplate(
+        template: getValidatorPostVersionAwareTemplate(
           options.templates["validator-post-version-aware"],
-        )(data),
+        ),
+        data,
+        leadingParameters: [HTTP_CONTEXT_ACCESSOR_PARAMETER],
+        dependencies: collectDependencies(
+          propertyGroups,
+          false,
+          derivedTypeValidators,
+        ),
       });
     }
 
+    const patchValidators = emitPatch
+      ? patchValidatorsFor(program, model, routeModels)
+      : [];
     for (const { rawBodyTypeName, validatorName } of patchValidators) {
       const { patchBodyTypeName, qualifiedPatchBodyTypeName } =
         resolvePatchBodyInfo(
@@ -1411,19 +2079,18 @@ async function emitVersionAwareValidatorModels(
           allVersions,
           options,
         );
+      const propertyGroups = [
+        baseProperties,
+        ...versionGroups.map((g) => g.properties),
+      ];
       const patchRefs = isMergePatchBody
         ? deriveMergePatchReferencedValidators(
             program,
             options,
-            baseProperties,
-            ...versionGroups.map((g) => g.properties),
+            ...propertyGroups,
           )
-        : deriveReferencedValidators(
-            program,
-            options,
-            baseProperties,
-            ...versionGroups.map((g) => g.properties),
-          );
+        : deriveReferencedValidators(program, options, ...propertyGroups);
+      const usesJsonOptions = isMergePatchBody && patchRefs.length > 0;
       const data: VersionAwareValidatorTemplateData = {
         namespace,
         modelsNamespace: options.modelsNamespace,
@@ -1435,29 +2102,43 @@ async function emitVersionAwareValidatorModels(
           options.mergePatchStyle === "generic",
         modelName,
         qualifiedModelName,
+        isPatch: true,
         validatorName,
         patchBodyTypeName,
         qualifiedPatchBodyTypeName,
         isMergePatchBody: isMergePatchBody || undefined,
-        usesJsonOptions:
-          (isMergePatchBody && patchRefs.length > 0) || undefined,
+        usesJsonOptions: usesJsonOptions || undefined,
         allVersions: versionValues,
         defaultVersion,
         baseProperties,
         versionGroups,
         referencedValidators: patchRefs.length > 0 ? patchRefs : undefined,
+        constructorParameters: [],
+        patternFields: [],
       };
-      await emitFile(program, {
+      finishTemplateData(data, propertyGroups, true);
+      specs.push({
+        serviceType: qualifiedPatchBodyTypeName,
         path: resolvePath(
           options.validatorsOutputDir,
           `${validatorName}${options.fileExtension}`,
         ),
-        content: getValidatorPatchVersionAwareTemplate(
+        template: getValidatorPatchVersionAwareTemplate(
           options.templates["validator-patch-version-aware"],
-        )(data),
+        ),
+        data,
+        leadingParameters: usesJsonOptions
+          ? [HTTP_CONTEXT_ACCESSOR_PARAMETER, JSON_OPTIONS_PARAMETER]
+          : [HTTP_CONTEXT_ACCESSOR_PARAMETER],
+        dependencies: collectDependencies(
+          propertyGroups,
+          isMergePatchBody,
+          undefined,
+        ),
       });
     }
   }
+  await renderValidatorSpecs(program, specs);
 }
 
 interface EmitValidatorInitializerOptions {
@@ -1483,11 +2164,7 @@ async function emitValidatorsInitializer(
     const qualifiedModelName = computeModelTypeName(program, model, options);
     const modelName = csharpModelName(program, model);
 
-    if (
-      (emitPost &&
-        (routeModels === undefined || routeModels.postModels.has(model))) ||
-      (emitPatch && routeModels?.nestedPostModels.has(model))
-    ) {
+    if (needsPostValidator(model, routeModels, emitPost, emitPatch)) {
       registrations.push({
         modelTypeName: modelName,
         qualifiedModelTypeName: qualifiedModelName,
@@ -1567,78 +2244,6 @@ function discriminatorPropertyNameInHierarchy(
 }
 
 /**
- * Reports `merge-patch-recursive-reference` for every property that closes a
- * loop of nested MergePatch validators (`Node → Node`, `A → B → A`).
- *
- * Each MergePatch validator receives the validators of its nested models
- * through its constructor, so a loop would make the validators depend on each
- * other and fail to resolve from dependency injection. Only object-valued
- * properties that can be written in a PATCH form edges: arrays are validated
- * by POST validators, and read-only or create-only properties are rejected
- * without being validated recursively.
- */
-function reportMergePatchCycles(
-  program: Program,
-  allModels: Model[],
-  patchModels: Map<Model, Set<string>>,
-  createMember: EnumMember | undefined,
-  updateMember: EnumMember | undefined,
-): void {
-  const writeMembers = new Set(
-    [createMember, updateMember].filter(
-      (m): m is EnumMember => m !== undefined,
-    ),
-  );
-  const isMergePatchModel = (model: Model) =>
-    [...(patchModels.get(model) ?? [])].some(isMergePatchName);
-  const isPatchWritable = (prop: ModelProperty) =>
-    (writeMembers.size === 0 ||
-      isVisible(program, prop, { any: writeMembers })) &&
-    (!updateMember ||
-      isVisible(program, prop, { any: new Set([updateMember]) }));
-
-  const edgesFrom = (model: Model) =>
-    classProperties(program, model).flatMap((prop) => {
-      if (!isPatchWritable(prop)) return [];
-      const reference = getValidatorModelReference(prop.type);
-      if (!reference || reference.isCollection) return [];
-      if (!isMergePatchModel(reference.model)) return [];
-      return [{ prop, target: reference.model }];
-    });
-
-  const finished = new Set<Model>();
-  const path: Model[] = [];
-  const visit = (model: Model): void => {
-    path.push(model);
-    for (const { prop, target } of edgesFrom(model)) {
-      if (finished.has(target)) continue;
-      const loopStart = path.indexOf(target);
-      if (loopStart >= 0) {
-        const cycle = [...path.slice(loopStart), target]
-          .map((m) => csharpModelName(program, m))
-          .join(" → ");
-        reportDiagnostic(program, {
-          code: "merge-patch-recursive-reference",
-          target: prop,
-          format: {
-            property: `${csharpModelName(program, model)}.${prop.name}`,
-            cycle,
-          },
-        });
-        continue;
-      }
-      visit(target);
-    }
-    path.pop();
-    finished.add(model);
-  };
-
-  for (const model of allModels) {
-    if (isMergePatchModel(model) && !finished.has(model)) visit(model);
-  }
-}
-
-/**
  * Entry point for validator emission. Called from `$onEmit` when
  * `emit-validators` is `true`.
  *
@@ -1675,16 +2280,6 @@ export async function emitValidators(
   const createMember = lifecycle.members.get("Create");
   const updateMember = lifecycle.members.get("Update");
 
-  if (emitPatch && routeModels) {
-    reportMergePatchCycles(
-      program,
-      allModels,
-      routeModels.patchModels,
-      createMember,
-      updateMember,
-    );
-  }
-
   // Detect versioning.
   let allVersions: Version[] | undefined;
   for (const model of allModels) {
@@ -1707,32 +2302,38 @@ export async function emitValidators(
     });
   }
 
+  const expandRouteModels = (
+    versionFilter?: (prop: ModelProperty) => boolean,
+  ): ValidatorRouteModels | undefined =>
+    routeModels
+      ? {
+          postModels: collectValidatorTransitiveDeps(
+            program,
+            allModels,
+            routeModels.postModels,
+            versionFilter,
+          ),
+          putModels: routeModels.putModels,
+          patchModels: routeModels.patchModels,
+          nestedPostModels: collectValidatorTransitiveDeps(
+            program,
+            allModels,
+            routeModels.nestedPostModels,
+            versionFilter,
+          ),
+        }
+      : undefined;
+
   if (
     effectiveStrategy === "per-version" &&
     allVersions &&
     allVersions.length > 0
   ) {
-    for (const version of allVersions) {
+    for (const [index, version] of allVersions.entries()) {
       const vf = makeValidatorVersionFilter(program, version.name);
       const versionNsSuffix =
         version.name.charAt(0).toUpperCase() + version.name.slice(1);
-      const expandedRouteModels = routeModels
-        ? {
-            postModels: collectValidatorTransitiveDeps(
-              program,
-              allModels,
-              routeModels.postModels,
-              vf,
-            ),
-            patchModels: routeModels.patchModels,
-            nestedPostModels: collectValidatorTransitiveDeps(
-              program,
-              allModels,
-              routeModels.nestedPostModels,
-              vf,
-            ),
-          }
-        : undefined;
+      const expandedRouteModels = expandRouteModels(vf);
       await emitValidatorModels(
         program,
         allModels,
@@ -1742,7 +2343,11 @@ export async function emitValidators(
         options,
         emitPost,
         emitPatch,
-        { versionFilter: vf, versionDirName: version.name, versionNsSuffix },
+        {
+          targetVersion: { allVersions, index },
+          versionDirName: version.name,
+          versionNsSuffix,
+        },
       );
       await emitValidatorsInitializer(
         program,
@@ -1760,21 +2365,7 @@ export async function emitValidators(
     allVersions &&
     allVersions.length > 0
   ) {
-    const expandedRouteModels = routeModels
-      ? {
-          postModels: collectValidatorTransitiveDeps(
-            program,
-            allModels,
-            routeModels.postModels,
-          ),
-          patchModels: routeModels.patchModels,
-          nestedPostModels: collectValidatorTransitiveDeps(
-            program,
-            allModels,
-            routeModels.nestedPostModels,
-          ),
-        }
-      : undefined;
+    const expandedRouteModels = expandRouteModels();
     await emitVersionAwareValidatorModels(
       program,
       allModels,
@@ -1797,31 +2388,17 @@ export async function emitValidators(
     );
   } else {
     // "earliest" or "latest" (or no versioning)
+    let targetVersion: TargetVersion | undefined;
     let versionFilter: ((prop: ModelProperty) => boolean) | undefined;
     if (allVersions && allVersions.length > 0) {
-      const targetVersionName =
-        effectiveStrategy === "latest"
-          ? allVersions[allVersions.length - 1].name
-          : allVersions[0].name;
-      versionFilter = makeValidatorVersionFilter(program, targetVersionName);
+      const index = effectiveStrategy === "latest" ? allVersions.length - 1 : 0;
+      targetVersion = { allVersions, index };
+      versionFilter = makeValidatorVersionFilter(
+        program,
+        allVersions[index].name,
+      );
     }
-    const expandedRouteModels = routeModels
-      ? {
-          postModels: collectValidatorTransitiveDeps(
-            program,
-            allModels,
-            routeModels.postModels,
-            versionFilter,
-          ),
-          patchModels: routeModels.patchModels,
-          nestedPostModels: collectValidatorTransitiveDeps(
-            program,
-            allModels,
-            routeModels.nestedPostModels,
-            versionFilter,
-          ),
-        }
-      : undefined;
+    const expandedRouteModels = expandRouteModels(versionFilter);
     await emitValidatorModels(
       program,
       allModels,
@@ -1831,7 +2408,7 @@ export async function emitValidators(
       options,
       emitPost,
       emitPatch,
-      { versionFilter },
+      { targetVersion },
     );
     await emitValidatorsInitializer(
       program,

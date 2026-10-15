@@ -2,15 +2,17 @@
   validator-merge-patch-nested.hbs — partial registered as `mergePatchNestedRules`.
 
   Renders the rule that validates a model-typed property of a MergePatch body.
-  Used by validator-patch.hbs and validator-patch-version-aware.hbs; custom
-  PATCH validator templates can include it with `{{> mergePatchNestedRules}}`.
+  Used by the `mergePatchPropertyRules` partial; custom PATCH validator
+  templates can include it with `{{> mergePatchNestedRules}}`.
   When included on its own line, every rendered line gets that line's indent.
 
   ── Template variables (one entry of `properties`) ──────────────────────────
   name                          — Wire/C# property name (e.g. "Appearance")
   isCollectionReference         — True for an array of models
+  isRecordReference             — True for a Record of models
   referencedQualifiedModelName  — Item model type used to deserialize array items
-  mergePatchValidatorParamName  — Constructor parameter holding the nested validator
+  mergePatchValidatorExpression — C# expression for the nested validator: a
+                                  constructor parameter, `this`, or a lazy lookup
   mergePatchFactoryTypeName     — Patch type whose FromJson builds the nested patch
 
   The enclosing constructor must declare `jsonSerializerOptions`.
@@ -52,11 +54,36 @@ this.RuleFor(x => x).Custom((patch, context) =>
         }
         else
         {
-            var nestedResult = {{{mergePatchValidatorParamName}}}.Validate(nestedModel);
+            var nestedResult = {{{mergePatchValidatorExpression}}}.Validate(nestedModel);
             foreach (var failure in nestedResult.Errors)
                 context.AddFailure($"{{{name}}}[{index}].{failure.PropertyName}", failure.ErrorMessage);
         }
         index++;
+    }
+});
+{{else if isRecordReference}}
+// {{{name}}} is merged key by key, so each supplied value is validated as a nested patch
+this.RuleFor(x => x).Custom((patch, context) =>
+{
+    if (!patch.Properties.TryGetValue("{{{jsonName}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+    if (element.ValueKind != System.Text.Json.JsonValueKind.Object)
+    {
+        context.AddFailure("{{{name}}}", "'{{{name}}}' must be an object.");
+        return;
+    }
+    foreach (var entry in element.EnumerateObject())
+    {
+        // A null value removes the entry.
+        if (entry.Value.ValueKind == System.Text.Json.JsonValueKind.Null) continue;
+        if (entry.Value.ValueKind != System.Text.Json.JsonValueKind.Object)
+        {
+            context.AddFailure($"{{{name}}}[{entry.Name}]", "Values must be objects.");
+            continue;
+        }
+        var nestedPatch = {{{mergePatchFactoryTypeName}}}.FromJson(entry.Value.GetRawText(), jsonSerializerOptions);
+        var nestedResult = {{{mergePatchValidatorExpression}}}.Validate(nestedPatch);
+        foreach (var failure in nestedResult.Errors)
+            context.AddFailure($"{{{name}}}[{entry.Name}].{failure.PropertyName}", failure.ErrorMessage);
     }
 });
 {{else}}
@@ -70,7 +97,7 @@ this.RuleFor(x => x).Custom((patch, context) =>
         return;
     }
     var nestedPatch = {{{mergePatchFactoryTypeName}}}.FromJson(element.GetRawText(), jsonSerializerOptions);
-    var nestedResult = {{{mergePatchValidatorParamName}}}.Validate(nestedPatch);
+    var nestedResult = {{{mergePatchValidatorExpression}}}.Validate(nestedPatch);
     foreach (var failure in nestedResult.Errors)
         context.AddFailure($"{{{name}}}.{failure.PropertyName}", failure.ErrorMessage);
 });
