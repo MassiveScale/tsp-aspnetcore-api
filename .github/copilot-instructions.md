@@ -11,19 +11,24 @@ validators, and helper types from TypeSpec definitions.
 
 ## Architecture
 
-| File / directory              | Role                                                                                                     |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `src/lib.ts`                  | `EmitterOptions` interface + `EmitterOptionsSchema` (JSON Schema) + `$lib` registration                  |
-| `src/emitter.ts`              | `$onEmit` entrypoint; `resolveOptions`; `ResolvedOptions`; model / enum / interface / validator emit     |
-| `src/controllers.ts`          | Controller and service interface collection and emit                                                     |
-| `src/payloads.ts`             | Decides which models get a class via `@typespec/http` (response / metadata-only models, implicit bodies) |
-| `src/naming.ts`               | `csharpModelName` — the single source of C# class names, incl. per-instantiation template names          |
-| `src/renderer.ts`             | Handlebars setup; `TemplateName` union; `TemplateOverrides` type; `createRenderer`                       |
-| `src/utils.ts`                | `SCALAR_MAP`, `FORMAT_MAP`, `pascalCase`, `camelCase` — shared utilities                                 |
-| `src/templates/*.hbs`         | Handlebars templates for every generated C# artifact                                                     |
-| `test/aspnetcore.api.test.ts` | End-to-end tests (TypeScript source, compiled to `dist/test/`)                                           |
-| `test/host.ts`                | `emit()` and `emitWithDiagnostics()` test helpers                                                        |
-| `docs/`                       | Per-topic documentation linked from README                                                               |
+| File / directory      | Role                                                                                                     |
+| --------------------- | -------------------------------------------------------------------------------------------------------- |
+| `src/lib.ts`          | `EmitterOptions` interface + `EmitterOptionsSchema` (JSON Schema) + `$lib` registration                  |
+| `src/emitter.ts`      | `$onEmit` entrypoint; `resolveOptions`; `ResolvedOptions`; resolves HTTP services once per emit          |
+| `src/models.ts`       | Model, interface and enum emit                                                                           |
+| `src/controllers.ts`  | Controller collection and emit                                                                           |
+| `src/services.ts`     | Service interface emit                                                                                   |
+| `src/helpers.ts`      | `MergePatch`, `EnumMemberConverter` and `BooleanStringJsonConverter` helper emit                         |
+| `src/validators.ts`   | FluentValidation validator and `ValidatorsInitializer` emit                                              |
+| `src/clean.ts`        | Removes stale generated files before emit (`clean-output-dirs`)                                          |
+| `src/payloads.ts`     | Decides which models get a class via `@typespec/http` (response / metadata-only models, implicit bodies) |
+| `src/naming.ts`       | `csharpModelName` — the single source of C# class names, incl. per-instantiation template names          |
+| `src/renderer.ts`     | Handlebars setup; `TemplateName` union; `TemplateOverrides` type; `createRenderer`                       |
+| `src/utils.ts`        | `SCALAR_MAP`, `FORMAT_MAP`, `pascalCase`, `camelCase`, `ordinalCompare` — shared utilities               |
+| `src/templates/*.hbs` | Handlebars templates for every generated C# artifact (LF line endings, enforced by `.gitattributes`)     |
+| `test/*.test.ts`      | End-to-end tests, one file per area (TypeScript source, compiled to `dist/test/`)                        |
+| `test/host.ts`        | `emit()` and `emitWithDiagnostics()` test helpers                                                        |
+| `docs/`               | Per-topic documentation linked from README                                                               |
 
 ---
 
@@ -63,24 +68,23 @@ validators, and helper types from TypeSpec definitions.
 
 ## Namespace Resolution
 
-Two strategies apply to different output sections:
+Every output section has one flat C# namespace, set verbatim by its option:
+`models-namespace` (also used by interfaces and enums), `controllers-namespace`,
+`services-namespace`, `validators-namespace` and `helpers-namespace`. When an option is unset, the
+namespace is the effective root namespace plus the section name (`<root>.Models`,
+`<root>.Controllers`, …). The effective root is `root-namespace` when set, otherwise inferred from the
+TypeSpec namespace tree (`inferRootNamespace`). There are no `*-root-namespace` options.
 
-**Models, interfaces, enums** — namespace derived from the TypeSpec namespace (after `namespace-map`
-rewrites), with an optional PascalCased dir suffix appended when `namespace-from-path` is `true`.
-Fallback for top-level unnamespaced types: `sectionRootNs` → `root-namespace` → `"Models"`.
-
-- Models use `modelsEffectiveRootNs` as their `sectionRootNs`.
-- Interfaces use `interfacesEffectiveRootNs` — computed **separately** from `modelsEffectiveRootNs` — so `interfaces-root-namespace` correctly overrides the interface namespace even when `models-root-namespace` is not set.
-
-**Controllers, services, validators, helpers** — always path-derived via `pathNamespace(rootNs, dir)`.
-Section-specific root overrides available: `controllers-root-namespace`, `services-root-namespace`,
-`validators-root-namespace`. There is no `helpers-root-namespace`.
+`namespace-from-path` controls **file placement only** for models, interfaces and enums: `false`
+(the default) places files in subdirectories that mirror the TypeSpec namespace (after
+`namespace-map` rewrites) below the root namespace; `true` writes them flat into the output directory.
+It never changes the C# namespace written into a file.
 
 ---
 
 ## Testing
 
-- Source: `test/aspnetcore.api.test.ts` → compiled by `tsc` to `dist/test/aspnetcore.api.test.js`.
+- Source: `test/*.test.ts` → compiled by `tsc` to `dist/test/*.test.js`.
 - Run with `npm test` (triggers `pretest` = build automatically).
 - Use `emit(typespecSource, options?)` from `test/host.ts` — returns `Record<string, string>` mapping output path to generated C# content.
 - The `emit()` helper proxies bare filenames to `Models/<file>` when no explicit `models-output-dir` is set, preserving backward compatibility in tests.

@@ -10,17 +10,23 @@ options:
       enum-member-converter: ./templates/enum-member-converter.hbs
 ```
 
-Templates are compiled with `noEscape: true` (so `<`, `>`, and `&` pass through unchanged). The built-in `indent` helper prefixes every non-empty line of its argument with four spaces.
+All templates except the validator templates are compiled with `noEscape: true`, so `<`, `>`, and `&` pass through unchanged. The validator templates (`validator-post`, `validator-patch`, `validator-post-version-aware`, `validator-patch-version-aware`, `validator-initializer`) use Handlebars' default HTML escaping: use triple braces (`{{{qualifiedModelName}}}`) for any value that can contain `<` or `>`, such as `MergePatch<Pet>`. Validator templates also render the complete file, so they are not wrapped by the `file` template.
+
+Template files are read with LF line endings whatever the checkout uses, and three helpers are available:
+
+- `indent` prefixes every non-empty line of its argument with four spaces.
+- `isDefined` returns `true` when its argument is not `undefined`, e.g. `{{#if (isDefined value)}} = {{value}}{{/if}}`.
+- `eq` returns `true` when its two arguments are strictly equal, e.g. `{{#if (eq returnType "void")}}`.
 
 ## View models
 
 | Template                | View model                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `file`                  | `{ namespace: string, usings: string[], body: string }` — `body` is the already-rendered inner block.                                                                                                                                                                                                                                                                                                                                       |
-| `class`                 | `{ doc?: string, className: string, interfaceName?: string, baseClass?: string, bases: string, properties: Property[], propertiesBlock: string }` — `bases` is `baseClass` and `interfaceName` joined by `, `; `propertiesBlock` is the pre-rendered property list.                                                                                                                                                                         |
+| `file`                  | `{ fileName: string, namespace: string, usings: string[], body: string }` — `fileName` is the emitted file name (e.g. `"Widget.g.cs"`); `body` is the already-rendered inner block.                                                                                                                                                                                                                                                         |
+| `class`                 | `{ doc?: string, className: string, isAbstract?: boolean, interfaceName?: string, baseClass?: string, bases: string, properties: Property[], propertiesBlock: string, discriminator?: Discriminator, patchMethodBlock?: string }` — `bases` is `baseClass` and `interfaceName` joined by `, `; `propertiesBlock` is the pre-rendered property list.                                                                                         |
 | `interface`             | `{ doc?: string, interfaceName: string, baseInterface?: string, baseClause: string, properties: Property[], propertiesBlock: string }` — `baseClause` is `" : <baseInterface>"` or `""`.                                                                                                                                                                                                                                                    |
 | `enum`                  | `{ doc?: string, enumName: string, members: Member[], membersBlock: string }` — `membersBlock` is each member pre-rendered with trailing commas.                                                                                                                                                                                                                                                                                            |
-| `controller`            | `{ doc?: string, controllerName: string, serviceName: string, serviceInterfaceName: string, routes: string[], operations: Operation[], actionsBlock: string }` — `routes` has one entry per API version.                                                                                                                                                                                                                                    |
+| `controller`            | `{ doc?: string, controllerName: string, serviceName: string, serviceInterfaceName: string, operations: Operation[], actionsBlock: string }` — `actionsBlock` is every action pre-rendered. Routes live on each operation, not on the controller.                                                                                                                                                                                           |
 | `service-interface`     | `{ doc?: string, interfaceName: string, serviceName: string, operations: Operation[], methodsBlock: string }`                                                                                                                                                                                                                                                                                                                               |
 | `merge-patch`           | _(no variables — static `MergePatch<T>` generic helper class, used when `merge-patch-style` is `"generic"`)_                                                                                                                                                                                                                                                                                                                                |
 | `entity-merge-patch`    | `{ modelName: string, qualifiedModelName: string }` — per-entity typed merge patch class, used when `merge-patch-style` is `"typed"`. `modelName` is the short C# class name (e.g. `"Widget"`); `qualifiedModelName` is how other files reference it: the short name by default, or fully qualified (e.g. `"Demo.Models.Widget"`) with `fully-qualified-types: true` or a [clashing name](models.md#names-that-clash-with-framework-types). |
@@ -54,14 +60,13 @@ The `mergePatchNestedRules` partial renders the rule for a model-typed property 
 
 Generated references are short names by default, so a custom template copied from an older release must import the namespaces it references. Add these lines after `using FluentValidation;` (as the built-in templates do), or set `fully-qualified-types: true`:
 
+<!-- prettier-ignore -->
 ```handlebars
 {{#unless fullyQualifiedTypes}}
-  using
-  {{{modelsNamespace}}};
-  {{#if useHelpersNamespace}}
-    using
-    {{{helpersNamespace}}};
-  {{/if}}
+using {{{modelsNamespace}}};
+{{#if useHelpersNamespace}}
+using {{{helpersNamespace}}};
+{{/if}}
 {{/unless}}
 ```
 
@@ -69,10 +74,11 @@ Custom PATCH templates should also use `{{{validatorName}}}` instead of `{{{mode
 
 ## Shared sub-types
 
-- `Property` — `{ doc?: string, type: string, name: string, attributes?: string[] }` — `attributes` are extra serialization attributes (complete `[...]` strings) from `@encode`, emitted after `[JsonPropertyName]`.
+- `Property` — `{ doc?: string, type: string, name: string, jsonName: string, nullable: boolean, attributes?: string[], initializer?: string }` — `attributes` are extra serialization attributes (complete `[...]` strings) from `@encode`, emitted after `[JsonPropertyName]`; `initializer` is the C# default-value expression, when the property has one.
 - `Member` — `{ doc?: string, name: string, memberValue: string, value?: number }`
-- `Operation` — `{ doc?: string, name: string, httpVerb: string, routeSuffix?: string, params: Param[], returnType: string }`
-- `Param` — `{ name: string, type: string, binding: string, optional: boolean }`
+- `Operation` — `{ doc?: string, name: string, httpVerb: string, routes: string[], routeSuffix?: string, params: Param[], cancellationToken: boolean, returnType: string }` — `routes` has one absolute route per API version in which the operation is available; `routeSuffix` is the operation's own `@route` segment, for information only.
+- `Param` — `{ name: string, type: string, binding: string, optional: boolean, bindingName?: string }` — `bindingName` is the HTTP wire name when `@serverName` renamed the C# identifier.
+- `Discriminator` — `{ propertyName: string, derivedTypes: { className: string, discriminatorValue: string }[] }`
 
 `doc`, when present, is a fully formatted XML doc-comment block — emit it verbatim above the declaration.
 

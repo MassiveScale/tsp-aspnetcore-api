@@ -119,7 +119,7 @@ export interface ResolvedOptions {
   cleanOutputDirs: boolean;
   /** Resolved template override paths (absolute). */
   templates: TemplateOverrides;
-  /** Whether to emit helper files (`MergePatchValue`, `EnumMemberConverter`). */
+  /** Whether to emit the optional `EnumMemberConverter` helper file. */
   emitHelpers: boolean;
   /** Absolute path to the helpers output directory. */
   helpersOutputDir: string;
@@ -403,8 +403,6 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     .map(([key, value]) => ({ key, value }))
     .sort((a, b) => b.key.length - a.key.length);
   // Default output directories are "Models" for models/interfaces, and "Controllers"/"Services"/"Helpers" for others.
-  // When namespace-from-path is enabled, the dir suffixes are always applied to the namespace
-  // to reflect the output directory path (e.g., "MyApp.Models", "MyApp.Controllers").
   const modelsDir = raw["models-output-dir"] ?? "Models";
   const interfacesDir = raw["interfaces-output-dir"] ?? "Models";
   const controllersDir = raw["controllers-output-dir"] ?? "Controllers";
@@ -534,8 +532,8 @@ function namespaceFullName(ns: Namespace | undefined): string {
  *
  * @param ns - TypeSpec namespace node, or `undefined`.
  * @param options - Resolved options carrying the namespace map and root.
- * @param sectionRootNs - Optional per-section root (e.g. `models-root-namespace`)
- *   that takes priority over the global root for unnamespaced types.
+ * @param sectionRootNs - Optional root (e.g. the effective root namespace)
+ *   that takes priority over `root-namespace` for unnamespaced types.
  * @returns Dot-separated C# namespace string.
  */
 export function csharpNamespaceFor(

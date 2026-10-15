@@ -55,9 +55,11 @@ export interface TemplateOverrides {
  */
 export interface EmitterOptions {
   /**
-   * Root C# namespace.  When set, this prefix is stripped from generated
-   * folder paths so that `RootNs.Sub.Model` is placed under `Sub/Model.g.cs`
-   * rather than `RootNs/Sub/Model.g.cs`.
+   * Root C# namespace. Every section namespace that is not set explicitly
+   * defaults to this root plus the section name (e.g. `<root>.Models`). It is
+   * also stripped from model folder paths, so a model in TypeSpec namespace
+   * `RootNs.Sub` is placed under `Models/Sub/` rather than `Models/RootNs/Sub/`.
+   * When not set, the root is inferred from the TypeSpec namespace tree.
    */
   "root-namespace"?: string;
 
@@ -112,8 +114,8 @@ export interface EmitterOptions {
   "models-output-dir"?: string;
 
   /**
-   * When `false`, no `I<Model>` interface files are emitted.
-   * Defaults to `true`.
+   * When `true`, a companion `I<Model>` interface file is emitted for every
+   * model class. Defaults to `false`.
    */
   "emit-interfaces"?: boolean;
 
@@ -148,14 +150,16 @@ export interface EmitterOptions {
   "services-output-dir"?: string;
 
   /**
-   * When `true`, helper files (`MergePatchValue`, `EnumMemberConverter`) are emitted.
-   * Defaults to `false`. Note: `MergePatchValue` is always emitted automatically
-   * when any `MergePatchUpdate<T>` model is generated, regardless of this setting.
+   * When `true`, the `EnumMemberConverter` helper is emitted. Defaults to
+   * `false`. The other helpers do not depend on this setting: `MergePatch<T>`
+   * is always emitted when `merge-patch-style` is `"generic"`, and
+   * `BooleanStringJsonConverter` is emitted whenever a boolean property uses
+   * `@encode(string)`.
    */
   "emit-helpers"?: boolean;
 
   /**
-   * Output directory for generated helper classes (e.g. `MergePatchValue`).
+   * Output directory for generated helper classes (e.g. `MergePatch<T>`).
    * Defaults to `Helpers/` inside the emitter output dir.
    */
   "helpers-output-dir"?: string;
@@ -174,27 +178,20 @@ export interface EmitterOptions {
   "route-prefix"?: string;
 
   /**
-   * When `true` (the default), the C# namespace for controllers, services,
-   * and helpers is derived from their output folder path rather than from
-   * the TypeSpec namespace.
+   * Controls where model, interface, and enum files are placed. It never
+   * changes the C# namespace written into a file.
    *
-   * When enabled (the default), all generated files — models, interfaces,
-   * enums, controllers, services, and helpers — derive their C# namespace
-   * from the `root-namespace` option combined with their output directory
-   * path.  For example, with `root-namespace: "MyApp"`:
-   *
-   * - `controllers-output-dir: "Controllers"` → `namespace MyApp.Controllers`
-   * - `models-output-dir: "Models"` → `namespace MyApp.Models`
-   * - `helpers-output-dir: "Helpers"` → `namespace MyApp.Helpers`
-   *
-   * When disabled (`false`), models, interfaces, and enums use the TypeSpec
-   * namespace, and controllers/services use the TypeSpec namespace of their
-   * operation container.
+   * - `false` (the default) — files go in subdirectories that mirror the
+   *   TypeSpec namespace (after `namespace-map` rewrites) below the root
+   *   namespace, e.g. `Models/Users/User.g.cs` for `MyApp.Users.User`.
+   * - `true` — files go directly in their output directory, e.g.
+   *   `Models/User.g.cs`.
    */
   "namespace-from-path"?: boolean;
 
   /**
-   * Extra `using` directives appended to every emitted file.
+   * Extra `using` directives added to every emitted file: models, enums,
+   * interfaces, controllers, services, helpers, and validators.
    * @example `["System.Text.Json.Serialization"]`
    */
   "additional-usings"?: string[];
@@ -294,40 +291,134 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
   type: "object",
   additionalProperties: false,
   properties: {
-    "root-namespace": { type: "string", nullable: true },
+    "root-namespace": {
+      type: "string",
+      nullable: true,
+      description:
+        "Root C# namespace. Section namespaces default to this root plus the section name, and it is stripped from model folder paths. Inferred from the TypeSpec namespaces when not set.",
+    },
     "namespace-map": {
       type: "object",
       nullable: true,
       required: [],
       additionalProperties: { type: "string" },
+      description:
+        "Rewrites TypeSpec namespace names before they are used for file placement. The longest matching key wins.",
     },
-    "file-extension": { type: "string", nullable: true },
-    "models-output-dir": { type: "string", nullable: true },
-    "emit-interfaces": { type: "boolean", nullable: true },
-    "interfaces-output-dir": { type: "string", nullable: true },
-    "emit-controllers": { type: "boolean", nullable: true },
-    "controllers-output-dir": { type: "string", nullable: true },
-    "emit-services": { type: "boolean", nullable: true },
-    "services-output-dir": { type: "string", nullable: true },
-    "emit-helpers": { type: "boolean", nullable: true },
-    "helpers-output-dir": { type: "string", nullable: true },
-    "route-prefix": { type: "string", nullable: true },
-    "namespace-from-path": { type: "boolean", nullable: true },
+    "file-extension": {
+      type: "string",
+      nullable: true,
+      description: 'File extension for all emitted files. Defaults to ".g.cs".',
+    },
+    "models-output-dir": {
+      type: "string",
+      nullable: true,
+      description:
+        'Output directory for model classes and enums, relative to emitter-output-dir. Defaults to "Models".',
+    },
+    "emit-interfaces": {
+      type: "boolean",
+      nullable: true,
+      description:
+        "When true, emits an I<Model> interface for every model class. Defaults to false.",
+    },
+    "interfaces-output-dir": {
+      type: "string",
+      nullable: true,
+      description:
+        'Output directory for model interfaces, relative to emitter-output-dir. Defaults to "Models".',
+    },
+    "emit-controllers": {
+      type: "boolean",
+      nullable: true,
+      description:
+        "When false, no controller base classes are emitted. Defaults to true.",
+    },
+    "controllers-output-dir": {
+      type: "string",
+      nullable: true,
+      description:
+        'Output directory for controller base classes, relative to emitter-output-dir. Defaults to "Controllers".',
+    },
+    "emit-services": {
+      type: "boolean",
+      nullable: true,
+      description:
+        "When false, no service interfaces are emitted. Defaults to true.",
+    },
+    "services-output-dir": {
+      type: "string",
+      nullable: true,
+      description:
+        'Output directory for service interfaces, relative to emitter-output-dir. Defaults to "Services".',
+    },
+    "emit-helpers": {
+      type: "boolean",
+      nullable: true,
+      description:
+        "When true, emits the EnumMemberConverter helper. MergePatch<T> and BooleanStringJsonConverter are emitted whenever they are needed. Defaults to false.",
+    },
+    "helpers-output-dir": {
+      type: "string",
+      nullable: true,
+      description:
+        'Output directory for helper classes, relative to emitter-output-dir. Defaults to "Helpers".',
+    },
+    "route-prefix": {
+      type: "string",
+      nullable: true,
+      description:
+        'Prefix prepended to every controller action route. "{version}" is replaced with the API version, or removed for unversioned services. Defaults to "api/{version}".',
+    },
+    "namespace-from-path": {
+      type: "boolean",
+      nullable: true,
+      description:
+        "When true, model, interface, and enum files are written flat into their output directory instead of TypeSpec-namespace subdirectories. Never changes C# namespaces. Defaults to false.",
+    },
     "additional-usings": {
       type: "array",
       nullable: true,
       items: { type: "string" },
+      description: "Extra using directives added to every emitted file.",
     },
-    "fully-qualified-types": { type: "boolean", nullable: true },
-    "nullable-properties": { type: "boolean", nullable: true },
-    "abstract-suffix": { type: "string", nullable: true },
-    "cancellation-token": { type: "boolean", nullable: true },
-    "clean-output-dirs": { type: "boolean", nullable: true },
+    "fully-qualified-types": {
+      type: "boolean",
+      nullable: true,
+      description:
+        "When true, references to generated models, enums, and helpers include their namespace instead of relying on using directives. Defaults to false.",
+    },
+    "nullable-properties": {
+      type: "boolean",
+      nullable: true,
+      description:
+        "When true, every property is emitted as a nullable type. When false, only optional and `| null` properties are nullable. Defaults to true.",
+    },
+    "abstract-suffix": {
+      type: "string",
+      nullable: true,
+      description:
+        'Suffix appended to generated abstract class names. Defaults to "Base".',
+    },
+    "cancellation-token": {
+      type: "boolean",
+      nullable: true,
+      description:
+        "When true, adds a CancellationToken parameter to every controller action and service method. Defaults to true.",
+    },
+    "clean-output-dirs": {
+      type: "boolean",
+      nullable: true,
+      description:
+        "When true, removes previously generated files (matching file-extension and carrying the <auto-generated> marker) before emitting. Defaults to true.",
+    },
     templates: {
       type: "object",
       nullable: true,
       additionalProperties: false,
       required: [],
+      description:
+        "Custom Handlebars template paths keyed by template name, relative to the current working directory.",
       properties: {
         file: { type: "string", nullable: true },
         class: { type: "string", nullable: true },
@@ -346,27 +437,68 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
         "validator-initializer": { type: "string", nullable: true },
       },
     },
-    "models-namespace": { type: "string", nullable: true },
-    "controllers-namespace": { type: "string", nullable: true },
-    "services-namespace": { type: "string", nullable: true },
-    "validators-namespace": { type: "string", nullable: true },
-    "helpers-namespace": { type: "string", nullable: true },
-    "emit-validators": { type: "boolean", nullable: true },
-    "validators-output-dir": { type: "string", nullable: true },
+    "models-namespace": {
+      type: "string",
+      nullable: true,
+      description:
+        "Verbatim C# namespace for models, interfaces, and enums. Defaults to <root-namespace>.Models.",
+    },
+    "controllers-namespace": {
+      type: "string",
+      nullable: true,
+      description:
+        "Verbatim C# namespace for controller base classes. Defaults to <root-namespace>.Controllers.",
+    },
+    "services-namespace": {
+      type: "string",
+      nullable: true,
+      description:
+        "Verbatim C# namespace for service interfaces. Defaults to <root-namespace>.Services.",
+    },
+    "validators-namespace": {
+      type: "string",
+      nullable: true,
+      description:
+        "Verbatim C# namespace for validators. Defaults to <root-namespace>.Validators.",
+    },
+    "helpers-namespace": {
+      type: "string",
+      nullable: true,
+      description:
+        "Verbatim C# namespace for helper classes. Defaults to <root-namespace>.Helpers.",
+    },
+    "emit-validators": {
+      type: "boolean",
+      nullable: true,
+      description:
+        "When true, emits FluentValidation validators for models used as POST or PATCH request bodies. Defaults to false.",
+    },
+    "validators-output-dir": {
+      type: "string",
+      nullable: true,
+      description:
+        'Output directory for validators, relative to emitter-output-dir. Defaults to "Validators".',
+    },
     validators: {
       type: "string",
       enum: ["post", "patch", "both"],
       nullable: true,
+      description:
+        'Which validators to emit per model: "post", "patch", or "both". Defaults to "both".',
     },
     "validators-version-strategy": {
       type: "string",
       enum: ["earliest", "latest", "per-version", "version-aware"],
       nullable: true,
+      description:
+        'How API versions affect validators. Defaults to "version-aware" when the service uses @versioned, otherwise "earliest".',
     },
     "merge-patch-style": {
       type: "string",
       enum: ["generic", "typed"],
       nullable: true,
+      description:
+        'How MergePatch support is emitted: "generic" (one shared MergePatch<T> helper) or "typed" (one {Model}MergePatchUpdate class per entity). Defaults to "generic".',
     },
   },
   required: [],

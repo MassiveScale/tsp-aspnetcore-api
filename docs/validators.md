@@ -164,13 +164,13 @@ Version-aware validators accept `IHttpContextAccessor` to resolve the API versio
 
 ## Related options
 
-| Option                        | Default         | Description                                                      |
-| ----------------------------- | --------------- | ---------------------------------------------------------------- |
-| `emit-validators`             | `false`         | Enable validator generation.                                     |
-| `validators`                  | `"both"`        | Which validator types to emit: `"post"`, `"patch"`, or `"both"`. |
-| `validators-output-dir`       | `"Validators"`  | Output directory for validator and initializer files.            |
-| `validators-root-namespace`   | _(global root)_ | Root namespace for validator files.                              |
-| `validators-version-strategy` | _(auto)_        | Version strategy. Auto-detected from spec; see table above.      |
+| Option                        | Default                       | Description                                                                                         |
+| ----------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| `emit-validators`             | `false`                       | Enable validator generation.                                                                        |
+| `validators`                  | `"both"`                      | Which validator types to emit: `"post"`, `"patch"`, or `"both"`.                                    |
+| `validators-namespace`        | `<root-namespace>.Validators` | Verbatim C# namespace for validator files. `per-version` validators append the version, e.g. `.V1`. |
+| `validators-output-dir`       | `"Validators"`                | Output directory for validator and initializer files.                                               |
+| `validators-version-strategy` | _(auto)_                      | Version strategy. Auto-detected from spec; see table above.                                         |
 
 ## Polymorphic dispatch
 
