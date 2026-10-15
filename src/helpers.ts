@@ -54,6 +54,18 @@ const BOOL_CONVERTER_HELPER_USINGS = [
 ];
 
 /**
+ * Builds the sorted `using` list for a helper file: the helper's own
+ * namespaces plus any `additional-usings`.
+ *
+ * @param base - Namespaces the helper itself needs.
+ * @param options - Resolved emitter options (additional usings).
+ * @returns Sorted, deduplicated array of `using` namespace strings.
+ */
+function helperUsings(base: string[], options: ResolvedOptions): string[] {
+  return sortUsings(new Set([...base, ...options.additionalUsings]));
+}
+
+/**
  * Emits the MergePatch support files (generic helper or per-entity typed
  * classes, depending on `merge-patch-style`) and, when `emit-helpers` is
  * enabled, the `EnumMemberConverter` helper.
@@ -126,7 +138,7 @@ async function emitMergePatch(
     content: renderer.renderFile({
       fileName: mergePatchFileName,
       namespace: options.helpersNamespace,
-      usings: sortUsings(new Set(MERGE_PATCH_USINGS)),
+      usings: helperUsings(MERGE_PATCH_USINGS, options),
       body: renderer.renderMergePatch().replace(/\r\n/g, "\n"),
     }),
   });
@@ -167,7 +179,7 @@ async function emitEntityMergePatches(
       content: renderer.renderFile({
         fileName,
         namespace: options.modelsNamespace,
-        usings: sortUsings(new Set(MERGE_PATCH_USINGS)),
+        usings: helperUsings(MERGE_PATCH_USINGS, options),
         body: renderer
           .renderEntityMergePatch({ modelName, qualifiedModelName })
           .replace(/\r\n/g, "\n"),
@@ -195,7 +207,7 @@ async function emitEnumMemberConverter(
     content: renderer.renderFile({
       fileName: enumConverterFileName,
       namespace: options.helpersNamespace,
-      usings: sortUsings(new Set(ENUM_CONVERTER_HELPER_USINGS)),
+      usings: helperUsings(ENUM_CONVERTER_HELPER_USINGS, options),
       body: renderer.renderEnumMemberConverter(),
     }),
   });
@@ -221,7 +233,7 @@ async function emitBooleanStringConverter(
     content: renderer.renderFile({
       fileName,
       namespace: options.helpersNamespace,
-      usings: sortUsings(new Set(BOOL_CONVERTER_HELPER_USINGS)),
+      usings: helperUsings(BOOL_CONVERTER_HELPER_USINGS, options),
       body: renderer.renderBooleanStringConverter(),
     }),
   });

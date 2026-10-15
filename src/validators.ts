@@ -139,6 +139,8 @@ interface ValidatorTemplateData {
   modelsNamespace: string;
   helpersNamespace: string;
   fullyQualifiedTypes: boolean;
+  /** The `additional-usings` option: extra namespaces to import. */
+  additionalUsings: string[];
   useHelpersNamespace: boolean;
   modelName: string;
   /** Fully-qualified C# type name of the validated model (e.g. `MyApp.Models.Pet`). */
@@ -174,6 +176,8 @@ interface VersionAwareValidatorTemplateData {
   modelsNamespace: string;
   helpersNamespace: string;
   fullyQualifiedTypes: boolean;
+  /** The `additional-usings` option: extra namespaces to import. */
+  additionalUsings: string[];
   useHelpersNamespace: boolean;
   modelName: string;
   /** Fully-qualified C# type name of the validated model (e.g. `MyApp.Models.Pet`). */
@@ -213,6 +217,8 @@ interface InitializerTemplateData {
   modelsNamespace: string;
   helpersNamespace: string;
   fullyQualifiedTypes: boolean;
+  /** The `additional-usings` option: extra namespaces to import. */
+  additionalUsings: string[];
   useHelpersNamespace: boolean;
   registrations: ValidatorRegistration[];
   isVersionAware: boolean;
@@ -1080,6 +1086,7 @@ async function emitValidatorModels(
         modelsNamespace: options.modelsNamespace,
         helpersNamespace: options.helpersNamespace,
         fullyQualifiedTypes: options.fullyQualifiedTypes,
+        additionalUsings: options.additionalUsings,
         useHelpersNamespace: false,
         modelName,
         qualifiedModelName,
@@ -1121,6 +1128,7 @@ async function emitValidatorModels(
         modelsNamespace: options.modelsNamespace,
         helpersNamespace: options.helpersNamespace,
         fullyQualifiedTypes: options.fullyQualifiedTypes,
+        additionalUsings: options.additionalUsings,
         useHelpersNamespace:
           !options.fullyQualifiedTypes &&
           isMergePatchBody &&
@@ -1208,6 +1216,7 @@ async function emitVersionAwareValidatorModels(
         modelsNamespace: options.modelsNamespace,
         helpersNamespace: options.helpersNamespace,
         fullyQualifiedTypes: options.fullyQualifiedTypes,
+        additionalUsings: options.additionalUsings,
         useHelpersNamespace: false,
         modelName,
         qualifiedModelName,
@@ -1263,6 +1272,7 @@ async function emitVersionAwareValidatorModels(
         modelsNamespace: options.modelsNamespace,
         helpersNamespace: options.helpersNamespace,
         fullyQualifiedTypes: options.fullyQualifiedTypes,
+        additionalUsings: options.additionalUsings,
         useHelpersNamespace:
           !options.fullyQualifiedTypes &&
           isMergePatchBody &&
@@ -1363,6 +1373,7 @@ async function emitValidatorsInitializer(
     modelsNamespace: options.modelsNamespace,
     helpersNamespace: options.helpersNamespace,
     fullyQualifiedTypes: options.fullyQualifiedTypes,
+    additionalUsings: options.additionalUsings,
     useHelpersNamespace:
       !options.fullyQualifiedTypes &&
       registrations.some((registration) =>
