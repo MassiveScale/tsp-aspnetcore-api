@@ -11,6 +11,7 @@
  */
 
 import { Model, Program, resolvePath } from "@typespec/compiler";
+import { type HttpService } from "@typespec/http";
 import { emitFile } from "./output.js";
 import {
   computeModelTypeName,
@@ -54,6 +55,18 @@ const BOOL_CONVERTER_HELPER_USINGS = [
 ];
 
 /**
+ * Builds the sorted `using` list for a helper file: the helper's own
+ * namespaces plus any `additional-usings`.
+ *
+ * @param base - Namespaces the helper itself needs.
+ * @param options - Resolved emitter options (additional usings).
+ * @returns Sorted, deduplicated array of `using` namespace strings.
+ */
+function helperUsings(base: string[], options: ResolvedOptions): string[] {
+  return sortUsings(new Set([...base, ...options.additionalUsings]));
+}
+
+/**
  * Emits the MergePatch support files (generic helper or per-entity typed
  * classes, depending on `merge-patch-style`), the `EnumMemberConverter` helper
  * when any enum was emitted or `emit-helpers` is enabled, and the
@@ -62,6 +75,7 @@ const BOOL_CONVERTER_HELPER_USINGS = [
  * @param program - The compiled TypeSpec program.
  * @param models - Models collected by the emitter, used to discover PATCH bodies.
  * @param emittedEnums - Whether any enum file (explicit or inferred) was emitted.
+ * @param services - The program's HTTP services, from `getAllHttpServices`.
  * @param renderer - Pre-compiled renderer instance.
  * @param options - Resolved emitter options.
  */
@@ -69,12 +83,16 @@ export async function emitHelpers(
   program: Program,
   models: Model[],
   emittedEnums: boolean,
+  services: readonly HttpService[],
   renderer: Renderer,
   options: ResolvedOptions,
 ): Promise<void> {
-  const patchRouteModels = collectValidatorModelsFromRoutes(program, models);
-
   if (options.mergePatchStyle === "typed") {
+    const patchRouteModels = collectValidatorModelsFromRoutes(
+      program,
+      services,
+      models,
+    );
     if (patchRouteModels?.patchModels.size) {
       await emitEntityMergePatches(
         program,
@@ -125,7 +143,7 @@ async function emitMergePatch(
     content: renderer.renderFile({
       fileName: mergePatchFileName,
       namespace: options.helpersNamespace,
-      usings: sortUsings(new Set(MERGE_PATCH_USINGS)),
+      usings: helperUsings(MERGE_PATCH_USINGS, options),
       body: renderer.renderMergePatch().replace(/\r\n/g, "\n"),
     }),
   });
@@ -166,7 +184,7 @@ async function emitEntityMergePatches(
       content: renderer.renderFile({
         fileName,
         namespace: options.modelsNamespace,
-        usings: sortUsings(new Set(MERGE_PATCH_USINGS)),
+        usings: helperUsings(MERGE_PATCH_USINGS, options),
         body: renderer
           .renderEntityMergePatch({ modelName, qualifiedModelName })
           .replace(/\r\n/g, "\n"),
@@ -195,7 +213,7 @@ async function emitEnumMemberConverter(
     content: renderer.renderFile({
       fileName: enumConverterFileName,
       namespace: options.helpersNamespace,
-      usings: sortUsings(new Set(ENUM_CONVERTER_HELPER_USINGS)),
+      usings: helperUsings(ENUM_CONVERTER_HELPER_USINGS, options),
       body: renderer.renderEnumMemberConverter(),
     }),
   });
@@ -221,7 +239,7 @@ async function emitBooleanStringConverter(
     content: renderer.renderFile({
       fileName,
       namespace: options.helpersNamespace,
-      usings: sortUsings(new Set(BOOL_CONVERTER_HELPER_USINGS)),
+      usings: helperUsings(BOOL_CONVERTER_HELPER_USINGS, options),
       body: renderer.renderBooleanStringConverter(),
     }),
   });

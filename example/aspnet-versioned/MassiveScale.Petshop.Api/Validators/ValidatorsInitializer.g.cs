@@ -8,11 +8,11 @@
 
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
-using MarketOnce.Community.Campaign.Api.Models;
-using MarketOnce.Community.Campaign.Api.Helpers;
+using MassiveScale.Petshop.Api.Models;
+using MassiveScale.Petshop.Api.Helpers;
 using Microsoft.AspNetCore.Http;
 
-namespace MarketOnce.Community.Campaign.Api.Validators;
+namespace MassiveScale.Petshop.Api.Validators;
 
 /// <summary>
 /// Extension methods for registering the auto-generated FluentValidation validators

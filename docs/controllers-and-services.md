@@ -4,12 +4,14 @@ When the TypeSpec source includes `@typespec/http` operations, the emitter produ
 
 For each HTTP `interface` (or `namespace`) that carries routes, the emitter writes:
 
-| File                      | Content                                                                                                                                                         |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<Name>ControllerBase.cs` | Abstract ASP.NET Core controller inheriting `ControllerBase`. Injects `I<Name>Service` and delegates every action to the service.                               |
-| `I<Name>Service.cs`       | Partial service interface with one `Task<T>` method per operation. The `partial` keyword enables extending the interface with custom methods in consuming code. |
+| File                        | Content                                                                                                                                                                       |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<Name>ControllerBase.g.cs` | Abstract ASP.NET Core controller inheriting `ControllerBase`, with one `public abstract Task<IActionResult>` action per operation. It has no constructor and no dependencies. |
+| `I<Name>Service.g.cs`       | Partial service interface with one `<Operation>Async` method per operation. The `partial` keyword lets you add your own methods in consuming code.                            |
 
-**Routes** — one `[Http<Verb>("...")]` attribute is emitted per available API version of each operation. Without versioning a single attribute is emitted using the resolved operation path.
+The generated controller only declares the HTTP surface. You write a concrete controller that derives from it, takes whatever dependencies it needs (usually the matching `I<Name>Service`), and implements each action. The example below shows one.
+
+**Routes** — every action carries its own absolute route; there is no class-level `[Route]` attribute. One `[Http<Verb>("...")]` attribute is emitted per API version in which the operation is available, with `{version}` in `route-prefix` replaced by that version's value. Without `@versioned`, a single attribute is emitted and the `{version}` segment is removed.
 
 **Parameter binding** — path parameters get `[FromRoute]`, query parameters get `[FromQuery]`, headers get `[FromHeader]`, and request bodies get `[FromBody]`. When a parameter's C# identifier differs from its wire name, the binding attribute gets an explicit `Name = "..."` pointing at the wire name (e.g. `[FromQuery(Name = "custId")] string customerId`), so the HTTP contract is unaffected.
 
@@ -83,39 +85,62 @@ interface Users {
 }
 ```
 
-With `route-prefix: api` the above produces:
+With the default `route-prefix` (`"api/{version}"`) the above produces the following (file headers and `using` directives omitted):
 
 ```csharp
-// Controllers/UsersControllerBase.cs
-[Route("/api/v1/users")]
-[Route("/api/v2/users")]
-[ApiController]
-public abstract class UsersControllerBase : ControllerBase
+// Controllers/UsersControllerBase.g.cs
+namespace MyApi.Controllers
 {
-    private readonly IUsersService _service;
+    [ApiController]
+    public abstract class UsersControllerBase : ControllerBase
+    {
+        [HttpGet("/api/v1/users")]
+        [HttpGet("/api/v2/users")]
+        public abstract Task<IActionResult> List(CancellationToken cancellationToken);
 
-    public UsersControllerBase(IUsersService service) { _service = service; }
+        [HttpGet("/api/v1/users/{id}")]
+        [HttpGet("/api/v2/users/{id}")]
+        public abstract Task<IActionResult> Read([FromRoute] string id, CancellationToken cancellationToken);
 
-    [HttpGet]
-    public async Task<IActionResult> List() => Ok(await _service.List());
-
-    [HttpGet("{id}")]
-    public async Task<IActionResult> Read([FromRoute] string id) => Ok(await _service.Read(id));
-
-    [HttpPost]
-    public async Task<IActionResult> Create([FromBody] User body) => Ok(await _service.Create(body));
+        [HttpPost("/api/v1/users")]
+        [HttpPost("/api/v2/users")]
+        public abstract Task<IActionResult> Create([FromBody] User body, CancellationToken cancellationToken);
+    }
 }
 ```
 
 ```csharp
-// Services/IUsersService.cs
-public partial interface IUsersService
+// Services/IUsersService.g.cs
+namespace MyApi.Services
 {
-    Task<IList<User>> List();
-    Task<User> Read(string id);
-    Task<User> Create(User body);
+    public partial interface IUsersService
+    {
+        Task<IList<User>?> ListAsync(CancellationToken cancellationToken);
+
+        Task<User?> ReadAsync(string id, CancellationToken cancellationToken);
+
+        Task<User?> CreateAsync(User body, CancellationToken cancellationToken);
+    }
 }
 ```
+
+You then implement the controller and the service in your own, non-generated code:
+
+```csharp
+public class UsersController(IUsersService service) : UsersControllerBase
+{
+    public override async Task<IActionResult> List(CancellationToken cancellationToken) =>
+        Ok(await service.ListAsync(cancellationToken));
+
+    public override async Task<IActionResult> Read(string id, CancellationToken cancellationToken) =>
+        await service.ReadAsync(id, cancellationToken) is { } user ? Ok(user) : NotFound();
+
+    public override async Task<IActionResult> Create(User body, CancellationToken cancellationToken) =>
+        Ok(await service.CreateAsync(body, cancellationToken));
+}
+```
+
+Register the service implementation with dependency injection as usual, for example `builder.Services.AddScoped<IUsersService, UsersService>();`.
 
 ## Disabling output
 
@@ -130,12 +155,12 @@ options:
 
 ## Related options
 
-| Option                       | Default         | Description                                                                                                                                 |
-| ---------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `abstract-suffix`            | `"Base"`        | Suffix appended to generated abstract class names, e.g. `UsersControllerBase`.                                                              |
-| `cancellation-token`         | `true`          | When `true`, adds `CancellationToken cancellationToken` to every controller action and service method, and emits `using System.Threading;`. |
-| `controllers-output-dir`     | `"Controllers"` | Destination for generated controller files.                                                                                                 |
-| `controllers-root-namespace` | _(global root)_ | Root namespace for controller files.                                                                                                        |
-| `route-prefix`               | `"api"`         | Prefix prepended to every controller route, e.g. `"api"` → `/api/v1/users`.                                                                 |
-| `services-output-dir`        | `"Services"`    | Destination for generated service interface files.                                                                                          |
-| `services-root-namespace`    | _(global root)_ | Root namespace for service interface files.                                                                                                 |
+| Option                   | Default                        | Description                                                                                                                                 |
+| ------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `abstract-suffix`        | `"Base"`                       | Suffix appended to generated abstract class names, e.g. `UsersControllerBase`.                                                              |
+| `cancellation-token`     | `true`                         | When `true`, adds `CancellationToken cancellationToken` to every controller action and service method, and emits `using System.Threading;`. |
+| `controllers-namespace`  | `<root-namespace>.Controllers` | Verbatim C# namespace for controller files.                                                                                                 |
+| `controllers-output-dir` | `"Controllers"`                | Destination for generated controller files.                                                                                                 |
+| `route-prefix`           | `"api/{version}"`              | Prefix prepended to every action route. `{version}` becomes each API version's value, or is removed when the service has no `@versioned`.   |
+| `services-namespace`     | `<root-namespace>.Services`    | Verbatim C# namespace for service interface files.                                                                                          |
+| `services-output-dir`    | `"Services"`                   | Destination for generated service interface files.                                                                                          |

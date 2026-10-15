@@ -14,6 +14,9 @@ using {{{modelsNamespace}}};
 using {{{helpersNamespace}}};
 {{/if}}
 {{/unless}}
+{{#each additionalUsings}}
+using {{{this}}};
+{{/each}}
 {{#if isVersionAware}}
 using Microsoft.AspNetCore.Http;
 {{/if}}

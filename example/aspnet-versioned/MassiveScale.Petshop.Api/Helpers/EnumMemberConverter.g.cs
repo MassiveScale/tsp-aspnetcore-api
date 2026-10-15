@@ -15,7 +15,7 @@ using System.Runtime.Serialization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace MarketOnce.Community.Campaign.Api.Helpers
+namespace MassiveScale.Petshop.Api.Helpers
 {
     /// <summary>
     /// Creates <see cref="EnumMemberConverter{T}"/> instances for any enum type at runtime.

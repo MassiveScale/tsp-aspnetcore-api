@@ -12,7 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace MarketOnce.Community.Campaign.Api.Models
+namespace MassiveScale.Petshop.Api.Models
 {
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     public partial class Tag

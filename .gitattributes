@@ -1,0 +1,3 @@
+# Templates are read verbatim into generated C#; keep them LF on every checkout so
+# the output does not depend on the build machine.
+*.hbs text eol=lf

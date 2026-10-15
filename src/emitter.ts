@@ -30,9 +30,10 @@ import {
   NoTarget,
   resolvePath,
 } from "@typespec/compiler";
+import { getAllHttpServices } from "@typespec/http";
 import { isMergePatch } from "@typespec/http/experimental/merge-patch";
 import { EmitterOptions, reportDiagnostic } from "./lib.js";
-import { pascalCase } from "./utils.js";
+import { ordinalCompare, pascalCase } from "./utils.js";
 import {
   Renderer,
   TemplateLoadError,
@@ -54,7 +55,7 @@ import {
 import { emitHelpers } from "./helpers.js";
 import { csharpModelName, qualifyTypeName } from "./naming.js";
 import { analyzePayloadModels } from "./payloads.js";
-import { emitValidators, preloadValidatorTemplates } from "./validators.js";
+import { emitValidators } from "./validators.js";
 import { cleanOutputDirectories, writeCleanupManifest } from "./clean.js";
 
 /** Default C# namespace used for top-level TypeSpec models with no namespace. */
@@ -121,7 +122,7 @@ export interface ResolvedOptions {
   cleanOutputDirs: boolean;
   /** Resolved template override paths (absolute). */
   templates: TemplateOverrides;
-  /** Whether to emit helper files (`MergePatchValue`, `EnumMemberConverter`). */
+  /** Whether to emit the optional `EnumMemberConverter` helper file. */
   emitHelpers: boolean;
   /** Absolute path to the helpers output directory. */
   helpersOutputDir: string;
@@ -194,7 +195,11 @@ export async function $onEmit(
     },
   });
 
-  const models = analyzePayloadModels(program, candidates);
+  // Resolving HTTP services is the most expensive step of an emit, so it runs
+  // once here and the result is shared by every emission module.
+  const [services, httpDiagnostics] = getAllHttpServices(program);
+
+  const models = analyzePayloadModels(program, candidates, services);
 
   const { emittedEnums } = await emitModelsAndEnums(
     program,
@@ -215,12 +220,19 @@ export async function $onEmit(
     fullyQualifiedTypes: options.fullyQualifiedTypes,
   };
 
-  const groups = collectControllers(
-    program,
-    controllerOptions,
-    (ns) => csharpNamespaceFor(ns, options),
-    (ns) => folderSegments(options.effectiveRootNamespace, ns),
-  );
+  // Controllers and services are skipped when the HTTP library reported an
+  // error, since their routes cannot be trusted. Warnings (e.g.
+  // `merge-patch-content-type`) do not suppress them; the HTTP library
+  // reports those itself.
+  const groups = httpDiagnostics.some((d) => d.severity === "error")
+    ? []
+    : collectControllers(
+        program,
+        services,
+        controllerOptions,
+        (ns) => csharpNamespaceFor(ns, options),
+        (ns) => folderSegments(options.effectiveRootNamespace, ns),
+      );
 
   for (const group of groups) {
     if (options.emitControllers) {
@@ -231,10 +243,10 @@ export async function $onEmit(
     }
   }
 
-  await emitHelpers(program, models, emittedEnums, renderer, options);
+  await emitHelpers(program, models, emittedEnums, services, renderer, options);
 
   if (options.emitValidators) {
-    await emitValidators(program, options, new Set(models));
+    await emitValidators(program, services, renderer, options, new Set(models));
   }
 
   if (options.cleanOutputDirs) {
@@ -254,7 +266,7 @@ export function sortUsings(set: Set<string>): string[] {
     const aSystem = a === "System" || a.startsWith("System.");
     const bSystem = b === "System" || b.startsWith("System.");
     if (aSystem !== bSystem) return aSystem ? -1 : 1;
-    return a.localeCompare(b);
+    return ordinalCompare(a, b);
   });
 }
 
@@ -272,9 +284,7 @@ function buildRenderer(
   options: ResolvedOptions,
 ): Renderer | undefined {
   try {
-    const renderer = createRenderer(options.templates);
-    if (options.emitValidators) preloadValidatorTemplates(options.templates);
-    return renderer;
+    return createRenderer(options.templates);
   } catch (err) {
     const failure =
       err instanceof TemplateLoadError
@@ -391,8 +401,6 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     .map(([key, value]) => ({ key, value }))
     .sort((a, b) => b.key.length - a.key.length);
   // Default output directories are "Models" for models/interfaces, and "Controllers"/"Services"/"Helpers" for others.
-  // When namespace-from-path is enabled, the dir suffixes are always applied to the namespace
-  // to reflect the output directory path (e.g., "MyApp.Models", "MyApp.Controllers").
   const modelsDir = raw["models-output-dir"] ?? "Models";
   const interfacesDir = raw["interfaces-output-dir"] ?? "Models";
   const controllersDir = raw["controllers-output-dir"] ?? "Controllers";
@@ -523,8 +531,8 @@ function namespaceFullName(ns: Namespace | undefined): string {
  *
  * @param ns - TypeSpec namespace node, or `undefined`.
  * @param options - Resolved options carrying the namespace map and root.
- * @param sectionRootNs - Optional per-section root (e.g. `models-root-namespace`)
- *   that takes priority over the global root for unnamespaced types.
+ * @param sectionRootNs - Optional root (e.g. the effective root namespace)
+ *   that takes priority over `root-namespace` for unnamespaced types.
  * @returns Dot-separated C# namespace string.
  */
 export function csharpNamespaceFor(

@@ -28,6 +28,11 @@ All notable changes to this project will be documented in this file.
 - Every MergePatch validation rule now has a `.WithMessage`, so failures read like `'Count' must be a number less than or equal to 9.` instead of FluentValidation's generic predicate message.
 - `@pattern` rules use one compiled `static readonly Regex` per pattern with a one-second match timeout. A match that times out fails validation instead of throwing. Previously POST rules built the regex on every request and MergePatch rules used the static `Regex.IsMatch` without a timeout.
 - Custom validator templates must declare the constructor from `constructorParameters`, and version-aware ones must assign `_httpContextAccessor` and use the version-group `condition`. See [Custom Templates — Upgrading custom templates](docs/custom-templates.md#upgrading-custom-templates).
+- Emitting is faster on large specs. The HTTP services are resolved once per emit instead of up to four times, validator templates are compiled once per run instead of once per model, and per-model property lookups are cached. On a 900-model, 3,600-operation spec, the emitter's own CPU time drops by more than half. Generated code is unchanged.
+- Generated output no longer depends on the build machine. `using` directives and `[JsonDerivedType]` attributes are sorted by ordinal comparison instead of the machine's locale, and templates are read with LF line endings. Previously, a checkout with CRLF templates left four spaces on the blank lines between controller actions and helper members; those lines are now empty.
+- `additional-usings` now applies to every generated file, as documented: the `MergePatch`, `EnumMemberConverter`, `BooleanStringJsonConverter` and typed `{Model}MergePatchUpdate` helpers and all validator files now include it. Custom validator templates receive the list as `additionalUsings`. See [Custom Templates — Validator view models](docs/custom-templates.md#validator-view-models).
+- The published package no longer includes source maps, which pointed at TypeScript sources that were never packed.
+- The emitter option schema now describes every option, so editors with TypeSpec support show the descriptions in `tspconfig.yaml`.
 
 ### Removed
 
@@ -50,6 +55,9 @@ All notable changes to this project will be documented in this file.
 - A `@discriminator` base that references one of its derived types no longer declares that derived validator twice in its constructor (CS0100).
 - `Record<Model>` properties were treated as arrays, which emitted `RuleForEach` over a dictionary (CS1503) and the MergePatch error "must be an array".
 - Derived types sorted by `localeCompare` could be ordered differently on machines with different locales; they are now sorted ordinally.
+- The documentation described `*-root-namespace` options that don't exist (the compiler rejects them) and an outdated controller shape. [Controllers and Services](docs/controllers-and-services.md) now shows the current output (abstract actions with per-action routes, no service injection, `.g.cs` files, `route-prefix` defaulting to `"api/{version}"`) and how to implement it. The README quick start shows the real output path, namespace and attributes, and the `emit-interfaces` and `namespace-from-path` descriptions state the correct defaults and behavior.
+- The README now lists the known limitations: models merge all API versions, multipart bodies and `@cookie` parameters aren't supported, and `@query` arrays default to `explode: false`.
+- The `example/aspnet-versioned` project uses the `MassiveScale.Petshop.Api` namespace and registers `IHttpContextAccessor` and the generated validators in `Program.cs`.
 
 ## [1.0.0-beta.1] - 2026-10-14
 

@@ -12,11 +12,11 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using MarketOnce.Community.Campaign.Api.Helpers;
-using MarketOnce.Community.Campaign.Api.Models;
+using MassiveScale.Petshop.Api.Helpers;
+using MassiveScale.Petshop.Api.Models;
 using Microsoft.AspNetCore.Mvc;
 
-namespace MarketOnce.Community.Campaign.Api.Controllers
+namespace MassiveScale.Petshop.Api.Controllers
 {
     /// <summary>
     /// Controller for Customer entities.

@@ -40,7 +40,7 @@ import {
   resolveEncodedName,
   resolvePath,
 } from "@typespec/compiler";
-import { getAllHttpServices, type HttpOperationBody } from "@typespec/http";
+import { type HttpOperationBody, type HttpService } from "@typespec/http";
 import {
   getMergePatchSource,
   isMergePatch,
@@ -52,10 +52,6 @@ import {
   Availability,
 } from "@typespec/versioning";
 import type { Version } from "@typespec/versioning";
-import Handlebars from "handlebars";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { computeModelTypeName, ResolvedOptions } from "./emitter.js";
 import { reportDiagnostic } from "./lib.js";
 import {
@@ -64,12 +60,7 @@ import {
   qualifyTypeName,
 } from "./naming.js";
 import { emitFile } from "./output.js";
-import {
-  TemplateLoadError,
-  TemplateName,
-  TemplateOverrides,
-  compileTemplate,
-} from "./renderer.js";
+import { Renderer, ValidatorTemplateName } from "./renderer.js";
 import { classProperties, emittedBaseModel } from "./payloads.js";
 import {
   csharpStringContent,
@@ -77,140 +68,6 @@ import {
   pascalCase,
   SCALAR_MAP,
 } from "./utils.js";
-
-/** Absolute path to the bundled templates directory (shared with renderer). */
-const TEMPLATES_DIR = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "../templates",
-);
-
-// Lazily compiled Handlebars validator templates — each loaded on first use.
-let _compiledValidatorPostTemplate: Handlebars.TemplateDelegate | undefined;
-let _compiledValidatorPatchTemplate: Handlebars.TemplateDelegate | undefined;
-let _compiledValidatorPostVersionAwareTemplate:
-  Handlebars.TemplateDelegate | undefined;
-let _compiledValidatorPatchVersionAwareTemplate:
-  Handlebars.TemplateDelegate | undefined;
-let _compiledValidatorInitializerTemplate:
-  Handlebars.TemplateDelegate | undefined;
-
-/**
- * Partials shared by the built-in validator templates, keyed by partial name.
- * Custom templates can include them too (see `docs/custom-templates.md`).
- */
-const VALIDATOR_PARTIALS: Record<string, string> = {
-  mergePatchNestedRules: "validator-merge-patch-nested.hbs",
-  mergePatchPropertyRules: "validator-merge-patch-property-rules.hbs",
-  typedPropertyRules: "validator-typed-property-rules.hbs",
-  propertyRules: "validator-property-rules.hbs",
-  validatorRules: "validator-rules.hbs",
-  validatorFields: "validator-fields.hbs",
-  validatorHelpers: "validator-helpers.hbs",
-};
-
-/**
- * Compiles a validator template, first registering the partials that the
- * built-in templates share so custom templates can include them too.
- *
- * Templates are compiled with HTML escaping disabled (generated C# must never
- * contain `&#x3D;` and similar entities) and eagerly, so a syntax error in a
- * custom template is caught by {@link preloadValidatorTemplates} before any
- * output is cleaned or written.
- *
- * @param name - Template key, used to report which template failed.
- * @param path - Absolute path of the template file.
- * @throws {TemplateLoadError} If the template cannot be read or compiled.
- */
-function loadValidatorTemplate(
-  name: TemplateName,
-  path: string,
-): Handlebars.TemplateDelegate {
-  try {
-    for (const [partial, file] of Object.entries(VALIDATOR_PARTIALS)) {
-      if (!Handlebars.partials[partial]) {
-        Handlebars.registerPartial(
-          partial,
-          readFileSync(resolve(TEMPLATES_DIR, file), "utf-8"),
-        );
-      }
-    }
-    return compileTemplate(Handlebars, readFileSync(path, "utf-8"));
-  } catch (err) {
-    throw new TemplateLoadError(
-      name,
-      path,
-      err instanceof Error ? err.message : String(err),
-    );
-  }
-}
-
-/**
- * Loads and compiles every validator template (built-in or overridden) so a
- * missing or malformed custom template fails the emit before the output
- * directories are cleaned.
- *
- * @param overrides - Template override paths from the resolved options.
- * @throws {TemplateLoadError} If any validator template fails to load.
- */
-export function preloadValidatorTemplates(overrides: TemplateOverrides): void {
-  getValidatorPostTemplate(overrides["validator-post"]);
-  getValidatorPatchTemplate(overrides["validator-patch"]);
-  getValidatorPostVersionAwareTemplate(
-    overrides["validator-post-version-aware"],
-  );
-  getValidatorPatchVersionAwareTemplate(
-    overrides["validator-patch-version-aware"],
-  );
-  getValidatorInitializerTemplate(overrides["validator-initializer"]);
-}
-
-function getValidatorPostTemplate(
-  override?: string,
-): Handlebars.TemplateDelegate {
-  if (override) return loadValidatorTemplate("validator-post", override);
-  return (_compiledValidatorPostTemplate ??= loadValidatorTemplate(
-    "validator-post",
-    resolve(TEMPLATES_DIR, "validator-post.hbs"),
-  ));
-}
-function getValidatorPatchTemplate(
-  override?: string,
-): Handlebars.TemplateDelegate {
-  if (override) return loadValidatorTemplate("validator-patch", override);
-  return (_compiledValidatorPatchTemplate ??= loadValidatorTemplate(
-    "validator-patch",
-    resolve(TEMPLATES_DIR, "validator-patch.hbs"),
-  ));
-}
-function getValidatorPostVersionAwareTemplate(
-  override?: string,
-): Handlebars.TemplateDelegate {
-  if (override)
-    return loadValidatorTemplate("validator-post-version-aware", override);
-  return (_compiledValidatorPostVersionAwareTemplate ??= loadValidatorTemplate(
-    "validator-post-version-aware",
-    resolve(TEMPLATES_DIR, "validator-post-version-aware.hbs"),
-  ));
-}
-function getValidatorPatchVersionAwareTemplate(
-  override?: string,
-): Handlebars.TemplateDelegate {
-  if (override)
-    return loadValidatorTemplate("validator-patch-version-aware", override);
-  return (_compiledValidatorPatchVersionAwareTemplate ??= loadValidatorTemplate(
-    "validator-patch-version-aware",
-    resolve(TEMPLATES_DIR, "validator-patch-version-aware.hbs"),
-  ));
-}
-function getValidatorInitializerTemplate(
-  override?: string,
-): Handlebars.TemplateDelegate {
-  if (override) return loadValidatorTemplate("validator-initializer", override);
-  return (_compiledValidatorInitializerTemplate ??= loadValidatorTemplate(
-    "validator-initializer",
-    resolve(TEMPLATES_DIR, "validator-initializer.hbs"),
-  ));
-}
 
 /**
  * A numeric bound, carried as an object so that Handlebars'
@@ -354,6 +211,8 @@ interface ValidatorTemplateDataBase {
   modelsNamespace: string;
   helpersNamespace: string;
   fullyQualifiedTypes: boolean;
+  /** The `additional-usings` option: extra namespaces to import. */
+  additionalUsings: string[];
   useHelpersNamespace: boolean;
   modelName: string;
   /** Fully-qualified C# type name of the validated model (e.g. `MyApp.Models.Pet`). */
@@ -429,6 +288,8 @@ interface InitializerTemplateData {
   modelsNamespace: string;
   helpersNamespace: string;
   fullyQualifiedTypes: boolean;
+  /** The `additional-usings` option: extra namespaces to import. */
+  additionalUsings: string[];
   useHelpersNamespace: boolean;
   registrations: ValidatorRegistration[];
   isVersionAware: boolean;
@@ -1397,9 +1258,9 @@ function addModelWithDescendants(
  */
 export function collectValidatorModelsFromRoutes(
   program: Program,
+  services: readonly HttpService[],
   allModels: Model[],
 ): ValidatorRouteModels | undefined {
-  const [services] = getAllHttpServices(program);
   const hasAnyOperations = services.some((s) => s.operations.length > 0);
   if (!hasAnyOperations) return undefined;
 
@@ -1588,7 +1449,7 @@ interface ValidatorSpec {
   /** Type argument of the validator's `AbstractValidator<T>`; its DI key. */
   serviceType: string;
   path: string;
-  template: Handlebars.TemplateDelegate;
+  templateName: ValidatorTemplateName;
   data: ValidatorTemplateData | VersionAwareValidatorTemplateData;
   /** Constructor parameters that come before the child validators. */
   leadingParameters: ConstructorParameter[];
@@ -1759,6 +1620,7 @@ function finishTemplateData(
 /** Renders resolved validator specs. */
 async function renderValidatorSpecs(
   program: Program,
+  renderer: Renderer,
   specs: readonly ValidatorSpec[],
 ): Promise<void> {
   resolveValidatorDependencies(specs);
@@ -1766,7 +1628,9 @@ async function renderValidatorSpecs(
     await emitFile(program, {
       path: spec.path,
       // Indented partials also indent their blank lines; drop that whitespace.
-      content: spec.template(spec.data).replace(/[ \t]+$/gm, ""),
+      content: renderer
+        .renderValidator(spec.templateName, spec.data)
+        .replace(/[ \t]+$/gm, ""),
     });
   }
 }
@@ -1823,6 +1687,7 @@ async function emitValidatorModels(
   createMember: EnumMember | undefined,
   updateMember: EnumMember | undefined,
   options: ResolvedOptions,
+  renderer: Renderer,
   emitPost: boolean,
   emitPatch: boolean,
   singleOpts: EmitValidatorSingleOptions = {},
@@ -1862,6 +1727,7 @@ async function emitValidatorModels(
         modelsNamespace: options.modelsNamespace,
         helpersNamespace: options.helpersNamespace,
         fullyQualifiedTypes: options.fullyQualifiedTypes,
+        additionalUsings: options.additionalUsings,
         useHelpersNamespace: false,
         modelName,
         qualifiedModelName,
@@ -1878,7 +1744,7 @@ async function emitValidatorModels(
           options.validatorsOutputDir,
           `${versionDir}${modelName}Validator${options.fileExtension}`,
         ),
-        template: getValidatorPostTemplate(options.templates["validator-post"]),
+        templateName: "validator-post",
         data,
         leadingParameters: [],
         dependencies: collectDependencies(
@@ -1918,6 +1784,7 @@ async function emitValidatorModels(
         modelsNamespace: options.modelsNamespace,
         helpersNamespace: options.helpersNamespace,
         fullyQualifiedTypes: options.fullyQualifiedTypes,
+        additionalUsings: options.additionalUsings,
         useHelpersNamespace:
           !options.fullyQualifiedTypes &&
           isMergePatchBody &&
@@ -1942,9 +1809,7 @@ async function emitValidatorModels(
           options.validatorsOutputDir,
           `${versionDir}${validatorName}${options.fileExtension}`,
         ),
-        template: getValidatorPatchTemplate(
-          options.templates["validator-patch"],
-        ),
+        templateName: "validator-patch",
         data,
         leadingParameters: usesJsonOptions ? [JSON_OPTIONS_PARAMETER] : [],
         dependencies: collectDependencies(
@@ -1955,7 +1820,7 @@ async function emitValidatorModels(
       });
     }
   }
-  await renderValidatorSpecs(program, specs);
+  await renderValidatorSpecs(program, renderer, specs);
 }
 
 /** Constructor parameter of MergePatch validators that deserialize nested values. */
@@ -1978,6 +1843,7 @@ async function emitVersionAwareValidatorModels(
   createMember: EnumMember | undefined,
   updateMember: EnumMember | undefined,
   options: ResolvedOptions,
+  renderer: Renderer,
   emitPost: boolean,
   emitPatch: boolean,
   allVersions: Version[],
@@ -2026,6 +1892,7 @@ async function emitVersionAwareValidatorModels(
         modelsNamespace: options.modelsNamespace,
         helpersNamespace: options.helpersNamespace,
         fullyQualifiedTypes: options.fullyQualifiedTypes,
+        additionalUsings: options.additionalUsings,
         useHelpersNamespace: false,
         modelName,
         qualifiedModelName,
@@ -2045,9 +1912,7 @@ async function emitVersionAwareValidatorModels(
           options.validatorsOutputDir,
           `${modelName}Validator${options.fileExtension}`,
         ),
-        template: getValidatorPostVersionAwareTemplate(
-          options.templates["validator-post-version-aware"],
-        ),
+        templateName: "validator-post-version-aware",
         data,
         leadingParameters: [HTTP_CONTEXT_ACCESSOR_PARAMETER],
         dependencies: collectDependencies(
@@ -2096,6 +1961,7 @@ async function emitVersionAwareValidatorModels(
         modelsNamespace: options.modelsNamespace,
         helpersNamespace: options.helpersNamespace,
         fullyQualifiedTypes: options.fullyQualifiedTypes,
+        additionalUsings: options.additionalUsings,
         useHelpersNamespace:
           !options.fullyQualifiedTypes &&
           isMergePatchBody &&
@@ -2123,9 +1989,7 @@ async function emitVersionAwareValidatorModels(
           options.validatorsOutputDir,
           `${validatorName}${options.fileExtension}`,
         ),
-        template: getValidatorPatchVersionAwareTemplate(
-          options.templates["validator-patch-version-aware"],
-        ),
+        templateName: "validator-patch-version-aware",
         data,
         leadingParameters: usesJsonOptions
           ? [HTTP_CONTEXT_ACCESSOR_PARAMETER, JSON_OPTIONS_PARAMETER]
@@ -2138,7 +2002,7 @@ async function emitVersionAwareValidatorModels(
       });
     }
   }
-  await renderValidatorSpecs(program, specs);
+  await renderValidatorSpecs(program, renderer, specs);
 }
 
 interface EmitValidatorInitializerOptions {
@@ -2152,6 +2016,7 @@ async function emitValidatorsInitializer(
   allModels: Model[],
   routeModels: ValidatorRouteModels | undefined,
   options: ResolvedOptions,
+  renderer: Renderer,
   emitPost: boolean,
   emitPatch: boolean,
   isVersionAware: boolean,
@@ -2204,6 +2069,7 @@ async function emitValidatorsInitializer(
     modelsNamespace: options.modelsNamespace,
     helpersNamespace: options.helpersNamespace,
     fullyQualifiedTypes: options.fullyQualifiedTypes,
+    additionalUsings: options.additionalUsings,
     useHelpersNamespace:
       !options.fullyQualifiedTypes &&
       registrations.some((registration) =>
@@ -2218,9 +2084,7 @@ async function emitValidatorsInitializer(
       options.validatorsOutputDir,
       `${versionDir}ValidatorsInitializer${options.fileExtension}`,
     ),
-    content: getValidatorInitializerTemplate(
-      options.templates["validator-initializer"],
-    )(data),
+    content: renderer.renderValidator("validator-initializer", data),
   });
 }
 
@@ -2248,12 +2112,16 @@ function discriminatorPropertyNameInHierarchy(
  * `emit-validators` is `true`.
  *
  * @param program - The compiled TypeSpec program.
+ * @param services - The program's HTTP services, from `getAllHttpServices`.
+ * @param renderer - Renderer for the current emit run.
  * @param options - Resolved emitter options.
  * @param emittedModels - Models that get a C# class; when set, validators are
  *   emitted only for these models.
  */
 export async function emitValidators(
   program: Program,
+  services: readonly HttpService[],
+  renderer: Renderer,
   options: ResolvedOptions,
   emittedModels?: Set<Model>,
 ): Promise<void> {
@@ -2274,7 +2142,11 @@ export async function emitValidators(
     },
   });
 
-  const routeModels = collectValidatorModelsFromRoutes(program, allModels);
+  const routeModels = collectValidatorModelsFromRoutes(
+    program,
+    services,
+    allModels,
+  );
 
   const lifecycle = getLifecycleVisibilityEnum(program);
   const createMember = lifecycle.members.get("Create");
@@ -2341,6 +2213,7 @@ export async function emitValidators(
         createMember,
         updateMember,
         options,
+        renderer,
         emitPost,
         emitPatch,
         {
@@ -2354,6 +2227,7 @@ export async function emitValidators(
         allModels,
         expandedRouteModels,
         options,
+        renderer,
         emitPost,
         emitPatch,
         /* isVersionAware */ false,
@@ -2373,6 +2247,7 @@ export async function emitValidators(
       createMember,
       updateMember,
       options,
+      renderer,
       emitPost,
       emitPatch,
       allVersions,
@@ -2382,6 +2257,7 @@ export async function emitValidators(
       allModels,
       expandedRouteModels,
       options,
+      renderer,
       emitPost,
       emitPatch,
       /* isVersionAware */ true,
@@ -2406,6 +2282,7 @@ export async function emitValidators(
       createMember,
       updateMember,
       options,
+      renderer,
       emitPost,
       emitPatch,
       { targetVersion },
@@ -2415,6 +2292,7 @@ export async function emitValidators(
       allModels,
       expandedRouteModels,
       options,
+      renderer,
       emitPost,
       emitPatch,
       /* isVersionAware */ false,

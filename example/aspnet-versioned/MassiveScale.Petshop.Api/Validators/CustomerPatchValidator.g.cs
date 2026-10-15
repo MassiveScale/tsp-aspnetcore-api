@@ -8,10 +8,10 @@
 
 using FluentValidation;
 using Microsoft.AspNetCore.Http;
-using MarketOnce.Community.Campaign.Api.Models;
-using MarketOnce.Community.Campaign.Api.Helpers;
+using MassiveScale.Petshop.Api.Models;
+using MassiveScale.Petshop.Api.Helpers;
 
-namespace MarketOnce.Community.Campaign.Api.Validators;
+namespace MassiveScale.Petshop.Api.Validators;
 
 /// <summary>
 /// Auto-generated version-aware PATCH validator for Customer.

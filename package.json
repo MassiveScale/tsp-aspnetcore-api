@@ -68,7 +68,6 @@
     "watch": "tsc --watch",
     "pretest": "npm run build",
     "test": "cd dist && node --test",
-    "test:vscode": "node --test test/**/*.test.mjs",
     "lint": "eslint src/ test/ --report-unused-disable-directives --max-warnings=0",
     "lint:fix": "eslint . --report-unused-disable-directives --fix",
     "format": "prettier .  --write",

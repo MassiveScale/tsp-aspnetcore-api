@@ -17,6 +17,9 @@ using {{{modelsNamespace}}};
 using {{{helpersNamespace}}};
 {{/if}}
 {{/unless}}
+{{#each additionalUsings}}
+using {{{this}}};
+{{/each}}
 {{#if namespace}}
 
 namespace {{{namespace}}};

@@ -17,7 +17,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace MarketOnce.Community.Campaign.Api.Helpers
+namespace MassiveScale.Petshop.Api.Helpers
 {
     /// <summary>
     /// Generic RFC 7396 JSON Merge Patch container.
@@ -184,11 +184,7 @@ namespace MarketOnce.Community.Campaign.Api.Helpers
         /// <summary>
         /// Applies each defined patch property recursively to <paramref name="original"/>.
         /// Invalid, unknown, and read-only properties are reported and skipped; valid
-        /// sibling properties are still applied. The root instance is never replaced, and
-        /// neither is a nested model instance that an object value is merged into, so
-        /// references to it and its members that are not serialized stay intact.
-        /// Members are resolved from the runtime type of <paramref name="original"/>, so
-        /// the properties of a derived type can be patched through its base type.
+        /// sibling properties are still applied. The root instance is never replaced.
         /// </summary>
         /// <param name="original">The entity to mutate.</param>
         /// <param name="rejectedPaths">JSON property paths that could not be applied.</param>
@@ -204,107 +200,79 @@ namespace MarketOnce.Community.Campaign.Api.Helpers
                 return false;
             }
 
-            PatchObject(original, original.GetType(), Properties, rejected, string.Empty, options);
+            var entries = new List<PatchEntry>();
+            foreach (var (name, element) in Properties)
+            {
+                var prop = FindProperty(name);
+                if (prop is null || !prop.CanWrite)
+                {
+                    rejected.Add(name);
+                    continue;
+                }
+                entries.Add(new PatchEntry(prop, name, element));
+            }
+            if (entries.Count == 0) return rejected.Count == 0;
+
+            // One serialize/merge/deserialize round trip applies every property. Only when
+            // that fails is each property retried alone, so one bad value cannot block its
+            // valid siblings and the failing path can be reported.
+            var batchRejected = new List<string>();
+            if (TryApply(original, entries, batchRejected, options, out _))
+            {
+                rejected.AddRange(batchRejected);
+                return rejected.Count == 0;
+            }
+
+            foreach (var entry in entries)
+            {
+                if (!TryApply(original, new[] { entry }, rejected, options, out var failedPath))
+                {
+                    rejected.Add(failedPath ?? entry.Name);
+                }
+            }
+
             return rejected.Count == 0;
         }
 
         private readonly record struct PatchEntry(PropertyInfo Property, string Name, JsonElement Value);
 
         /// <summary>
-        /// Applies <paramref name="values"/> to <paramref name="target"/> in place. An object value
-        /// for a property that already holds a model instance is merged into that instance. Every
-        /// other value is applied in one serialize/merge/deserialize round trip; only when that
-        /// fails is each value retried alone, so one bad value cannot block its valid siblings
-        /// and the failing path can be reported.
-        /// </summary>
-        private static void PatchObject(object target, Type type, IEnumerable<KeyValuePair<string, JsonElement>> values, List<string> rejected, string prefix, JsonSerializerOptions? options)
-        {
-            var entries = new List<PatchEntry>();
-            foreach (var (name, element) in values)
-            {
-                var member = FindMember(type, name);
-                if (member is null)
-                {
-                    rejected.Add(JoinPath(prefix, name));
-                    continue;
-                }
-                var property = member.Value.Property;
-                if (element.ValueKind == JsonValueKind.Object
-                    && property.CanRead
-                    && IsModelType(property.PropertyType)
-                    && property.GetValue(target) is { } nested)
-                {
-                    var nestedValues = new List<KeyValuePair<string, JsonElement>>();
-                    foreach (var nestedProperty in element.EnumerateObject())
-                    {
-                        nestedValues.Add(new(nestedProperty.Name, nestedProperty.Value));
-                    }
-                    PatchObject(nested, nested.GetType(), nestedValues, rejected, JoinPath(prefix, member.Value.WireName), options);
-                    continue;
-                }
-                if (!property.CanWrite)
-                {
-                    rejected.Add(JoinPath(prefix, name));
-                    continue;
-                }
-                entries.Add(new PatchEntry(property, name, element));
-            }
-            if (entries.Count == 0) return;
-
-            var batchRejected = new List<string>();
-            if (TryApply(target, type, entries, batchRejected, prefix, options, out _))
-            {
-                rejected.AddRange(batchRejected);
-                return;
-            }
-
-            foreach (var entry in entries)
-            {
-                if (!TryApply(target, type, new[] { entry }, rejected, prefix, options, out var failedPath))
-                {
-                    rejected.Add(failedPath ?? JoinPath(prefix, entry.Name));
-                }
-            }
-        }
-
-        /// <summary>
-        /// Merges <paramref name="entries"/> into a JSON copy of <paramref name="target"/>,
-        /// deserializes it as <paramref name="type"/>, and copies the patched properties back.
-        /// Nested paths that cannot be merged are added to <paramref name="rejected"/>. On failure
-        /// nothing is copied and <paramref name="failedPath"/> holds the JSON path of the bad value
+        /// Merges <paramref name="entries"/> into a JSON copy of <paramref name="original"/>,
+        /// deserializes the result, and copies the patched properties back. Nested paths
+        /// that cannot be merged are added to <paramref name="rejected"/>. On failure nothing
+        /// is copied and <paramref name="failedPath"/> holds the JSON path of the bad value
         /// when the serializer reported one.
         /// </summary>
-        private static bool TryApply(object target, Type type, IReadOnlyList<PatchEntry> entries, List<string> rejected, string prefix, JsonSerializerOptions? options, out string? failedPath)
+        private static bool TryApply(T original, IReadOnlyList<PatchEntry> entries, List<string> rejected, JsonSerializerOptions? options, out string? failedPath)
         {
             failedPath = null;
             try
             {
-                if (JsonSerializer.SerializeToNode(target, type, options) is not JsonObject node) return false;
+                if (JsonSerializer.SerializeToNode(original, options) is not JsonObject target) return false;
 
                 var patch = new JsonObject();
                 foreach (var entry in entries)
                 {
                     patch[entry.Name] = JsonNode.Parse(entry.Value.GetRawText());
                 }
-                MergeObject(node, patch, type, rejected, prefix);
+                MergeObject(target, patch, typeof(T), rejected, string.Empty);
 
-                var updated = node.Deserialize(type, options);
+                var updated = target.Deserialize<T>(options);
                 if (updated is null) return false;
                 foreach (var entry in entries)
                 {
-                    entry.Property.SetValue(target, entry.Property.GetValue(updated));
+                    entry.Property.SetValue(original, entry.Property.GetValue(updated));
                 }
                 return true;
             }
             catch (JsonException ex)
             {
                 var path = ex.Path;
-                var relativePath = path is { Length: > 1 } && path.StartsWith("$.", StringComparison.Ordinal)
+                failedPath = path is { Length: > 1 } && path.StartsWith("$.", StringComparison.Ordinal)
                     ? path[2..]
                     : path is { Length: > 1 } && path[0] == '$'
                         ? path[1..]
                         : null;
-                failedPath = relativePath is null ? null : JoinPath(prefix, relativePath);
                 return false;
             }
             catch
@@ -312,21 +280,6 @@ namespace MarketOnce.Community.Campaign.Api.Helpers
                 return false;
             }
         }
-
-        private static string JoinPath(string prefix, string name) => prefix.Length == 0 ? name : $"{prefix}.{name}";
-
-        /// <summary>
-        /// Returns <see langword="true"/> for a model class that a nested object value is merged
-        /// into in place: not a string, collection, dictionary, free-form JSON value, or framework type.
-        /// </summary>
-        private static bool IsModelType(Type type) =>
-            type.IsClass
-            && type != typeof(string)
-            && !typeof(System.Collections.IEnumerable).IsAssignableFrom(type)
-            && GetOpenObjectValueType(type) is null
-            && type.Namespace is not null
-            && type.Namespace != "System"
-            && !type.Namespace.StartsWith("System.", StringComparison.Ordinal);
 
         /// <summary>
         /// Applies RFC 7396 merge rules from <paramref name="patch"/> onto <paramref name="target"/>.
@@ -456,7 +409,6 @@ namespace MarketOnce.Community.Campaign.Api.Helpers
             var map = new Dictionary<string, (PropertyInfo Property, string WireName)>(StringComparer.OrdinalIgnoreCase);
             foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
-                if (property.GetIndexParameters().Length > 0) continue;
                 var wireName = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name;
                 map.TryAdd(wireName, (property, wireName));
             }

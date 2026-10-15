@@ -29,7 +29,7 @@ import {
   HttpOperation,
   HttpOperationParameter,
   HttpPayloadBody,
-  getAllHttpServices,
+  type HttpService,
   getRoutePath,
 } from "@typespec/http";
 import {
@@ -120,29 +120,25 @@ export interface ControllerGroup {
 type OperationContainer = Interface | Namespace;
 
 /**
- * Walks all HTTP services in the compiled TypeSpec program and returns one
- * {@link ControllerGroup} per logical operation container (TypeSpec Interface
- * or Namespace).
+ * Walks the given HTTP services and returns one {@link ControllerGroup} per
+ * logical operation container (TypeSpec Interface or Namespace).
  *
  * @param program - The compiled TypeSpec program.
+ * @param services - The program's HTTP services, from `getAllHttpServices`.
  * @param options - Routing and naming options forwarded from the emitter.
  * @param resolveNamespace - Callback that converts a TypeSpec Namespace node to
  *   a C# namespace string.
  * @param toFolderSegments - Callback that converts a C# namespace string to the
  *   relative folder path segments used when writing files.
- * @returns Array of controller groups, empty if `@typespec/http` reports an
- *   error for the program. Warnings (e.g. `merge-patch-content-type`) do not
- *   suppress controllers; the HTTP library reports them itself.
+ * @returns Array of controller groups.
  */
 export function collectControllers(
   program: Program,
+  services: readonly HttpService[],
   options: ControllerOptions,
   resolveNamespace: (ns: Namespace | undefined) => string,
   toFolderSegments: (ns: string) => string[],
 ): ControllerGroup[] {
-  const [services, diagnostics] = getAllHttpServices(program);
-  if (diagnostics.some((d) => d.severity === "error")) return [];
-
   const groups: ControllerGroup[] = [];
 
   for (const service of services) {

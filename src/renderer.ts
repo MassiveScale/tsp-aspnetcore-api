@@ -43,6 +43,42 @@ export type TemplateName =
   | "entity-merge-patch";
 
 /**
+ * Names of the templates that render a complete validator file. Like every
+ * other template, these are compiled without HTML escaping.
+ */
+export type ValidatorTemplateName = Extract<
+  TemplateName,
+  | "validator-post"
+  | "validator-patch"
+  | "validator-post-version-aware"
+  | "validator-patch-version-aware"
+  | "validator-initializer"
+>;
+
+/** Every validator template, compiled up front by {@link createRenderer}. */
+const VALIDATOR_TEMPLATE_NAMES: readonly ValidatorTemplateName[] = [
+  "validator-post",
+  "validator-patch",
+  "validator-post-version-aware",
+  "validator-patch-version-aware",
+  "validator-initializer",
+];
+
+/**
+ * Partials shared by the built-in validator templates, keyed by partial name.
+ * Custom templates can include them too (see `docs/custom-templates.md`).
+ */
+const VALIDATOR_PARTIALS: Readonly<Record<string, string>> = {
+  mergePatchNestedRules: "validator-merge-patch-nested.hbs",
+  mergePatchPropertyRules: "validator-merge-patch-property-rules.hbs",
+  typedPropertyRules: "validator-typed-property-rules.hbs",
+  propertyRules: "validator-property-rules.hbs",
+  validatorRules: "validator-rules.hbs",
+  validatorFields: "validator-fields.hbs",
+  validatorHelpers: "validator-helpers.hbs",
+};
+
+/**
  * Partial map of template names to absolute file paths used to override the
  * built-in defaults.  Any template not listed here falls back to its bundled
  * counterpart.
@@ -332,6 +368,8 @@ export interface Renderer {
   renderEnumMemberConverter(): string;
   /** Renders the `BooleanStringJsonConverter` helper class body (for `@encode(string)` on booleans). */
   renderBooleanStringConverter(): string;
+  /** Renders a complete validator file. */
+  renderValidator(name: ValidatorTemplateName, view: object): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -452,6 +490,29 @@ export function compileTemplate(
 }
 
 /**
+ * Reads a template file, normalising CRLF line endings to LF so the generated
+ * output does not depend on how the template was checked out.
+ *
+ * @param path - Absolute path to the template file.
+ * @returns Template source with LF line endings.
+ * @throws If the file cannot be read.
+ */
+function readTemplateSource(path: string): string {
+  return readFileSync(path, "utf-8").replace(/\r\n/g, "\n");
+}
+
+/**
+ * Returns the path of a named template: the override when one is configured,
+ * otherwise the bundled default.
+ *
+ * @param name - Template name (determines the default `.hbs` filename).
+ * @param override - Absolute path to a custom template file, or `undefined`.
+ */
+function templatePath(name: TemplateName, override: string | undefined) {
+  return override ?? resolve(TEMPLATES_DIR, `${name}.hbs`);
+}
+
+/**
  * Loads and compiles a named template, falling back to the bundled default
  * when no override path is provided.
  *
@@ -466,9 +527,9 @@ function loadTemplate(
   name: TemplateName,
   override: string | undefined,
 ): HandlebarsTemplateDelegate {
-  const path = override ?? resolve(TEMPLATES_DIR, `${name}.hbs`);
+  const path = templatePath(name, override);
   try {
-    return compileTemplate(env, readFileSync(path, "utf-8"));
+    return compileTemplate(env, readTemplateSource(path));
   } catch (err) {
     throw new TemplateLoadError(
       name,
@@ -718,6 +779,23 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
     "bool-string-converter",
     overrides["bool-string-converter"],
   );
+  for (const [partial, file] of Object.entries(VALIDATOR_PARTIALS)) {
+    env.registerPartial(
+      partial,
+      readTemplateSource(resolve(TEMPLATES_DIR, file)),
+    );
+  }
+  // Validator templates are compiled here too, so a broken custom validator
+  // template fails the emit before any output directory is cleaned.
+  const validatorTemplates = new Map<
+    ValidatorTemplateName,
+    HandlebarsTemplateDelegate
+  >(
+    VALIDATOR_TEMPLATE_NAMES.map((name) => [
+      name,
+      loadTemplate(env, name, overrides[name]),
+    ]),
+  );
 
   return {
     renderFile(view) {
@@ -779,6 +857,9 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
     },
     renderBooleanStringConverter() {
       return booleanStringConverterTemplate({});
+    },
+    renderValidator(name, view) {
+      return validatorTemplates.get(name)!(view);
     },
   };
 }

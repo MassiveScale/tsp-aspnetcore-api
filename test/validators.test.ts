@@ -319,6 +319,72 @@ describe("csharp emitter - validators", () => {
     });
   });
 
+  describe("custom validator templates", () => {
+    const spec = `
+      import "@typespec/http";
+      using TypeSpec.Http;
+
+      @service(#{ title: "Shop" })
+      namespace Demo;
+
+      model Widget { name: string; }
+      model Gadget { name: string; }
+
+      @route("/widgets")
+      interface Widgets {
+        @post create(@body body: Widget): Widget;
+        @patch(#{ implicitOptionality: false }) update(
+          @path id: string,
+          @body body: MergePatchUpdate<Widget>,
+        ): Widget;
+      }
+
+      @route("/gadgets")
+      interface Gadgets {
+        @post create(@body body: Gadget): Gadget;
+      }
+    `;
+
+    it("renders every model's validator from the same override", async () => {
+      const tpl = writeTemplate(
+        "validator-post",
+        "custom {{modelName}}\r\n{{#each additionalUsings}}using {{this}};\r\n{{/each}}",
+      );
+
+      const results = await emit(spec, {
+        "emit-validators": true,
+        "additional-usings": ["Acme.Shared"],
+        templates: { "validator-post": tpl },
+      });
+
+      strictEqual(
+        results["Validators/WidgetValidator.g.cs"],
+        "custom Widget\nusing Acme.Shared;\n",
+      );
+      strictEqual(
+        results["Validators/GadgetValidator.g.cs"],
+        "custom Gadget\nusing Acme.Shared;\n",
+      );
+    });
+
+    it("does not HTML-escape double-brace values in validator templates", async () => {
+      const tpl = writeTemplate(
+        "validator-patch",
+        "{{qualifiedPatchBodyTypeName}}|{{{qualifiedPatchBodyTypeName}}}",
+      );
+
+      const results = await emit(spec, {
+        "emit-validators": true,
+        templates: { "validator-patch": tpl },
+      });
+
+      strictEqual(
+        results["Validators/WidgetPatchValidator.g.cs"],
+        "MergePatch<Widget>|MergePatch<Widget>",
+      );
+    });
+  });
+
   describe("ValidatorsInitializer", () => {
     it("uses a fully-qualified MergePatch<T> type in registrations", async () => {
       const results = await emit(
