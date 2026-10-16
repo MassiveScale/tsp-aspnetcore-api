@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-16
+
 ### Added
 
 - `controller-query-params` option that decides which `@query` parameters become controller action and service method parameters: `"all"`, `"required"` or `"none"`. See [Controllers and Services — Query parameters](docs/controllers-and-services.md#query-parameters).
