@@ -13,7 +13,7 @@ The generated controller only declares the HTTP surface. You write a concrete co
 
 **Routes** — every action carries its own absolute route; there is no class-level `[Route]` attribute. One `[Http<Verb>("...")]` attribute is emitted per API version in which the operation is available, with `{version}` in `route-prefix` replaced by that version's value. Without `@versioned`, a single attribute is emitted and the `{version}` segment is removed.
 
-**Parameter binding** — path parameters get `[FromRoute]`, query parameters get `[FromQuery]`, headers get `[FromHeader]`, and request bodies get `[FromBody]`. When a parameter's C# identifier differs from its wire name, the binding attribute gets an explicit `Name = "..."` pointing at the wire name (e.g. `[FromQuery(Name = "custId")] string customerId`), so the HTTP contract is unaffected.
+**Parameter binding** — path parameters get `[FromRoute]`, query parameters get `[FromQuery]` (only the required ones by default, controlled by [`controller-query-params`](#query-parameters)), headers get `[FromHeader]`, and request bodies get `[FromBody]`. When a parameter's C# identifier differs from its wire name, the binding attribute gets an explicit `Name = "..."` pointing at the wire name (e.g. `[FromQuery(Name = "custId")] string customerId`), so the HTTP contract is unaffected.
 
 **Parameter names** — the C# identifier is the [`@serverName`](./decorators.md) when one is set. Otherwise it is the camelCased wire name, made valid and unique within the action:
 
@@ -29,6 +29,30 @@ The generated controller only declares the HTTP surface. You write a concrete co
 `body` and `cancellationToken` are reserved for the request body and the trailing `CancellationToken`.
 
 **HTTP library warnings** — controllers and services are skipped only when `@typespec/http` reports an **error**. Warnings such as `merge-patch-content-type` or `response-cookie-not-supported` are reported as usual and every controller is still generated.
+
+## Query parameters
+
+The `controller-query-params` option decides which `@query` parameters appear in the controller action and the matching service method. The controller and the service always get the same parameters.
+
+| Value                  | Query parameters emitted   |
+| ---------------------- | -------------------------- |
+| `"required"` (default) | Only the non-optional ones |
+| `"all"`                | Every query parameter      |
+| `"none"`               | None                       |
+
+Path and header parameters and the request body are always emitted, whatever the value.
+
+```typespec
+@get search(@query q: string, @query page?: int32): Result[];
+```
+
+| Value        | Generated action                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------ |
+| `"required"` | `Search([FromQuery] string q, CancellationToken cancellationToken)`                        |
+| `"all"`      | `Search([FromQuery] string q, [FromQuery] int? page, CancellationToken cancellationToken)` |
+| `"none"`     | `Search(CancellationToken cancellationToken)`                                              |
+
+A query parameter that is left out is still part of the HTTP contract. Read it in your controller implementation, for example with `Request.Query["page"]`, and pass it to the service yourself.
 
 ## Return types and response models
 
@@ -155,12 +179,13 @@ options:
 
 ## Related options
 
-| Option                   | Default                        | Description                                                                                                                                 |
-| ------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `abstract-suffix`        | `"Base"`                       | Suffix appended to generated abstract class names, e.g. `UsersControllerBase`.                                                              |
-| `cancellation-token`     | `true`                         | When `true`, adds `CancellationToken cancellationToken` to every controller action and service method, and emits `using System.Threading;`. |
-| `controllers-namespace`  | `<root-namespace>.Controllers` | Verbatim C# namespace for controller files.                                                                                                 |
-| `controllers-output-dir` | `"Controllers"`                | Destination for generated controller files.                                                                                                 |
-| `route-prefix`           | `"api/{version}"`              | Prefix prepended to every action route. `{version}` becomes each API version's value, or is removed when the service has no `@versioned`.   |
-| `services-namespace`     | `<root-namespace>.Services`    | Verbatim C# namespace for service interface files.                                                                                          |
-| `services-output-dir`    | `"Services"`                   | Destination for generated service interface files.                                                                                          |
+| Option                    | Default                        | Description                                                                                                                                 |
+| ------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `abstract-suffix`         | `"Base"`                       | Suffix appended to generated abstract class names, e.g. `UsersControllerBase`.                                                              |
+| `cancellation-token`      | `true`                         | When `true`, adds `CancellationToken cancellationToken` to every controller action and service method, and emits `using System.Threading;`. |
+| `controller-query-params` | `"required"`                   | Which `@query` parameters become action and service method parameters: `"all"`, `"required"` (non-optional only) or `"none"`.               |
+| `controllers-namespace`   | `<root-namespace>.Controllers` | Verbatim C# namespace for controller files.                                                                                                 |
+| `controllers-output-dir`  | `"Controllers"`                | Destination for generated controller files.                                                                                                 |
+| `route-prefix`            | `"api/{version}"`              | Prefix prepended to every action route. `{version}` becomes each API version's value, or is removed when the service has no `@versioned`.   |
+| `services-namespace`      | `<root-namespace>.Services`    | Verbatim C# namespace for service interface files.                                                                                          |
+| `services-output-dir`     | `"Services"`                   | Destination for generated service interface files.                                                                                          |

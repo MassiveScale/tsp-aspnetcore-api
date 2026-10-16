@@ -118,6 +118,8 @@ export interface ResolvedOptions {
   abstractSuffix: string;
   /** Whether to add a CancellationToken parameter to operations. */
   cancellationToken: boolean;
+  /** Which `@query` parameters become controller action and service method parameters. */
+  controllerQueryParams: "all" | "required" | "none";
   /** Whether to remove previously-generated files from the output directories before emitting. */
   cleanOutputDirs: boolean;
   /** Resolved template override paths (absolute). */
@@ -214,6 +216,7 @@ export async function $onEmit(
     nullableProperties: options.nullableProperties,
     abstractSuffix: options.abstractSuffix,
     cancellationToken: options.cancellationToken,
+    controllerQueryParams: options.controllerQueryParams,
     mergePatchStyle: options.mergePatchStyle,
     modelsNamespace: options.modelsNamespace,
     helpersNamespace: options.helpersNamespace,
@@ -461,6 +464,7 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     nullableProperties: raw["nullable-properties"] ?? true,
     abstractSuffix: raw["abstract-suffix"] ?? "Base",
     cancellationToken: raw["cancellation-token"] ?? true,
+    controllerQueryParams: raw["controller-query-params"] ?? "required",
     cleanOutputDirs: raw["clean-output-dirs"] ?? true,
     templates: resolveTemplatePaths(raw.templates),
     emitValidators: raw["emit-validators"] ?? false,

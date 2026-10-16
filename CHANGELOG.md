@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `controller-query-params` option that decides which `@query` parameters become controller action and service method parameters: `"all"`, `"required"` or `"none"`. See [Controllers and Services — Query parameters](docs/controllers-and-services.md#query-parameters).
+
+### Changed
+
+- **Breaking:** optional `@query` parameters are no longer emitted on controller actions and service methods by default, because `controller-query-params` defaults to `"required"`. Set `controller-query-params: "all"` to keep the previous signatures.
+
 ## [1.0.0] - 2026-10-15
 
 First stable release. It fixes the release blockers found in the pre-1.0.0 review. Several fixes change generated code or runtime behaviour; the entries marked **Breaking** list what to check when upgrading from a beta.

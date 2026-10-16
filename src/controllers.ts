@@ -89,6 +89,8 @@ export interface ControllerOptions {
   abstractSuffix: string;
   /** Whether to add a CancellationToken parameter to operations. */
   cancellationToken: boolean;
+  /** Which `@query` parameters become action and service method parameters. */
+  controllerQueryParams: "all" | "required" | "none";
   /** Whether to use the generic `MergePatch<T>` helper or per-entity typed classes. */
   mergePatchStyle: "generic" | "typed";
   /** Verbatim C# namespace for all model and enum files. */
@@ -318,8 +320,9 @@ function buildOperationView(
  * @param program - The compiled TypeSpec program.
  * @param parameters - Typed HTTP parameter list (path, query, header).
  * @param body - Optional request body descriptor.
- * @param options - Nullability options.
+ * @param options - Nullability and query-parameter options.
  * @returns Ordered array of parameter view models (body always last if present).
+ *   Query parameters are kept according to `options.controllerQueryParams`.
  *   Each parameter's C# identifier is its `@serverName`, or the wire name made
  *   into a valid, unique camelCase identifier (never `body` or
  *   `cancellationToken`, which the generated signature already uses). When the
@@ -339,7 +342,11 @@ function buildParams(
   if (hasBody) taken.add(BODY_PARAM_NAME);
   if (options.cancellationToken) taken.add(CANCELLATION_TOKEN_PARAM_NAME);
 
-  const bound = parameters.filter((param) => httpParamBinding(param.type));
+  const bound = parameters.filter(
+    (param) =>
+      httpParamBinding(param.type) &&
+      includeQueryParam(param, options.controllerQueryParams),
+  );
   for (const param of bound) {
     const serverName = getServerName(program, param.param);
     if (serverName) taken.add(serverName.replace(/^@/, ""));
@@ -375,6 +382,29 @@ function buildParams(
   }
 
   return result;
+}
+
+/**
+ * Decides whether a parameter is kept under the `controller-query-params`
+ * option. Non-query parameters are always kept.
+ *
+ * @param param - The HTTP parameter.
+ * @param mode - The resolved `controller-query-params` value.
+ * @returns `true` when the parameter should be emitted.
+ */
+function includeQueryParam(
+  param: HttpOperationParameter,
+  mode: ControllerOptions["controllerQueryParams"],
+): boolean {
+  if (param.type !== "query") return true;
+  switch (mode) {
+    case "all":
+      return true;
+    case "required":
+      return !param.param.optional;
+    case "none":
+      return false;
+  }
 }
 
 /**

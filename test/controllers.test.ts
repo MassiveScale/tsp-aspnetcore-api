@@ -198,6 +198,186 @@ describe("csharp emitter - controllers", () => {
     });
   });
 
+  describe("controller-query-params option", () => {
+    const querySpec = `
+      import "@typespec/http";
+      using TypeSpec.Http;
+
+      @service(#{title: "Search" })
+      namespace Demo;
+
+      model Result { id: string; }
+
+      @route("/results")
+      interface Results {
+        @get search(
+          @path tenant: string,
+          @query q: string,
+          @query page?: int32,
+          @query size?: int32 = 20,
+          @header("X-Trace") trace?: string,
+        ): Result[];
+        @get list(@query filter?: string): Result[];
+        @post create(@query dryRun: boolean, @body item: Result): void;
+      }
+    `;
+
+    /** Emits `querySpec` and returns the controller and service interface. */
+    async function emitQuerySpec(options: Record<string, unknown>) {
+      const results = await emit(querySpec, options);
+      const ctrl = results["Controllers/ResultsControllerBase.g.cs"];
+      const svc = results["Services/IResultsService.g.cs"];
+      ok(
+        ctrl,
+        `expected controller file, got ${Object.keys(results).join(", ")}`,
+      );
+      ok(svc, `expected service file, got ${Object.keys(results).join(", ")}`);
+      return { ctrl, svc };
+    }
+
+    /** Asserts that `text` contains `expected`. */
+    function assertIncludes(text: string, expected: string) {
+      ok(
+        text.includes(expected),
+        `expected '${expected}' in:
+${text}`,
+      );
+    }
+
+    it("emits only required query parameters by default", async () => {
+      const { ctrl, svc } = await emitQuerySpec({});
+      assertIncludes(
+        ctrl,
+        'Search([FromRoute] string tenant, [FromQuery] string q, [FromHeader(Name = "X-Trace")] string? trace, CancellationToken cancellationToken);',
+      );
+      assertIncludes(ctrl, "List(CancellationToken cancellationToken);");
+      assertIncludes(
+        ctrl,
+        "Create([FromQuery] bool dryRun, [FromBody] Result body, CancellationToken cancellationToken);",
+      );
+      assertIncludes(
+        svc,
+        "Task<IList<Result>?> SearchAsync(string tenant, string q, string? trace, CancellationToken cancellationToken);",
+      );
+      assertIncludes(
+        svc,
+        "Task<IList<Result>?> ListAsync(CancellationToken cancellationToken);",
+      );
+      assertIncludes(
+        svc,
+        "Task CreateAsync(bool dryRun, Result body, CancellationToken cancellationToken);",
+      );
+    });
+
+    it("emits only required query parameters when set to required", async () => {
+      const { ctrl } = await emitQuerySpec({
+        "controller-query-params": "required",
+      });
+      assertIncludes(
+        ctrl,
+        'Search([FromRoute] string tenant, [FromQuery] string q, [FromHeader(Name = "X-Trace")] string? trace, CancellationToken cancellationToken);',
+      );
+      ok(
+        !ctrl.includes("page"),
+        `unexpected page param in:
+${ctrl}`,
+      );
+      ok(
+        !ctrl.includes("size"),
+        `unexpected size param in:
+${ctrl}`,
+      );
+      ok(
+        !ctrl.includes("filter"),
+        `unexpected filter param in:
+${ctrl}`,
+      );
+    });
+
+    it("emits every query parameter when set to all", async () => {
+      const { ctrl, svc } = await emitQuerySpec({
+        "controller-query-params": "all",
+      });
+      assertIncludes(
+        ctrl,
+        'Search([FromRoute] string tenant, [FromQuery] string q, [FromQuery] int? page, [FromQuery] int? size, [FromHeader(Name = "X-Trace")] string? trace, CancellationToken cancellationToken);',
+      );
+      assertIncludes(
+        ctrl,
+        "List([FromQuery] string? filter, CancellationToken cancellationToken);",
+      );
+      assertIncludes(
+        svc,
+        "Task<IList<Result>?> SearchAsync(string tenant, string q, int? page, int? size, string? trace, CancellationToken cancellationToken);",
+      );
+    });
+
+    it("emits no query parameters when set to none", async () => {
+      const { ctrl, svc } = await emitQuerySpec({
+        "controller-query-params": "none",
+      });
+      ok(
+        !ctrl.includes("[FromQuery]"),
+        `unexpected [FromQuery] in:
+${ctrl}`,
+      );
+      assertIncludes(
+        ctrl,
+        'Search([FromRoute] string tenant, [FromHeader(Name = "X-Trace")] string? trace, CancellationToken cancellationToken);',
+      );
+      assertIncludes(
+        ctrl,
+        "Create([FromBody] Result body, CancellationToken cancellationToken);",
+      );
+      assertIncludes(
+        svc,
+        "Task CreateAsync(Result body, CancellationToken cancellationToken);",
+      );
+    });
+
+    it("leaves an empty parameter list when every parameter is dropped and cancellation-token is false", async () => {
+      const { ctrl, svc } = await emitQuerySpec({
+        "controller-query-params": "none",
+        "cancellation-token": false,
+      });
+      assertIncludes(ctrl, "public abstract Task<IActionResult> List();");
+      assertIncludes(svc, "Task<IList<Result>?> ListAsync();");
+    });
+
+    it("does not reserve the identifier of a dropped query parameter", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        import "@massivescale/tsp-aspnetcore-api";
+        using TypeSpec.Http;
+        using MassiveScale.AspNetCoreApi;
+
+        @service namespace Demo;
+
+        @route("/items")
+        interface Items {
+          @get list(@path itemId: string, @query @serverName("itemId") item_id?: string): void;
+        }
+      `,
+        { "controller-query-params": "required" },
+      );
+      assertIncludes(
+        results["Controllers/ItemsControllerBase.g.cs"],
+        "List([FromRoute] string itemId, CancellationToken cancellationToken);",
+      );
+    });
+
+    it("rejects an unknown value", async () => {
+      const [, diagnostics] = await emitWithDiagnostics(querySpec, {
+        "controller-query-params": "optional",
+      });
+      ok(
+        diagnostics.some((d) => d.severity === "error"),
+        `expected an option error, got ${diagnostics.map((d) => d.code).join(", ")}`,
+      );
+    });
+  });
+
   describe("controller generation", () => {
     it("emits a controller for an HTTP interface", async () => {
       const results = await emit(`
@@ -337,7 +517,8 @@ describe("csharp emitter - controllers", () => {
     });
 
     it("emits path and query parameters with correct binding attributes", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         import "@typespec/http";
         using TypeSpec.Http;
 
@@ -351,7 +532,9 @@ describe("csharp emitter - controllers", () => {
           @get search(@query q: string, @query page?: int32): Result[];
           @get @route("{id}") read(@path id: string): Result;
         }
-      `);
+      `,
+        { "controller-query-params": "all" },
+      );
 
       const ctrl = results["Controllers/ResultsControllerBase.g.cs"];
       ok(
