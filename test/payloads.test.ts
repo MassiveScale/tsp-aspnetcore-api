@@ -1061,7 +1061,8 @@ describe("csharp emitter - response and metadata-only models", () => {
 
   describe("request handling (requirement 7)", () => {
     it("keeps spread @path, @query and @header parameters on controllers and services", async () => {
-      const results = await emit(`
+      const results = await emit(
+        `
         ${HTTP_HEADER}
         @service namespace Demo;
 
@@ -1073,7 +1074,9 @@ describe("csharp emitter - response and metadata-only models", () => {
         @route("/w") interface Widgets {
           @get @route("{id}") read(...WidgetKey, ...Paging, ...IfMatchHeader): Widget;
         }
-      `);
+      `,
+        { "controller-query-params": "all" },
+      );
       assertContains(
         results["Controllers/WidgetsControllerBase.g.cs"],
         'Read([FromRoute] string id, [FromQuery] int? top, [FromHeader(Name = "If-Match")] string? ifMatch, CancellationToken cancellationToken);',

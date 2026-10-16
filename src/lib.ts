@@ -229,6 +229,17 @@ export interface EmitterOptions {
   "cancellation-token"?: boolean;
 
   /**
+   * Which `@query` parameters become controller action and service method
+   * parameters:
+   * - `"all"` — every query parameter.
+   * - `"required"` — only non-optional query parameters (the default).
+   * - `"none"` — no query parameters.
+   *
+   * Path and header parameters and the request body are always emitted.
+   */
+  "controller-query-params"?: "all" | "required" | "none";
+
+  /**
    * When `true` (the default), previously-generated files are removed from the
    * output directories before emitting, so renamed or deleted TypeSpec types do
    * not leave stale `.g.cs` files behind.
@@ -413,6 +424,13 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
       nullable: true,
       description:
         "When true, adds a CancellationToken parameter to every controller action and service method. Defaults to true.",
+    },
+    "controller-query-params": {
+      type: "string",
+      enum: ["all", "required", "none"],
+      nullable: true,
+      description:
+        'Which @query parameters become controller action and service method parameters: "all", "required" (only non-optional ones) or "none". Defaults to "required".',
     },
     "clean-output-dirs": {
       type: "boolean",
