@@ -670,6 +670,113 @@ describe("csharp emitter - models", () => {
       );
     });
 
+    it("instantiates discriminated defaults using their concrete model and inherited members", async () => {
+      const source = `
+        import "@massivescale/tsp-aspnetcore-api";
+        using MassiveScale.AspNetCoreApi;
+        namespace Demo;
+        enum Kind { dog: "canine", cat }
+        @discriminator("kind")
+        model Pet {
+          @encodedName("application/json", "$type") kind: Kind;
+          @serverName("DisplayName") name: string;
+        }
+        model Mammal extends Pet {}
+        @serverName("Canine")
+        model Dog extends Mammal { kind: Kind.dog; bark?: boolean = true; }
+        model Cat extends Pet { kind: Kind.cat; }
+        model Owner {
+          pet: Pet = #{ kind: Kind.dog, name: "Rex" };
+          nullablePet: Pet | null = #{ kind: Kind.cat, name: "Kit" };
+          dog: Dog = #{ kind: Kind.dog, name: "Spot", bark: false };
+          pets: Pet[] = #[#{ kind: Kind.dog, name: "Fido" }];
+        }
+      `;
+      for (const qualified of [false, true]) {
+        const results = await emit(source, {
+          "fully-qualified-types": qualified,
+          "models-namespace": "Demo.Models",
+        });
+        const file = results["Owner.g.cs"];
+        const prefix = qualified ? "Demo.Models." : "";
+        ok(file.includes(`new ${prefix}Canine { DisplayName = "Rex" }`), file);
+        ok(file.includes(`new ${prefix}Cat { DisplayName = "Kit" }`), file);
+        ok(
+          file.includes(
+            `new ${prefix}Canine { DisplayName = "Spot", Bark = false }`,
+          ),
+          file,
+        );
+        ok(
+          file.includes(
+            `new List<${prefix}Pet> { new ${prefix}Canine { DisplayName = "Fido" } }`,
+          ),
+          file,
+        );
+        ok(!file.includes("Kind ="), file);
+        ok(!file.includes("new Pet"), file);
+      }
+    });
+
+    it("renders nested discriminated defaults without assigning JSON discriminator metadata", async () => {
+      const results = await emit(`
+        namespace Demo;
+        @discriminator("kind") model Pet { kind: string; name?: string; }
+        model Dog extends Pet { kind: "dog"; }
+        model Kennel { pet: Pet; }
+        model Owner {
+          kennel: Kennel = #{ pet: #{ kind: "dog", name: "Rex" } };
+          emptyDog: Dog = #{ kind: "dog" };
+          unrecognized: Pet = #{ kind: "unknown" };
+          unnamed: Pet;
+        }
+      `);
+      const file = results["Owner.g.cs"];
+      ok(file.includes('new Kennel { Pet = new Dog { Name = "Rex" } }'), file);
+      ok(file.includes("EmptyDog { get; set; } = new Dog();"), file);
+      for (const member of ["Unrecognized", "Unnamed"]) {
+        ok(!file.includes(`${member} { get; set; } =`), file);
+      }
+    });
+
+    it("suppresses discriminated defaults whose selected model has no emitted class", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+        @service namespace Demo;
+        model Widget { value?: string; }
+        @discriminator("kind") model Pet { kind: string; }
+        model Dog extends Pet { kind: "dog"; }
+        model Odd extends Pet { kind: "odd"; @body body: Widget; }
+        model Kennel { pet: Pet; }
+        model Owner {
+          pet: Pet = #{ kind: "odd" };
+          pets: Pet[] = #[#{ kind: "odd" }];
+          kennel: Kennel = #{ pet: #{ kind: "odd" } };
+          valid: Pet = #{ kind: "dog" };
+        }
+        @route("/owners") @get op read(): Owner;
+      `);
+      strictEqual(
+        diagnostics.length,
+        1,
+        diagnostics
+          .map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`)
+          .join("\n"),
+      );
+      strictEqual(
+        diagnostics[0].code,
+        "@massivescale/tsp-aspnetcore-api/discriminator-variant-skipped",
+      );
+      ok(!results["Models/Odd.g.cs"]);
+      const owner = results["Models/Owner.g.cs"];
+      for (const name of ["Pet", "Pets", "Kennel"]) {
+        ok(!owner.includes(`${name} { get; set; } =`), owner);
+      }
+      ok(owner.includes("Valid { get; set; } = new Dog();"), owner);
+      ok(!Object.values(results).some((file) => file.includes("new Odd")));
+    });
+
     it("uses @serverName identifiers inside object defaults", async () => {
       const results = await emit(`
         import "@massivescale/tsp-aspnetcore-api";

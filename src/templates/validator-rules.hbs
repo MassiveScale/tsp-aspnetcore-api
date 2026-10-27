@@ -6,6 +6,36 @@
   `versionGroups` for a version-aware validator. Include it on its own line
   inside the constructor; every rendered line gets that line's indent.
 --}}
+{{#if mergePatchDiscriminator}}
+// The discriminator selects a derived partial-update validator, not a complete-model validator.
+RuleFor(x => x).Custom((patch, context) =>
+{
+    if (!patch.Properties.TryGetValue({{csharpString mergePatchDiscriminator.propertyName}}, out var discriminator)) return;
+    if (discriminator.ValueKind != System.Text.Json.JsonValueKind.String)
+    {
+        context.AddFailure({{csharpString mergePatchDiscriminator.propertyName}}, "The discriminator must be a string.");
+        return;
+    }
+    switch (discriminator.GetString())
+    {
+{{#each mergePatchDiscriminator.variants}}
+        case {{csharpString value}}:
+        {
+            var derivedPatch = new {{{patchTypeName}}} { Properties = patch.Properties };
+            foreach (var failure in {{{validatorExpression}}}.Validate(derivedPatch).Errors)
+                context.AddFailure(failure);
+            break;
+        }
+{{/each}}
+        default:
+            context.AddFailure({{csharpString mergePatchDiscriminator.propertyName}}, "The discriminator value is not recognized.");
+            break;
+    }
+});
+
+When(patch => !patch.IsDefined({{csharpString mergePatchDiscriminator.propertyName}}), () =>
+{
+{{/if}}
 {{#each properties}}
 {{> propertyRules}}
 {{/each}}
@@ -22,3 +52,6 @@ When(_ => {{{condition}}}, () =>
 });
 
 {{/each}}
+{{#if mergePatchDiscriminator}}
+});
+{{/if}}

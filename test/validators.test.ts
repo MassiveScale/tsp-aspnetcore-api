@@ -25,6 +25,42 @@ function writeTemplate(name: string, content: string): string {
 
 describe("csharp emitter - validators", () => {
   describe("@discriminator decorator", () => {
+    it("dispatches plain PATCH bodies to concrete PATCH validators across version strategies", async () => {
+      const source = `
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+        @service @versioned(Versions) namespace Demo;
+        enum Versions { v1: "v1", v2: "v2" }
+        @discriminator("kind") model Pet { kind: string; name?: string; }
+        model Dog extends Pet { kind: "dog"; @added(Versions.v2) @minValue(10) value?: int32; }
+        @route("/pets") @patch op update(@body body: Pet): void;
+        @route("/pets") @post op create(@body body: Pet): void;
+      `;
+      for (const strategy of ["earliest", "per-version", "version-aware"]) {
+        const files = await emit(source, {
+          "emit-validators": true,
+          "emit-controllers": false,
+          "emit-services": false,
+          "validators-version-strategy": strategy,
+          "fully-qualified-types": true,
+        });
+        for (const directory of strategy === "per-version"
+          ? ["v1/", "v2/"]
+          : [""]) {
+          const base = files[`Validators/${directory}PetPatchValidator.g.cs`];
+          ok(base.includes("DogPatchValidator dogPatchValidator"), base);
+          ok(base.includes("v.Add<Demo.Models.Dog>(dogPatchValidator)"), base);
+          ok(
+            base.includes("When(x => !_derivedTypes.Contains(x.GetType())"),
+            base,
+          );
+          ok(files[`Validators/${directory}DogPatchValidator.g.cs`]);
+        }
+      }
+    });
+
     it("omits discriminator properties from generated validators", async () => {
       const results = await emit(
         `
@@ -1543,6 +1579,106 @@ describe("csharp emitter - validators", () => {
       "emit-services": false,
       "emit-interfaces": false,
     };
+
+    it("dispatches nested polymorphic patches across helper styles and version strategies", async () => {
+      const source = `
+        import "@typespec/http";
+        import "@typespec/versioning";
+        import "@massivescale/tsp-aspnetcore-api";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+        using MassiveScale.AspNetCoreApi;
+        @service @versioned(Versions) namespace Demo;
+        enum Versions { v1: "v1", v2: "v2" }
+        enum Kind { dog: "canine" }
+        @discriminator("kind")
+        model Pet { @encodedName("application/json", "$type") kind: Kind; name?: string; }
+        model Mammal extends Pet {}
+        model Details { @minValue(1) count?: int32; }
+        @serverName("Canine")
+        model Dog extends Mammal {
+          kind: Kind.dog;
+          @added(Versions.v2) @minValue(2) teeth?: int32;
+          details?: Details;
+          friend?: Pet;
+        }
+        model Owner { pet?: Pet; catalog?: Record<Pet>; }
+        @route("/owners") @patch op update(@body body: MergePatchUpdate<Owner>): void;
+      `;
+      for (const style of ["generic", "typed"]) {
+        for (const strategy of [
+          "earliest",
+          "latest",
+          "per-version",
+          "version-aware",
+        ]) {
+          const [results, diagnostics] = await emitWithDiagnostics(source, {
+            ...OPTIONS,
+            validators: "patch",
+            "merge-patch-style": style,
+            "validators-version-strategy": strategy,
+            "fully-qualified-types": true,
+            "models-namespace": "Demo.Models",
+            "helpers-namespace": "Demo.Helpers",
+          });
+          strictEqual(
+            diagnostics.length,
+            strategy === "latest" ? 1 : 0,
+            describeDiagnostics(diagnostics),
+          );
+          if (strategy === "latest") {
+            strictEqual(
+              diagnostics[0].code,
+              "@massivescale/tsp-aspnetcore-api/version-strategy-breaking",
+            );
+          }
+          const directories =
+            strategy === "per-version" ? ["v1/", "v2/"] : [""];
+          for (const directory of directories) {
+            const base =
+              results[`Validators/${directory}PetPatchValidator.g.cs`];
+            const derived =
+              results[`Validators/${directory}CaninePatchValidator.g.cs`];
+            const owner =
+              results[`Validators/${directory}OwnerPatchValidator.g.cs`];
+            const patchType =
+              style === "generic"
+                ? "Demo.Helpers.MergePatch<Demo.Models.Canine>"
+                : "Demo.Models.CanineMergePatchUpdate";
+            ok(
+              base.includes(
+                `AbstractValidator<${patchType}> caninePatchValidator`,
+              ),
+              base,
+            );
+            ok(base.includes('case "canine":'), base);
+            ok(
+              base.includes(
+                `new ${patchType} { Properties = patch.Properties }`,
+              ),
+              base,
+            );
+            ok(
+              base.includes('When(patch => !patch.IsDefined("$type"), () =>'),
+              base,
+            );
+            ok(owner.includes('if (!nestedPatch.IsDefined("$type"))'), owner);
+            ok(owner.includes("The discriminator is required."), owner);
+            ok(derived.includes("detailsPatchValidator"), derived);
+            ok(results[`Validators/${directory}DetailsPatchValidator.g.cs`]);
+            if (
+              strategy === "version-aware" ||
+              directory === "v2/" ||
+              strategy === "latest"
+            ) {
+              ok(derived.includes('.When(x => x.IsDefined("teeth")'), derived);
+            } else {
+              ok(!derived.includes('x.IsDefined("teeth")'), derived);
+            }
+          }
+        }
+      }
+    });
 
     it("emits nested MergePatch validators for references declared only on a derived type", async () => {
       const results = await emit(

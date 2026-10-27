@@ -172,6 +172,8 @@ interface PropertyData {
   mergePatchValidatorTypeName?: string;
   mergePatchValidatorParamName?: string;
   mergePatchFactoryTypeName?: string;
+  /** JSON discriminator required on a non-null nested polymorphic patch. */
+  mergePatchDiscriminatorName?: string;
   /** Like `referencedValidatorExpression`, for the nested rules of a MergePatch validator. */
   mergePatchValidatorExpression?: string;
 }
@@ -196,6 +198,19 @@ interface DerivedTypeValidator {
   validatorExpression?: string;
   /** True when `validatorExpression` must be wrapped in a lambda. */
   lazy?: boolean;
+  /** Concrete PATCH validator, avoiding the shared POST/plain-PATCH DI key. */
+  concreteValidatorType?: string;
+}
+
+/** Dispatch information for a discriminated MergePatch body. */
+interface MergePatchDiscriminator {
+  propertyName: string;
+  variants: {
+    value: string;
+    patchTypeName: string;
+    paramName: string;
+    validatorExpression?: string;
+  }[];
 }
 
 /** One constructor parameter of a generated validator. */
@@ -240,6 +255,8 @@ interface ValidatorTemplateDataBase {
   referencedValidators?: ReferencedValidator[];
   /** Derived type validators for polymorphic dispatch (SetInheritanceValidator). */
   derivedTypeValidators?: DerivedTypeValidator[];
+  /** Selects a derived PATCH validator from the raw JSON discriminator. */
+  mergePatchDiscriminator?: MergePatchDiscriminator;
   /** Every constructor parameter, in order. Filled in by {@link resolveValidatorDependencies}. */
   constructorParameters: ConstructorParameter[];
   /** True when a child validator is resolved lazily from `serviceProvider`. */
@@ -870,6 +887,9 @@ function buildSinglePropertyData(
     mergePatchValidatorTypeName: mergePatchValidator?.typeName,
     mergePatchValidatorParamName: mergePatchValidator?.paramName,
     mergePatchFactoryTypeName: mergePatchValidator?.factoryTypeName,
+    mergePatchDiscriminatorName: modelRef
+      ? discriminatorJsonName(program, modelRef.model)
+      : undefined,
   };
 }
 
@@ -1264,6 +1284,55 @@ function buildDerivedTypeValidators(
   return derived.length > 0 ? derived : undefined;
 }
 
+/** Returns the JSON name of a model's own discriminator. */
+function discriminatorJsonName(
+  program: Program,
+  model: Model,
+): string | undefined {
+  const discriminator = getDiscriminator(program, model);
+  if (!discriminator) return undefined;
+  const property = validatorProperties(program, model).find(
+    (prop) => prop.name === discriminator.propertyName,
+  );
+  return property
+    ? resolveEncodedName(program, property, "application/json")
+    : discriminator.propertyName;
+}
+
+/** Builds raw-JSON dispatch to the available derived MergePatch validators. */
+function buildMergePatchDiscriminator(
+  program: Program,
+  model: Model,
+  options: ResolvedOptions,
+  validatedModels: readonly Model[],
+  routeModels: ValidatorRouteModels | undefined,
+): MergePatchDiscriminator | undefined {
+  const discriminator = getDiscriminator(program, model);
+  if (!discriminator) return undefined;
+  const [union] = getDiscriminatedUnionFromInheritance(model, discriminator);
+  const variants: MergePatchDiscriminator["variants"] = [];
+  for (const [value, derived] of union.variants) {
+    if (!validatedModels.includes(derived)) continue;
+    const entry = patchValidatorsFor(program, derived, routeModels).find(
+      (candidate) => isMergePatchName(candidate.rawBodyTypeName),
+    );
+    if (!entry) continue;
+    const modelName = csharpModelName(program, derived);
+    variants.push({
+      value,
+      patchTypeName: resolvePatchBodyInfo(
+        entry.rawBodyTypeName,
+        modelName,
+        computeModelTypeName(program, derived, options),
+        options,
+      ).qualifiedPatchBodyTypeName,
+      paramName: `${camelFirst(modelName)}PatchValidator`,
+    });
+  }
+  variants.sort((a, b) => (a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
+  return { propertyName: discriminatorJsonName(program, model)!, variants };
+}
+
 /**
  * BFS from `initialModels` following model-typed properties, returning the full
  * transitive closure of reachable user-defined models.
@@ -1404,8 +1473,13 @@ export function collectValidatorModelsFromRoutes(
             nestedPostModels.add(reference.model);
             continue;
           }
-          addPatchBody(program, patchModels, reference.model, true);
-          pending.push(reference.model);
+          for (const candidate of [
+            reference.model,
+            ...getAllDescendants(allModels, reference.model),
+          ]) {
+            addPatchBody(program, patchModels, candidate, true);
+            pending.push(candidate);
+          }
         }
       }
     }
@@ -1527,6 +1601,7 @@ interface ValidatorDependency {
   serviceType: string;
   /** Constructor parameter name used when the dependency is injected. */
   paramName: string;
+  concreteType?: string;
   /**
    * Writes the resolved C# expression into the template view model.
    * `lazy` is true when the expression must be evaluated per validation.
@@ -1554,6 +1629,7 @@ function collectDependencies(
   propertyGroups: PropertyData[][],
   isMergePatchBody: boolean,
   derivedTypeValidators: DerivedTypeValidator[] | undefined,
+  mergePatchDiscriminator?: MergePatchDiscriminator,
 ): ValidatorDependency[] {
   const dependencies: ValidatorDependency[] = [];
   for (const props of propertyGroups) {
@@ -1583,9 +1659,19 @@ function collectDependencies(
     dependencies.push({
       serviceType: derived.qualifiedTypeName,
       paramName: derived.paramName,
+      concreteType: derived.concreteValidatorType,
       apply: (expression, lazy) => {
         derived.validatorExpression = expression;
         derived.lazy = lazy || undefined;
+      },
+    });
+  }
+  for (const variant of mergePatchDiscriminator?.variants ?? []) {
+    dependencies.push({
+      serviceType: variant.patchTypeName,
+      paramName: variant.paramName,
+      apply: (expression) => {
+        variant.validatorExpression = expression;
       },
     });
   }
@@ -1646,16 +1732,19 @@ function resolveValidatorDependencies(specs: readonly ValidatorSpec[]): void {
         dependency.apply("this", false);
       } else if (lazy.has(dependency.serviceType)) {
         dependency.apply(
-          `serviceProvider.GetRequiredService<AbstractValidator<${dependency.serviceType}>>()`,
+          `serviceProvider.GetRequiredService<${dependency.concreteType ?? `AbstractValidator<${dependency.serviceType}>`}>()`,
           true,
         );
       } else {
-        let paramName = injected.get(dependency.serviceType);
+        const injectionKey = dependency.concreteType ?? dependency.serviceType;
+        let paramName = injected.get(injectionKey);
         if (paramName === undefined) {
           paramName = dependency.paramName;
-          injected.set(dependency.serviceType, paramName);
+          injected.set(injectionKey, paramName);
           parameters.push({
-            type: `AbstractValidator<${dependency.serviceType}>`,
+            type:
+              dependency.concreteType ??
+              `AbstractValidator<${dependency.serviceType}>`,
             name: paramName,
           });
         }
@@ -1871,6 +1960,24 @@ async function emitValidatorModels(
         ? deriveMergePatchReferencedValidators(program, options, patchProps)
         : deriveReferencedValidators(program, options, patchProps);
       const usesJsonOptions = isMergePatchBody && patchRefs.length > 0;
+      const mergePatchDiscriminator = isMergePatchBody
+        ? buildMergePatchDiscriminator(
+            program,
+            model,
+            options,
+            allModels,
+            routeModels,
+          )
+        : undefined;
+      const derivedTypeValidators = !isMergePatchBody
+        ? buildDerivedTypeValidators(program, model, options, allModels)
+        : undefined;
+      for (const derived of derivedTypeValidators ?? []) {
+        derived.paramName = `${camelFirst(derived.typeName)}PatchValidator`;
+        derived.concreteValidatorType = namespace
+          ? `${namespace}.${derived.typeName}PatchValidator`
+          : `${derived.typeName}PatchValidator`;
+      }
       const data: ValidatorTemplateData = {
         namespace,
         modelsNamespace: options.modelsNamespace,
@@ -1889,6 +1996,8 @@ async function emitValidatorModels(
         qualifiedPatchBodyTypeName,
         isMergePatchBody: isMergePatchBody || undefined,
         usesJsonOptions: usesJsonOptions || undefined,
+        mergePatchDiscriminator,
+        derivedTypeValidators,
         properties: patchProps,
         referencedValidators: patchRefs.length > 0 ? patchRefs : undefined,
         constructorParameters: [],
@@ -1907,7 +2016,8 @@ async function emitValidatorModels(
         dependencies: collectDependencies(
           [patchProps],
           isMergePatchBody,
-          undefined,
+          derivedTypeValidators,
+          mergePatchDiscriminator,
         ),
       });
     }
@@ -2048,6 +2158,24 @@ async function emitVersionAwareValidatorModels(
           )
         : deriveReferencedValidators(program, options, ...propertyGroups);
       const usesJsonOptions = isMergePatchBody && patchRefs.length > 0;
+      const mergePatchDiscriminator = isMergePatchBody
+        ? buildMergePatchDiscriminator(
+            program,
+            model,
+            options,
+            allModels,
+            routeModels,
+          )
+        : undefined;
+      const derivedTypeValidators = !isMergePatchBody
+        ? buildDerivedTypeValidators(program, model, options, allModels)
+        : undefined;
+      for (const derived of derivedTypeValidators ?? []) {
+        derived.paramName = `${camelFirst(derived.typeName)}PatchValidator`;
+        derived.concreteValidatorType = namespace
+          ? `${namespace}.${derived.typeName}PatchValidator`
+          : `${derived.typeName}PatchValidator`;
+      }
       const data: VersionAwareValidatorTemplateData = {
         namespace,
         modelsNamespace: options.modelsNamespace,
@@ -2066,6 +2194,8 @@ async function emitVersionAwareValidatorModels(
         qualifiedPatchBodyTypeName,
         isMergePatchBody: isMergePatchBody || undefined,
         usesJsonOptions: usesJsonOptions || undefined,
+        mergePatchDiscriminator,
+        derivedTypeValidators,
         allVersions: versionValues,
         defaultVersion,
         baseProperties,
@@ -2089,7 +2219,8 @@ async function emitVersionAwareValidatorModels(
         dependencies: collectDependencies(
           propertyGroups,
           isMergePatchBody,
-          undefined,
+          derivedTypeValidators,
+          mergePatchDiscriminator,
         ),
       });
     }

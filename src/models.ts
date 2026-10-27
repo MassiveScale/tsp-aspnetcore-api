@@ -41,6 +41,7 @@ import {
   csharpModelName,
   enumMemberIdentifier,
   enumMemberIdentifiers,
+  propertyIdentifier,
   propertyIdentifiers,
   qualifyTypeName,
 } from "./naming.js";
@@ -168,7 +169,7 @@ export async function emitModelsAndEnums(
           namespace: interfaceNs,
           usings,
           body: renderer.renderInterface(
-            buildInterfaceView(program, model, options),
+            buildInterfaceView(program, model, options, emittedModels),
           ),
         }),
       });
@@ -375,7 +376,7 @@ function buildClassView(
     baseClass: baseModel
       ? typeReference(baseModel, options, program)
       : undefined,
-    properties: buildPropertyViews(program, model, options),
+    properties: buildPropertyViews(program, model, options, emittedModels),
     discriminator,
     isAbstract: discriminator !== undefined,
   };
@@ -471,6 +472,7 @@ function buildInterfaceView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  emittedModels: ReadonlySet<Model>,
 ): InterfaceView {
   const ifaceName = csharpModelName(program, model);
   const baseModel = emittedBaseModel(program, model);
@@ -485,7 +487,7 @@ function buildInterfaceView(
     doc: docFor(program, model),
     interfaceName: `I${ifaceName.startsWith("@") ? ifaceName.slice(1) : ifaceName}`,
     baseInterface: baseIfaceName,
-    properties: buildPropertyViews(program, model, options),
+    properties: buildPropertyViews(program, model, options, emittedModels),
   };
 }
 
@@ -544,6 +546,7 @@ function defaultValueInitializer(
   targetSpecType: Type | undefined,
   options: ResolvedOptions,
   program: Program,
+  emittedModels: ReadonlySet<Model>,
   containingMemberName?: string,
 ): string | undefined {
   switch (value.valueKind) {
@@ -573,10 +576,17 @@ function defaultValueInitializer(
         targetSpecType,
         options,
         program,
+        emittedModels,
         containingMemberName,
       );
     case "ObjectValue":
-      return objectInitializer(value, targetSpecType, options, program);
+      return objectInitializer(
+        value,
+        targetSpecType,
+        options,
+        program,
+        emittedModels,
+      );
     default:
       return undefined;
   }
@@ -624,6 +634,7 @@ function arrayInitializer(
   targetSpecType: Type | undefined,
   options: ResolvedOptions,
   program: Program,
+  emittedModels: ReadonlySet<Model>,
   containingMemberName?: string,
 ): string | undefined {
   const elementType = LIST_TYPE_PATTERN.exec(targetType)?.[1];
@@ -642,6 +653,7 @@ function arrayInitializer(
       elementSpecType,
       options,
       program,
+      emittedModels,
       containingMemberName,
     );
     if (initializer === undefined) return undefined;
@@ -656,35 +668,72 @@ function objectInitializer(
   targetSpecType: Type | undefined,
   options: ResolvedOptions,
   program: Program,
+  emittedModels: ReadonlySet<Model>,
 ): string | undefined {
-  const model = modelTypeForInitializer(targetSpecType);
+  let model = modelTypeForInitializer(targetSpecType);
   if (!model) return undefined;
   if (isArrayModelType(model) || isRecordModelType(model)) return undefined;
-  if (getDiscriminator(program, model)) return undefined;
+  const discriminatorNames = new Set<string>();
+  const inheritedDiscriminator = discriminatorPropertyNameInHierarchy(
+    program,
+    model,
+  );
+  if (inheritedDiscriminator) discriminatorNames.add(inheritedDiscriminator);
+  for (
+    let discriminator = getDiscriminator(program, model);
+    discriminator;
+    discriminator = getDiscriminator(program, model)
+  ) {
+    discriminatorNames.add(discriminator.propertyName);
+    const tag = value.properties.get(discriminator.propertyName)?.value;
+    const wireValue =
+      tag?.valueKind === "StringValue"
+        ? tag.value
+        : tag?.valueKind === "EnumValue"
+          ? (tag.value.value ?? tag.value.name)
+          : undefined;
+    if (typeof wireValue !== "string") return undefined;
+    const [union] = getDiscriminatedUnionFromInheritance(model, discriminator);
+    const concreteModel = union.variants.get(wireValue);
+    if (!concreteModel || concreteModel === model) return undefined;
+    model = concreteModel;
+  }
+  if (!emittedModels.has(model)) return undefined;
 
   const modelType = typeReference(model, options, program);
-  const properties = classProperties(program, model);
-  const memberNames = propertyIdentifiers(program, model);
+  const properties = new Map<string, { prop: ModelProperty; owner: Model }>();
+  for (
+    let current: Model | undefined = model;
+    current;
+    current = emittedBaseModel(program, current)
+  ) {
+    for (const prop of classProperties(program, current)) {
+      if (!properties.has(prop.name)) {
+        properties.set(prop.name, { prop, owner: current });
+      }
+    }
+  }
   const assignments: string[] = [];
 
   for (const descriptor of value.properties.values()) {
-    const prop = properties.find(
-      (candidate) => candidate.name === descriptor.name,
-    );
-    if (!prop) return undefined;
+    // Discriminator tags select the runtime type; they are not C# properties.
+    if (discriminatorNames.has(descriptor.name)) continue;
+    const property = properties.get(descriptor.name);
+    if (!property) return undefined;
+    const { prop, owner } = property;
 
-    const memberName = memberNames.get(prop)!;
+    const memberName = propertyIdentifier(program, model, prop);
     const encoding = resolvePropertyEncoding(program, prop, options);
     const targetType = propertyTypeName(
       program,
-      model,
+      owner,
       prop,
       options,
       encoding.typeOverride,
     );
     const inferredEnumType = inferredEnumTypeNameForProperty(
       program,
-      model,
+      owner,
       prop,
     );
     const qualifiedInferredEnumType = inferredEnumType
@@ -697,6 +746,7 @@ function objectInitializer(
       qualifiedInferredEnumType,
       options,
       program,
+      emittedModels,
       memberName,
     );
     if (initializer === undefined) return undefined;
@@ -738,6 +788,7 @@ function buildPropertyViews(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  emittedModels: ReadonlySet<Model>,
 ): PropertyView[] {
   const discriminatorPropertyName = discriminatorPropertyNameInHierarchy(
     program,
@@ -778,6 +829,7 @@ function buildPropertyViews(
           qualifiedInferredEnumType,
           options,
           program,
+          emittedModels,
           name,
         ),
       };
@@ -803,6 +855,7 @@ function resolveInitializer(
   qualifiedInferredEnumType: string | undefined,
   options: ResolvedOptions,
   program: Program,
+  emittedModels: ReadonlySet<Model>,
   containingMemberName?: string,
 ): string | undefined {
   if (value === undefined) return undefined;
@@ -823,6 +876,7 @@ function resolveInitializer(
     targetSpecType,
     options,
     program,
+    emittedModels,
     containingMemberName,
   );
 }

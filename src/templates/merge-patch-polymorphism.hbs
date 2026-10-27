@@ -1,0 +1,122 @@
+    private static bool TryResolvePatchType(Type declaredType, Type? runtimeType, JsonObject? existing, JsonObject patch, List<string> rejected, string prefix, out Type resolvedType, out string? discriminatorName, bool allowReplacement = false)
+    {
+        resolvedType = runtimeType ?? declaredType;
+        discriminatorName = null;
+        for (Type? current = declaredType; current is not null; current = current.BaseType)
+        {
+            var polymorphic = current.GetCustomAttribute<JsonPolymorphicAttribute>(inherit: false);
+            if (polymorphic is null) continue;
+            discriminatorName = polymorphic.TypeDiscriminatorPropertyName ?? "$type";
+            var supplied = FindJsonProperty(patch, discriminatorName);
+            var previous = existing is null ? null : FindJsonProperty(existing, discriminatorName);
+            var tag = supplied ?? previous;
+            if (tag is null)
+            {
+                if (runtimeType is not null || !declaredType.IsAbstract) return true;
+                rejected.Add(JoinPath(prefix, discriminatorName));
+                return false;
+            }
+            Type? selected = null;
+            if (tag.Value.Value is JsonValue value && value.TryGetValue<string>(out var text))
+            {
+                foreach (var derived in current.GetCustomAttributes<JsonDerivedTypeAttribute>(inherit: false))
+                {
+                    if (derived.TypeDiscriminator is string name && name == text)
+                    {
+                        selected = derived.DerivedType;
+                        break;
+                    }
+                }
+            }
+            if (selected is null || !declaredType.IsAssignableFrom(selected)
+                || (!allowReplacement && runtimeType is not null && runtimeType != selected))
+            {
+                rejected.Add(JoinPath(prefix, discriminatorName));
+                return false;
+            }
+            resolvedType = selected;
+            return true;
+        }
+        return true;
+    }
+
+    private static void RetainSharedProperties(JsonObject target, Type previousType, Type replacementType, string discriminatorName)
+    {
+        var retained = new List<KeyValuePair<string, JsonNode?>>();
+        foreach (var entry in target)
+        {
+            var previous = FindMember(previousType, entry.Key);
+            var replacement = FindMember(replacementType, entry.Key);
+            if (previous is not null && replacement is not null
+                && previous.Value.Property.PropertyType == replacement.Value.Property.PropertyType)
+            {
+                retained.Add(new(replacement.Value.WireName, entry.Value?.DeepClone()));
+            }
+        }
+        var tag = FindJsonProperty(target, discriminatorName)?.Value?.DeepClone();
+        target.Clear();
+        target[discriminatorName] = tag;
+        foreach (var entry in retained) target[entry.Key] = entry.Value;
+    }
+
+    private static KeyValuePair<string, JsonNode?>? FindJsonProperty(JsonObject value, string name)
+    {
+        KeyValuePair<string, JsonNode?>? match = null;
+        foreach (var entry in value)
+        {
+            if (string.Equals(entry.Key, name, StringComparison.OrdinalIgnoreCase)) match = entry;
+        }
+        return match;
+    }
+
+    private static PropertyInfo? DictionaryIndexer(Type type)
+    {
+        PropertyInfo? readOnlyIndexer = null;
+        foreach (var candidate in type.GetInterfaces())
+        {
+            if (!candidate.IsGenericType) continue;
+            var definition = candidate.GetGenericTypeDefinition();
+            if (candidate.GetGenericArguments()[0] != typeof(string)) continue;
+            if (definition == typeof(IDictionary<,>)) return candidate.GetProperty("Item");
+            if (definition == typeof(IReadOnlyDictionary<,>)) readOnlyIndexer = candidate.GetProperty("Item");
+        }
+        return readOnlyIndexer;
+    }
+
+    private static bool TryReadPathValue(object target, string name, out object? value)
+    {
+        if (DictionaryIndexer(target.GetType()) is { } indexer)
+        {
+            var contains = indexer.DeclaringType!.GetMethod("ContainsKey")!;
+            if (!(bool)contains.Invoke(target, new object[] { name })!)
+            {
+                value = null;
+                return false;
+            }
+            value = indexer.GetValue(target, new object[] { name });
+            return true;
+        }
+        var member = FindMember(target.GetType(), name);
+        value = member?.Property.GetValue(target);
+        return member is not null;
+    }
+
+    private static void RestoreRejectedObjects(object original, object updated, List<string[]> paths)
+    {
+        foreach (var path in paths)
+        {
+            object? previous = original;
+            object? replacement = updated;
+            for (var index = 0; index < path.Length - 1 && previous is not null && replacement is not null; index++)
+            {
+                TryReadPathValue(previous, path[index], out previous);
+                TryReadPathValue(replacement, path[index], out replacement);
+            }
+            if (previous is null || replacement is null || path.Length == 0
+                || !TryReadPathValue(previous, path[^1], out var preserved)) continue;
+            if (DictionaryIndexer(replacement.GetType()) is { CanWrite: true } indexer)
+                indexer.SetValue(replacement, preserved, new object[] { path[^1] });
+            else
+                FindMember(replacement.GetType(), path[^1])?.Property.SetValue(replacement, preserved);
+        }
+    }

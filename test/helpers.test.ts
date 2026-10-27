@@ -41,7 +41,7 @@ describe("csharp emitter - helpers", () => {
         `expected TryPatch diagnostics in:\n${helper}`,
       );
       ok(
-        helper.includes("private static void MergeObject("),
+        helper.includes("private static bool MergeObject("),
         `expected recursive merge in:\n${helper}`,
       );
       ok(
@@ -169,7 +169,7 @@ describe("csharp emitter - helpers", () => {
         `expected TryPatch in:\n${file}`,
       );
       ok(
-        file.includes("private static void MergeObject("),
+        file.includes("private static bool MergeObject("),
         `expected recursive merge in:\n${file}`,
       );
       ok(

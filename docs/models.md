@@ -206,6 +206,17 @@ public partial class Widget : IWidget
 
 Object-value members are resolved against the declared model, so nested object values, enum members, and arrays of objects use the same type-aware rendering as ordinary defaults. The emitter uses each property's effective C# name, including `@serverName` overrides. Unsupported or unknown members suppress the complete initializer rather than emitting a partial value. An explicit `#{}` default creates a new object for each containing instance; model-typed properties without an explicit default remain uninitialized.
 
+For a discriminated model, the default's discriminator value selects the concrete derived class. For example:
+
+```typespec
+@discriminator("kind")
+model Pet { kind: string; name: string; }
+model Dog extends Pet { kind: "dog"; }
+model Owner { pet: Pet = #{ kind: "dog", name: "Rex" }; }
+```
+
+The generated `Pet` property is initialized with `new Dog { Name = "Rex" }`, not the abstract `Pet`. The discriminator tag is JSON metadata, so it is not assigned as a C# property. String and string-valued enum tags are supported, including nested defaults, arrays, nullable properties, and inherited members. Use the TypeSpec discriminator property name in the default even when `@encodedName` changes its JSON name. A missing or unrecognized discriminator suppresses the initializer rather than instantiating the abstract base. Selecting a model without an emitted C# class (for example, an HTTP response envelope) also suppresses the complete initializer, including when that model appears inside a nested object or array default.
+
 Array defaults must use TypeSpec's array-value syntax `#[...]`. A bare `[...]` is a tuple _type_, and the TypeSpec compiler rejects it as a default with `expect-value: Is a tuple type, but is being used as a value here`. Array elements may be any supported value kind, including enum members, `null` (for nullable element types), and nested arrays.
 
 Scalar constructors remain unsupported and produce no initializer. Arrays containing unsupported scalar constructors likewise produce no initializer.

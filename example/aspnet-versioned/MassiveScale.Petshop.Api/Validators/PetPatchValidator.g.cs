@@ -30,11 +30,44 @@ public partial class PetPatchValidator : AbstractValidator<MergePatch<Pet>>
     /// <summary>
     /// Initializes a new instance of <see cref="PetPatchValidator"/> with version-aware auto-generated rules.
     /// </summary>
-    public PetPatchValidator(IHttpContextAccessor httpContextAccessor, Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions> jsonOptions, AbstractValidator<Tag> tagValidator)
+    public PetPatchValidator(IHttpContextAccessor httpContextAccessor, Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions> jsonOptions, AbstractValidator<Tag> tagValidator, AbstractValidator<MergePatch<Cat>> catPatchValidator, AbstractValidator<MergePatch<Dog>> dogPatchValidator)
     {
         _httpContextAccessor = httpContextAccessor;
         var jsonSerializerOptions = jsonOptions.Value.JsonSerializerOptions;
 
+        // The discriminator selects a derived partial-update validator, not a complete-model validator.
+        RuleFor(x => x).Custom((patch, context) =>
+        {
+            if (!patch.Properties.TryGetValue("$type", out var discriminator)) return;
+            if (discriminator.ValueKind != System.Text.Json.JsonValueKind.String)
+            {
+                context.AddFailure("$type", "The discriminator must be a string.");
+                return;
+            }
+            switch (discriminator.GetString())
+            {
+                case "cat":
+                {
+                    var derivedPatch = new MergePatch<Cat> { Properties = patch.Properties };
+                    foreach (var failure in catPatchValidator.Validate(derivedPatch).Errors)
+                        context.AddFailure(failure);
+                    break;
+                }
+                case "dog":
+                {
+                    var derivedPatch = new MergePatch<Dog> { Properties = patch.Properties };
+                    foreach (var failure in dogPatchValidator.Validate(derivedPatch).Errors)
+                        context.AddFailure(failure);
+                    break;
+                }
+                default:
+                    context.AddFailure("$type", "The discriminator value is not recognized.");
+                    break;
+            }
+        });
+
+        When(patch => !patch.IsDefined("$type"), () =>
+        {
         // Id is read-only and cannot be modified via patch
         this.RuleFor(x => x)
             .Must(x => !x.IsDefined("id"))
@@ -123,6 +156,7 @@ public partial class PetPatchValidator : AbstractValidator<MergePatch<Pet>>
 
         });
 
+        });
         ExtendRules();
     }
 
