@@ -40,8 +40,9 @@ const SPEC = (versionAware: boolean) => `
     @minValue(2) teeth?: int32;
     friend?: Gadget;
     layout?: WidgetLayout;
+    variantValue?: string;
   }
-  model Cog extends Gadget { kind: "cog"; size?: int32; }
+  model Cog extends Gadget { kind: "cog"; size?: int32 = 3; variantValue?: int32 = 7; }
   @discriminator("kind") model PlainPet { kind: string; @maxLength(4) name?: string; }
   model PlainDog extends PlainPet { kind: "dog"; @minValue(10) value?: int32; required: string; }
   model Widget {
@@ -51,6 +52,7 @@ const SPEC = (versionAware: boolean) => `
     slots?: WidgetSlot[];
     gadgets?: Gadget[];
     gadget?: Gadget;
+    gear?: Gear;
     catalog?: Record<Gadget>;
     labels?: Record<string>;
     groups?: Record<Record<string>>;
@@ -251,22 +253,37 @@ bool ApplyGadget(Widget target, string json, out System.Collections.Generic.IRea
     Check(widgetValidator.Validate(patch).IsValid, "the end-to-end patch must first pass validation");
     return patch.TryPatch(target, out rejectedPaths);
 }
-var gear = new Gear { Teeth = 5, Label = "old" };
+var gear = new Gear { Teeth = 5, Label = "old", VariantValue = "old subtype" };
 var polymorphic = new Widget { Gadget = gear };
 Check(ApplyGadget(polymorphic, """{"gadget":{"$type":"gear","teeth":6}}""", out var sameRejected) && sameRejected.Count == 0, "matching discriminator metadata must not be rejected");
 Check(ReferenceEquals(polymorphic.Gadget, gear) && gear.Teeth == 6, "same-type patches preserve object identity");
-Check(!ApplyGadget(polymorphic, """{"name":"ok","gadget":{"$type":"cog","teeth":1,"label":"new"}}""", out var mismatchRejected), "a different discriminator must be rejected");
-Check(mismatchRejected.Contains("gadget.$type") && gear.Teeth == 6 && gear.Label == "old" && polymorphic.Name == "ok", "a mismatch must reject the entire affected object before mutation, while independent siblings apply");
 foreach (var tag in new[] { "null", "4", "\\"unknown\\"" })
 {
     var invalid = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("{\\"gadget\\":{\\"$type\\":" + tag + ",\\"teeth\\":1}}");
-    Check(!invalid.TryPatch(polymorphic, out _) && gear.Teeth == 6, "application must reject invalid tags without relying on validation");
+    Check(!invalid.TryPatch(polymorphic, out _) && ReferenceEquals(polymorphic.Gadget, gear) && gear.Teeth == 6, "application must reject invalid tags without relying on validation");
 }
+Check(ApplyGadget(polymorphic, """{"name":"ok","gadget":{"size":4,"$TYPE":"cog"}}""", out var replacementRejected) && replacementRejected.Count == 0, "a different discriminator must replace the nested model");
+Check(polymorphic.Gadget is Cog { Label: "old", Size: 4, VariantValue: 7 } && gear.Teeth == 6 && gear.Label == "old" && polymorphic.Name == "ok", "replacement must preserve compatible shared fields, discard incompatible same-name fields, apply new fields, and leave the old instance untouched");
+Check(ApplyGadget(polymorphic, """{"gadget":{"$type":"gear","teeth":8,"label":"new"}}""", out _) && polymorphic.Gadget is Gear { Label: "new", Teeth: 8 }, "subtype changes must work in both directions and allow shared-field overrides");
+var metadataOnly = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("""{"gadget":{"$type":"cog"}}""");
+var strictJson = new System.Text.Json.JsonSerializerOptions { UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow };
+Check(metadataOnly.TryPatch(polymorphic, out _, strictJson) && polymorphic.Gadget is Cog { Label: "new", Size: 3 }, "metadata-only replacement must discard old subtype fields and apply new subtype defaults");
+var beforeInvalidReplacement = polymorphic.Gadget;
+var invalidReplacement = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("""{"gadget":{"$type":"gear","teeth":"bad"}}""");
+Check(!invalidReplacement.TryPatch(polymorphic, out var invalidReplacementPaths) && invalidReplacementPaths.Contains("gadget.teeth") && ReferenceEquals(polymorphic.Gadget, beforeInvalidReplacement), "a replacement that cannot deserialize must report its path and leave the existing value unchanged");
+var concreteProperty = new Widget { Gear = gear };
+var incompatibleReplacement = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("""{"gear":{"$type":"cog","size":9}}""");
+Check(!incompatibleReplacement.TryPatch(concreteProperty, out var incompatiblePaths) && incompatiblePaths.Contains("gear.$type") && ReferenceEquals(concreteProperty.Gear, gear), "replacement must remain assignable to the declared property type");
+var recursive = new Widget { Gadget = new Gear { Teeth = 5, Friend = new Gear { Teeth = 6, Label = "keep" } } };
+Check(ApplyGadget(recursive, """{"gadget":{"$type":"gear","friend":{"$type":"cog","size":9}}}""", out _) && recursive.Gadget is Gear { Friend: Cog { Label: "keep", Size: 9 } }, "subtype replacement must work at deeper nested levels");
 var missingGadget = new Widget();
 Check(ApplyGadget(missingGadget, """{"gadget":{"teeth":7,"$TYPE":"gear"}}""", out _) && missingGadget.Gadget is Gear { Teeth: 7 }, "a missing polymorphic value must be created with canonical metadata regardless of tag order or casing");
-var dictionary = new Widget { Catalog = new Dictionary<string, Gadget> { ["a"] = new Gear { Teeth = 5 } } };
+var dictionary = new Widget { Catalog = new Dictionary<string, Gadget> { ["a"] = new Gear { Teeth = 5, Label = "old" } } };
 Check(ApplyGadget(dictionary, """{"catalog":{"a":{"$type":"gear","teeth":6},"b":{"$type":"cog","size":3}}}""", out _) && dictionary.Catalog["a"] is Gear { Teeth: 6 } && dictionary.Catalog["b"] is Cog { Size: 3 }, "dictionary values must merge and materialize as concrete types");
-Check(!ApplyGadget(dictionary, """{"catalog":{"a":{"$type":"cog","teeth":1},"b":{"$type":"cog","size":4}}}""", out var dictionaryRejected) && dictionaryRejected.Contains("catalog.a.$type") && dictionary.Catalog["a"] is Gear { Teeth: 6 } && dictionary.Catalog["b"] is Cog { Size: 4 }, "dictionary mismatches must preserve the affected entry and still apply valid siblings");
+Check(ApplyGadget(dictionary, """{"catalog":{"a":{"$type":"cog","size":9},"b":{"$type":"cog","size":4}}}""", out var dictionaryRejected) && dictionaryRejected.Count == 0 && dictionary.Catalog["a"] is Cog { Label: "old", Size: 9 } && dictionary.Catalog["b"] is Cog { Size: 4 }, "dictionary subtype changes must preserve shared fields and apply valid siblings");
+Check(ApplyGadget(dictionary, """{"catalog":{"a":{"$type":"gear","teeth":7}}}""", out _) && dictionary.Catalog["a"] is Gear { Label: "old", Teeth: 7 }, "dictionary subtype changes must work in both directions");
+var invalidDictionary = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("""{"catalog":{"a":{"$type":"unknown","teeth":1},"b":{"$type":"cog","size":5}}}""");
+Check(!invalidDictionary.TryPatch(dictionary, out var invalidDictionaryPaths) && invalidDictionaryPaths.Contains("catalog.a.$type") && dictionary.Catalog["a"] is Gear { Teeth: 7 } && dictionary.Catalog["b"] is Cog { Size: 5 }, "an invalid dictionary tag must leave its entry unchanged while valid siblings apply");
 Check(ApplyGadget(dictionary, """{"catalog":{"a":null}}""", out _) && !dictionary.Catalog.ContainsKey("a"), "polymorphic dictionary entries must still support deletion");
 Check(ApplyGadget(new Widget(), """{"catalog":{"a":{"$type":"gear","teeth":8}}}""", out _), "a missing dictionary must support polymorphic creation");
 var rootPatch = ${style === "generic" ? "MergePatch<Gadget>" : "GadgetMergePatchUpdate"}.FromJson("""{"$type":"cog","teeth":1}""");

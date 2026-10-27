@@ -184,9 +184,9 @@ namespace MassiveScale.Petshop.Api.Helpers
         /// <summary>
         /// Applies each defined patch property recursively to <paramref name="original"/>.
         /// Invalid, unknown, and read-only properties are reported and skipped; valid
-        /// sibling properties are still applied. The root instance is never replaced, and
-        /// neither is a nested model instance that an object value is merged into, so
-        /// references to it and its members that are not serialized stay intact.
+        /// sibling properties are still applied. The root instance is never replaced.
+        /// Nested models are merged in place unless a discriminator selects a different
+        /// subtype, in which case a replacement retains shared serialized properties.
         /// Members are resolved from the runtime type of <paramref name="original"/>, so
         /// the properties of a derived type can be patched through its base type.
         /// </summary>
@@ -212,7 +212,7 @@ namespace MassiveScale.Petshop.Api.Helpers
 
         /// <summary>
         /// Applies <paramref name="values"/> to <paramref name="target"/> in place. An object value
-        /// for a property that already holds a model instance is merged into that instance. Every
+        /// for a property that already holds a model instance of the selected subtype is merged into that instance. Every
         /// other value is applied in one serialize/merge/deserialize round trip; only when that
         /// fails is each value retried alone, so one bad value cannot block its valid siblings
         /// and the failing path can be reported.
@@ -245,6 +245,13 @@ namespace MassiveScale.Petshop.Api.Helpers
                     && IsModelType(property.PropertyType)
                     && property.GetValue(target) is { } nested)
                 {
+                    var nestedPatch = (JsonObject)JsonNode.Parse(element.GetRawText())!;
+                    if (!TryResolvePatchType(property.PropertyType, nested.GetType(), null, nestedPatch, rejected, JoinPath(prefix, member.Value.WireName), out var nestedType, out _, allowReplacement: true)) continue;
+                    if (nestedType != nested.GetType())
+                    {
+                        entries.Add(new PatchEntry(property, name, element));
+                        continue;
+                    }
                     var nestedValues = new List<KeyValuePair<string, JsonElement>>();
                     foreach (var nestedProperty in element.EnumerateObject())
                     {
@@ -321,7 +328,7 @@ namespace MassiveScale.Petshop.Api.Helpers
 
         private static string JoinPath(string prefix, string name) => prefix.Length == 0 ? name : $"{prefix}.{name}";
 
-        private static bool TryResolvePatchType(Type declaredType, Type? runtimeType, JsonObject? existing, JsonObject patch, List<string> rejected, string prefix, out Type resolvedType, out string? discriminatorName)
+        private static bool TryResolvePatchType(Type declaredType, Type? runtimeType, JsonObject? existing, JsonObject patch, List<string> rejected, string prefix, out Type resolvedType, out string? discriminatorName, bool allowReplacement = false)
         {
             resolvedType = runtimeType ?? declaredType;
             discriminatorName = null;
@@ -351,8 +358,8 @@ namespace MassiveScale.Petshop.Api.Helpers
                         }
                     }
                 }
-                if (selected is null || !declaredType.IsAssignableFrom(selected) || (runtimeType is not null && runtimeType != selected)
-                    || (supplied is not null && previous is not null && !JsonNode.DeepEquals(supplied.Value.Value, previous.Value.Value)))
+                if (selected is null || !declaredType.IsAssignableFrom(selected)
+                    || (!allowReplacement && runtimeType is not null && runtimeType != selected))
                 {
                     rejected.Add(JoinPath(prefix, discriminatorName));
                     return false;
@@ -361,6 +368,25 @@ namespace MassiveScale.Petshop.Api.Helpers
                 return true;
             }
             return true;
+        }
+
+        private static void RetainSharedProperties(JsonObject target, Type previousType, Type replacementType, string discriminatorName)
+        {
+            var retained = new List<KeyValuePair<string, JsonNode?>>();
+            foreach (var entry in target)
+            {
+                var previous = FindMember(previousType, entry.Key);
+                var replacement = FindMember(replacementType, entry.Key);
+                if (previous is not null && replacement is not null
+                    && previous.Value.Property.PropertyType == replacement.Value.Property.PropertyType)
+                {
+                    retained.Add(new(replacement.Value.WireName, entry.Value?.DeepClone()));
+                }
+            }
+            var tag = FindJsonProperty(target, discriminatorName)?.Value?.DeepClone();
+            target.Clear();
+            target[discriminatorName] = tag;
+            foreach (var entry in retained) target[entry.Key] = entry.Value;
         }
 
         private static KeyValuePair<string, JsonNode?>? FindJsonProperty(JsonObject value, string name)
@@ -394,6 +420,11 @@ namespace MassiveScale.Petshop.Api.Helpers
         private static bool MergeObject(JsonObject target, JsonObject patch, Type targetType, List<string> rejected, string prefix)
         {
             if (!TryResolvePatchType(targetType, null, target, patch, rejected, prefix, out var concreteType, out var discriminatorName)) return false;
+            if (discriminatorName is not null && FindJsonProperty(target, discriminatorName) is not null)
+            {
+                if (!TryResolvePatchType(targetType, null, target, new JsonObject(), rejected, prefix, out var previousType, out _)) return false;
+                if (previousType != concreteType) RetainSharedProperties(target, previousType, concreteType, discriminatorName);
+            }
             targetType = concreteType;
             if (discriminatorName is not null && FindJsonProperty(patch, discriminatorName) is { } tag)
             {

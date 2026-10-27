@@ -1,4 +1,4 @@
-    private static bool TryResolvePatchType(Type declaredType, Type? runtimeType, JsonObject? existing, JsonObject patch, List<string> rejected, string prefix, out Type resolvedType, out string? discriminatorName)
+    private static bool TryResolvePatchType(Type declaredType, Type? runtimeType, JsonObject? existing, JsonObject patch, List<string> rejected, string prefix, out Type resolvedType, out string? discriminatorName, bool allowReplacement = false)
     {
         resolvedType = runtimeType ?? declaredType;
         discriminatorName = null;
@@ -28,8 +28,8 @@
                     }
                 }
             }
-            if (selected is null || !declaredType.IsAssignableFrom(selected) || (runtimeType is not null && runtimeType != selected)
-                || (supplied is not null && previous is not null && !JsonNode.DeepEquals(supplied.Value.Value, previous.Value.Value)))
+            if (selected is null || !declaredType.IsAssignableFrom(selected)
+                || (!allowReplacement && runtimeType is not null && runtimeType != selected))
             {
                 rejected.Add(JoinPath(prefix, discriminatorName));
                 return false;
@@ -38,6 +38,25 @@
             return true;
         }
         return true;
+    }
+
+    private static void RetainSharedProperties(JsonObject target, Type previousType, Type replacementType, string discriminatorName)
+    {
+        var retained = new List<KeyValuePair<string, JsonNode?>>();
+        foreach (var entry in target)
+        {
+            var previous = FindMember(previousType, entry.Key);
+            var replacement = FindMember(replacementType, entry.Key);
+            if (previous is not null && replacement is not null
+                && previous.Value.Property.PropertyType == replacement.Value.Property.PropertyType)
+            {
+                retained.Add(new(replacement.Value.WireName, entry.Value?.DeepClone()));
+            }
+        }
+        var tag = FindJsonProperty(target, discriminatorName)?.Value?.DeepClone();
+        target.Clear();
+        target[discriminatorName] = tag;
+        foreach (var entry in retained) target[entry.Key] = entry.Value;
     }
 
     private static KeyValuePair<string, JsonNode?>? FindJsonProperty(JsonObject value, string name)
