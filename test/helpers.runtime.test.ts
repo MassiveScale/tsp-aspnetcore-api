@@ -54,6 +54,7 @@ const SPEC = (versionAware: boolean) => `
     gadget?: Gadget;
     gear?: Gear;
     catalog?: Record<Gadget>;
+    nestedCatalog?: Record<Record<Gadget>>;
     labels?: Record<string>;
     groups?: Record<Record<string>>;
     extra?: unknown;
@@ -94,6 +95,16 @@ async function runGeneratedHelper(
       await mkdir(join(destination, ".."), { recursive: true });
       await writeFile(destination, content, "utf8");
     }
+    await writeFile(
+      join(directory, "Gadget.State.cs"),
+      `namespace Demo.Models;
+public partial class Gear
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public object? ServerState { get; set; }
+}`,
+      "utf8",
+    );
 
     await writeFile(
       join(directory, "Runtime.csproj"),
@@ -257,6 +268,11 @@ var gear = new Gear { Teeth = 5, Label = "old", VariantValue = "old subtype" };
 var polymorphic = new Widget { Gadget = gear };
 Check(ApplyGadget(polymorphic, """{"gadget":{"$type":"gear","teeth":6}}""", out var sameRejected) && sameRejected.Count == 0, "matching discriminator metadata must not be rejected");
 Check(ReferenceEquals(polymorphic.Gadget, gear) && gear.Teeth == 6, "same-type patches preserve object identity");
+var duplicateTarget = new Widget { Gadget = new Gear { Teeth = 6 } };
+Check(ApplyGadget(duplicateTarget, """{"gadget":{"$type":"gear","$TYPE":"cog","teeth":1,"size":8}}""", out var duplicateRejected) == false && duplicateTarget.Gadget is Cog { Size: 8 } && duplicateRejected.Contains("gadget.teeth"), "application must use the same last discriminator as validation, rejecting fields of the unselected subtype");
+Check(!ValidateGadget("""{"gadget":{"$type":"cog","$TYPE":"gear","teeth":1}}""").IsValid, "validation must enforce the constraints of the last case-insensitive discriminator");
+var duplicateDictionary = new Widget { Catalog = new Dictionary<string, Gadget> { ["a"] = new Gear { Teeth = 6 } } };
+Check(ApplyGadget(duplicateDictionary, """{"catalog":{"a":{"$type":"gear","$TYPE":"cog","size":8}}}""", out _) && duplicateDictionary.Catalog["a"] is Cog { Size: 8 }, "dictionary subtype resolution must use the last case-insensitive discriminator");
 foreach (var tag in new[] { "null", "4", "\\"unknown\\"" })
 {
     var invalid = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("{\\"gadget\\":{\\"$type\\":" + tag + ",\\"teeth\\":1}}");
@@ -283,7 +299,14 @@ Check(ApplyGadget(dictionary, """{"catalog":{"a":{"$type":"gear","teeth":6},"b":
 Check(ApplyGadget(dictionary, """{"catalog":{"a":{"$type":"cog","size":9},"b":{"$type":"cog","size":4}}}""", out var dictionaryRejected) && dictionaryRejected.Count == 0 && dictionary.Catalog["a"] is Cog { Label: "old", Size: 9 } && dictionary.Catalog["b"] is Cog { Size: 4 }, "dictionary subtype changes must preserve shared fields and apply valid siblings");
 Check(ApplyGadget(dictionary, """{"catalog":{"a":{"$type":"gear","teeth":7}}}""", out _) && dictionary.Catalog["a"] is Gear { Label: "old", Teeth: 7 }, "dictionary subtype changes must work in both directions");
 var invalidDictionary = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("""{"catalog":{"a":{"$type":"unknown","teeth":1},"b":{"$type":"cog","size":5}}}""");
-Check(!invalidDictionary.TryPatch(dictionary, out var invalidDictionaryPaths) && invalidDictionaryPaths.Contains("catalog.a.$type") && dictionary.Catalog["a"] is Gear { Teeth: 7 } && dictionary.Catalog["b"] is Cog { Size: 5 }, "an invalid dictionary tag must leave its entry unchanged while valid siblings apply");
+var preservedEntry = (Gear)dictionary.Catalog["a"];
+preservedEntry.ServerState = new object();
+var serverState = preservedEntry.ServerState;
+Check(!invalidDictionary.TryPatch(dictionary, out var invalidDictionaryPaths) && invalidDictionaryPaths.Contains("catalog.a.$type") && ReferenceEquals(dictionary.Catalog["a"], preservedEntry) && ReferenceEquals(preservedEntry.ServerState, serverState) && preservedEntry.Teeth == 7 && dictionary.Catalog["b"] is Cog { Size: 5 }, "an invalid dictionary tag must preserve the original entry identity and server-only state while valid siblings apply");
+var dottedEntry = new Gear { Teeth = 6, ServerState = serverState };
+var nestedDictionary = new Widget { NestedCatalog = new Dictionary<string, IDictionary<string, Gadget>> { ["outer.key"] = new Dictionary<string, Gadget> { ["inner.key"] = dottedEntry } } };
+var invalidNestedDictionary = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("""{"nestedCatalog":{"outer.key":{"inner.key":{"$type":"unknown"},"good":{"$type":"cog","size":8}}}}""");
+Check(!invalidNestedDictionary.TryPatch(nestedDictionary, out _) && ReferenceEquals(nestedDictionary.NestedCatalog["outer.key"]["inner.key"], dottedEntry) && ReferenceEquals(dottedEntry.ServerState, serverState) && nestedDictionary.NestedCatalog["outer.key"]["good"] is Cog { Size: 8 }, "rejected entries in nested dictionaries must preserve identity even when keys contain path separators");
 Check(ApplyGadget(dictionary, """{"catalog":{"a":null}}""", out _) && !dictionary.Catalog.ContainsKey("a"), "polymorphic dictionary entries must still support deletion");
 Check(ApplyGadget(new Widget(), """{"catalog":{"a":{"$type":"gear","teeth":8}}}""", out _), "a missing dictionary must support polymorphic creation");
 var rootPatch = ${style === "generic" ? "MergePatch<Gadget>" : "GadgetMergePatchUpdate"}.FromJson("""{"$type":"cog","teeth":1}""");
@@ -294,6 +317,15 @@ var plainValidator = provider.GetRequiredService<PlainPetPatchValidator>();
 var plainFailure = plainValidator.Validate(new PlainDog { Value = 1, Name = "long name" });
 Check(plainFailure.Errors.Count(f => f.PropertyName == "Value") == 1 && plainFailure.Errors.Count(f => f.PropertyName == "Name") == 1, "plain PATCH dispatch must validate derived and inherited constraints exactly once");
 Check(plainValidator.Validate(new PlainDog { Value = 10 }).IsValid, "plain PATCH must inject PATCH rather than POST rules when both exist");
+var deepOptions = new System.Text.Json.JsonSerializerOptions { MaxDepth = 256 };
+var deepValue = """{"$type":"gear","teeth":4}""";
+for (var index = 0; index < 70; index++) deepValue = "{\\"$type\\":\\"gear\\",\\"friend\\":" + deepValue + "}";
+var deepPatch = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("{\\"gadget\\":" + deepValue + "}", deepOptions);
+var deepTarget = new Widget { Gadget = new Gear() };
+Check(deepPatch.TryPatch(deepTarget, out var deepRejected, deepOptions) && deepRejected.Count == 0, "preflight and merge parsing must honor the configured maximum depth");
+var deepest = deepTarget.Gadget;
+for (var index = 0; index < 70; index++) deepest = ((Gear)deepest!).Friend;
+Check(deepest is Gear { Teeth: 4 }, "the full recursive patch must be applied beyond the default JSON depth limit");
 ${
   versionAware
     ? `

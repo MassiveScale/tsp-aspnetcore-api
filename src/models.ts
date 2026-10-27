@@ -169,7 +169,7 @@ export async function emitModelsAndEnums(
           namespace: interfaceNs,
           usings,
           body: renderer.renderInterface(
-            buildInterfaceView(program, model, options),
+            buildInterfaceView(program, model, options, emittedModels),
           ),
         }),
       });
@@ -376,7 +376,7 @@ function buildClassView(
     baseClass: baseModel
       ? typeReference(baseModel, options, program)
       : undefined,
-    properties: buildPropertyViews(program, model, options),
+    properties: buildPropertyViews(program, model, options, emittedModels),
     discriminator,
     isAbstract: discriminator !== undefined,
   };
@@ -472,6 +472,7 @@ function buildInterfaceView(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  emittedModels: ReadonlySet<Model>,
 ): InterfaceView {
   const ifaceName = csharpModelName(program, model);
   const baseModel = emittedBaseModel(program, model);
@@ -486,7 +487,7 @@ function buildInterfaceView(
     doc: docFor(program, model),
     interfaceName: `I${ifaceName.startsWith("@") ? ifaceName.slice(1) : ifaceName}`,
     baseInterface: baseIfaceName,
-    properties: buildPropertyViews(program, model, options),
+    properties: buildPropertyViews(program, model, options, emittedModels),
   };
 }
 
@@ -545,6 +546,7 @@ function defaultValueInitializer(
   targetSpecType: Type | undefined,
   options: ResolvedOptions,
   program: Program,
+  emittedModels: ReadonlySet<Model>,
   containingMemberName?: string,
 ): string | undefined {
   switch (value.valueKind) {
@@ -574,10 +576,17 @@ function defaultValueInitializer(
         targetSpecType,
         options,
         program,
+        emittedModels,
         containingMemberName,
       );
     case "ObjectValue":
-      return objectInitializer(value, targetSpecType, options, program);
+      return objectInitializer(
+        value,
+        targetSpecType,
+        options,
+        program,
+        emittedModels,
+      );
     default:
       return undefined;
   }
@@ -625,6 +634,7 @@ function arrayInitializer(
   targetSpecType: Type | undefined,
   options: ResolvedOptions,
   program: Program,
+  emittedModels: ReadonlySet<Model>,
   containingMemberName?: string,
 ): string | undefined {
   const elementType = LIST_TYPE_PATTERN.exec(targetType)?.[1];
@@ -643,6 +653,7 @@ function arrayInitializer(
       elementSpecType,
       options,
       program,
+      emittedModels,
       containingMemberName,
     );
     if (initializer === undefined) return undefined;
@@ -657,6 +668,7 @@ function objectInitializer(
   targetSpecType: Type | undefined,
   options: ResolvedOptions,
   program: Program,
+  emittedModels: ReadonlySet<Model>,
 ): string | undefined {
   let model = modelTypeForInitializer(targetSpecType);
   if (!model) return undefined;
@@ -686,6 +698,7 @@ function objectInitializer(
     if (!concreteModel || concreteModel === model) return undefined;
     model = concreteModel;
   }
+  if (!emittedModels.has(model)) return undefined;
 
   const modelType = typeReference(model, options, program);
   const properties = new Map<string, { prop: ModelProperty; owner: Model }>();
@@ -733,6 +746,7 @@ function objectInitializer(
       qualifiedInferredEnumType,
       options,
       program,
+      emittedModels,
       memberName,
     );
     if (initializer === undefined) return undefined;
@@ -774,6 +788,7 @@ function buildPropertyViews(
   program: Program,
   model: Model,
   options: ResolvedOptions,
+  emittedModels: ReadonlySet<Model>,
 ): PropertyView[] {
   const discriminatorPropertyName = discriminatorPropertyNameInHierarchy(
     program,
@@ -814,6 +829,7 @@ function buildPropertyViews(
           qualifiedInferredEnumType,
           options,
           program,
+          emittedModels,
           name,
         ),
       };
@@ -839,6 +855,7 @@ function resolveInitializer(
   qualifiedInferredEnumType: string | undefined,
   options: ResolvedOptions,
   program: Program,
+  emittedModels: ReadonlySet<Model>,
   containingMemberName?: string,
 ): string | undefined {
   if (value === undefined) return undefined;
@@ -859,6 +876,7 @@ function resolveInitializer(
     targetSpecType,
     options,
     program,
+    emittedModels,
     containingMemberName,
   );
 }

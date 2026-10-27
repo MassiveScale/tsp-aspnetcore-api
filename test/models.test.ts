@@ -739,6 +739,44 @@ describe("csharp emitter - models", () => {
       }
     });
 
+    it("suppresses discriminated defaults whose selected model has no emitted class", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(`
+        import "@typespec/http";
+        using TypeSpec.Http;
+        @service namespace Demo;
+        model Widget { value?: string; }
+        @discriminator("kind") model Pet { kind: string; }
+        model Dog extends Pet { kind: "dog"; }
+        model Odd extends Pet { kind: "odd"; @body body: Widget; }
+        model Kennel { pet: Pet; }
+        model Owner {
+          pet: Pet = #{ kind: "odd" };
+          pets: Pet[] = #[#{ kind: "odd" }];
+          kennel: Kennel = #{ pet: #{ kind: "odd" } };
+          valid: Pet = #{ kind: "dog" };
+        }
+        @route("/owners") @get op read(): Owner;
+      `);
+      strictEqual(
+        diagnostics.length,
+        1,
+        diagnostics
+          .map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`)
+          .join("\n"),
+      );
+      strictEqual(
+        diagnostics[0].code,
+        "@massivescale/tsp-aspnetcore-api/discriminator-variant-skipped",
+      );
+      ok(!results["Models/Odd.g.cs"]);
+      const owner = results["Models/Owner.g.cs"];
+      for (const name of ["Pet", "Pets", "Kennel"]) {
+        ok(!owner.includes(`${name} { get; set; } =`), owner);
+      }
+      ok(owner.includes("Valid { get; set; } = new Dog();"), owner);
+      ok(!Object.values(results).some((file) => file.includes("new Odd")));
+    });
+
     it("uses @serverName identifiers inside object defaults", async () => {
       const results = await emit(`
         import "@massivescale/tsp-aspnetcore-api";

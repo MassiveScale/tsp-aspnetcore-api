@@ -215,7 +215,7 @@ model Dog extends Pet { kind: "dog"; }
 model Owner { pet: Pet = #{ kind: "dog", name: "Rex" }; }
 ```
 
-The generated `Pet` property is initialized with `new Dog { Name = "Rex" }`, not the abstract `Pet`. The discriminator tag is JSON metadata, so it is not assigned as a C# property. String and string-valued enum tags are supported, including nested defaults, arrays, nullable properties, and inherited members. Use the TypeSpec discriminator property name in the default even when `@encodedName` changes its JSON name. A missing or unrecognized discriminator suppresses the initializer rather than instantiating the abstract base.
+The generated `Pet` property is initialized with `new Dog { Name = "Rex" }`, not the abstract `Pet`. The discriminator tag is JSON metadata, so it is not assigned as a C# property. String and string-valued enum tags are supported, including nested defaults, arrays, nullable properties, and inherited members. Use the TypeSpec discriminator property name in the default even when `@encodedName` changes its JSON name. A missing or unrecognized discriminator suppresses the initializer rather than instantiating the abstract base. Selecting a model without an emitted C# class (for example, an HTTP response envelope) also suppresses the complete initializer, including when that model appears inside a nested object or array default.
 
 Array defaults must use TypeSpec's array-value syntax `#[...]`. A bare `[...]` is a tuple _type_, and the TypeSpec compiler rejects it as a default with `expect-value: Is a tuple type, but is being used as a value here`. Array elements may be any supported value kind, including enum members, `null` (for nullable element types), and nested arrays.
 

@@ -220,7 +220,7 @@ namespace MassiveScale.Petshop.Api.Helpers
         private static void PatchObject(object target, Type type, IEnumerable<KeyValuePair<string, JsonElement>> values, List<string> rejected, string prefix, JsonSerializerOptions? options)
         {
             var patchObject = new JsonObject();
-            foreach (var (name, value) in values) patchObject[name] = JsonNode.Parse(value.GetRawText());
+            foreach (var (name, value) in values) patchObject[name] = JsonNode.Parse(value.GetRawText(), documentOptions: new JsonDocumentOptions { MaxDepth = options?.MaxDepth ?? 0 });
             if (!TryResolvePatchType(type, type, null, patchObject, rejected, prefix, out _, out var discriminatorName)) return;
             var entries = new List<PatchEntry>();
             foreach (var (name, element) in values)
@@ -245,7 +245,7 @@ namespace MassiveScale.Petshop.Api.Helpers
                     && IsModelType(property.PropertyType)
                     && property.GetValue(target) is { } nested)
                 {
-                    var nestedPatch = (JsonObject)JsonNode.Parse(element.GetRawText())!;
+                    var nestedPatch = (JsonObject)JsonNode.Parse(element.GetRawText(), documentOptions: new JsonDocumentOptions { MaxDepth = options?.MaxDepth ?? 0 })!;
                     if (!TryResolvePatchType(property.PropertyType, nested.GetType(), null, nestedPatch, rejected, JoinPath(prefix, member.Value.WireName), out var nestedType, out _, allowReplacement: true)) continue;
                     if (nestedType != nested.GetType())
                     {
@@ -297,12 +297,14 @@ namespace MassiveScale.Petshop.Api.Helpers
                 var patch = new JsonObject();
                 foreach (var entry in entries)
                 {
-                    patch[entry.Name] = JsonNode.Parse(entry.Value.GetRawText());
+                    patch[entry.Name] = JsonNode.Parse(entry.Value.GetRawText(), documentOptions: new JsonDocumentOptions { MaxDepth = options?.MaxDepth ?? 0 });
                 }
-                MergeObject(node, patch, type, rejected, prefix);
+                var rejectedObjects = new List<string[]>();
+                MergeObject(node, patch, type, rejected, prefix, rejectedObjects, Array.Empty<string>());
 
                 var updated = node.Deserialize(type, options);
                 if (updated is null) return false;
+                RestoreRejectedObjects(target, updated, rejectedObjects);
                 foreach (var entry in entries)
                 {
                     entry.Property.SetValue(target, entry.Property.GetValue(updated));
@@ -391,11 +393,64 @@ namespace MassiveScale.Petshop.Api.Helpers
 
         private static KeyValuePair<string, JsonNode?>? FindJsonProperty(JsonObject value, string name)
         {
+            KeyValuePair<string, JsonNode?>? match = null;
             foreach (var entry in value)
             {
-                if (string.Equals(entry.Key, name, StringComparison.OrdinalIgnoreCase)) return entry;
+                if (string.Equals(entry.Key, name, StringComparison.OrdinalIgnoreCase)) match = entry;
             }
-            return null;
+            return match;
+        }
+
+        private static PropertyInfo? DictionaryIndexer(Type type)
+        {
+            PropertyInfo? readOnlyIndexer = null;
+            foreach (var candidate in type.GetInterfaces())
+            {
+                if (!candidate.IsGenericType) continue;
+                var definition = candidate.GetGenericTypeDefinition();
+                if (candidate.GetGenericArguments()[0] != typeof(string)) continue;
+                if (definition == typeof(IDictionary<,>)) return candidate.GetProperty("Item");
+                if (definition == typeof(IReadOnlyDictionary<,>)) readOnlyIndexer = candidate.GetProperty("Item");
+            }
+            return readOnlyIndexer;
+        }
+
+        private static bool TryReadPathValue(object target, string name, out object? value)
+        {
+            if (DictionaryIndexer(target.GetType()) is { } indexer)
+            {
+                var contains = indexer.DeclaringType!.GetMethod("ContainsKey")!;
+                if (!(bool)contains.Invoke(target, new object[] { name })!)
+                {
+                    value = null;
+                    return false;
+                }
+                value = indexer.GetValue(target, new object[] { name });
+                return true;
+            }
+            var member = FindMember(target.GetType(), name);
+            value = member?.Property.GetValue(target);
+            return member is not null;
+        }
+
+        private static void RestoreRejectedObjects(object original, object updated, List<string[]> paths)
+        {
+            foreach (var path in paths)
+            {
+                object? previous = original;
+                object? replacement = updated;
+                for (var index = 0; index < path.Length - 1 && previous is not null && replacement is not null; index++)
+                {
+                    TryReadPathValue(previous, path[index], out previous);
+                    TryReadPathValue(replacement, path[index], out replacement);
+                }
+                if (previous is null || replacement is null || path.Length == 0
+                    || !TryReadPathValue(previous, path[^1], out var preserved)) continue;
+                if (DictionaryIndexer(replacement.GetType()) is { CanWrite: true } indexer)
+                    indexer.SetValue(replacement, preserved, new object[] { path[^1] });
+                else
+                    FindMember(replacement.GetType(), path[^1])?.Property.SetValue(replacement, preserved);
+            }
         }
 
         /// <summary>
@@ -417,9 +472,13 @@ namespace MassiveScale.Petshop.Api.Helpers
         /// free-form JSON value (<see cref="JsonElement"/>, <see cref="JsonNode"/>, <see cref="object"/>)
         /// are data, so any key is accepted and matched exactly.
         /// </summary>
-        private static bool MergeObject(JsonObject target, JsonObject patch, Type targetType, List<string> rejected, string prefix)
+        private static bool MergeObject(JsonObject target, JsonObject patch, Type targetType, List<string> rejected, string prefix, List<string[]> rejectedObjects, string[] segments)
         {
-            if (!TryResolvePatchType(targetType, null, target, patch, rejected, prefix, out var concreteType, out var discriminatorName)) return false;
+            if (!TryResolvePatchType(targetType, null, target, patch, rejected, prefix, out var concreteType, out var discriminatorName))
+            {
+                rejectedObjects.Add(segments);
+                return false;
+            }
             if (discriminatorName is not null && FindJsonProperty(target, discriminatorName) is not null)
             {
                 if (!TryResolvePatchType(targetType, null, target, new JsonObject(), rejected, prefix, out var previousType, out _)) return false;
@@ -474,12 +533,12 @@ namespace MassiveScale.Petshop.Api.Helpers
                 {
                     if (targetName is not null && target[targetName] is JsonObject existingChild)
                     {
-                        MergeObject(existingChild, patchChild, childType, rejected, path);
+                        MergeObject(existingChild, patchChild, childType, rejected, path, rejectedObjects, [.. segments, wireName]);
                     }
                     else
                     {
                         var targetChild = new JsonObject();
-                        if (MergeObject(targetChild, patchChild, childType, rejected, path))
+                        if (MergeObject(targetChild, patchChild, childType, rejected, path, rejectedObjects, [.. segments, wireName]))
                             target[targetName ?? wireName] = targetChild;
                     }
                     continue;

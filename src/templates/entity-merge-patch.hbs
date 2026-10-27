@@ -215,7 +215,7 @@ public class {{{modelName}}}MergePatchUpdate
     private static void PatchObject(object target, Type type, IEnumerable<KeyValuePair<string, JsonElement>> values, List<string> rejected, string prefix, JsonSerializerOptions? options)
     {
         var patchObject = new JsonObject();
-        foreach (var (name, value) in values) patchObject[name] = JsonNode.Parse(value.GetRawText());
+        foreach (var (name, value) in values) patchObject[name] = JsonNode.Parse(value.GetRawText(), documentOptions: new JsonDocumentOptions { MaxDepth = options?.MaxDepth ?? 0 });
         if (!TryResolvePatchType(type, type, null, patchObject, rejected, prefix, out _, out var discriminatorName)) return;
         var entries = new List<PatchEntry>();
         foreach (var (name, element) in values)
@@ -240,7 +240,7 @@ public class {{{modelName}}}MergePatchUpdate
                 && IsModelType(property.PropertyType)
                 && property.GetValue(target) is { } nested)
             {
-                var nestedPatch = (JsonObject)JsonNode.Parse(element.GetRawText())!;
+                var nestedPatch = (JsonObject)JsonNode.Parse(element.GetRawText(), documentOptions: new JsonDocumentOptions { MaxDepth = options?.MaxDepth ?? 0 })!;
                 if (!TryResolvePatchType(property.PropertyType, nested.GetType(), null, nestedPatch, rejected, JoinPath(prefix, member.Value.WireName), out var nestedType, out _, allowReplacement: true)) continue;
                 if (nestedType != nested.GetType())
                 {
@@ -292,12 +292,14 @@ public class {{{modelName}}}MergePatchUpdate
             var patch = new JsonObject();
             foreach (var entry in entries)
             {
-                patch[entry.Name] = JsonNode.Parse(entry.Value.GetRawText());
+                patch[entry.Name] = JsonNode.Parse(entry.Value.GetRawText(), documentOptions: new JsonDocumentOptions { MaxDepth = options?.MaxDepth ?? 0 });
             }
-            MergeObject(node, patch, type, rejected, prefix);
+            var rejectedObjects = new List<string[]>();
+            MergeObject(node, patch, type, rejected, prefix, rejectedObjects, Array.Empty<string>());
 
             var updated = node.Deserialize(type, options);
             if (updated is null) return false;
+            RestoreRejectedObjects(target, updated, rejectedObjects);
             foreach (var entry in entries)
             {
                 entry.Property.SetValue(target, entry.Property.GetValue(updated));
@@ -344,9 +346,13 @@ public class {{{modelName}}}MergePatchUpdate
     /// free-form JSON value (<see cref="JsonElement"/>, <see cref="JsonNode"/>, <see cref="object"/>)
     /// are data, so any key is accepted and matched exactly.
     /// </summary>
-    private static bool MergeObject(JsonObject target, JsonObject patch, Type targetType, List<string> rejected, string prefix)
+    private static bool MergeObject(JsonObject target, JsonObject patch, Type targetType, List<string> rejected, string prefix, List<string[]> rejectedObjects, string[] segments)
     {
-        if (!TryResolvePatchType(targetType, null, target, patch, rejected, prefix, out var concreteType, out var discriminatorName)) return false;
+        if (!TryResolvePatchType(targetType, null, target, patch, rejected, prefix, out var concreteType, out var discriminatorName))
+        {
+            rejectedObjects.Add(segments);
+            return false;
+        }
         if (discriminatorName is not null && FindJsonProperty(target, discriminatorName) is not null)
         {
             if (!TryResolvePatchType(targetType, null, target, new JsonObject(), rejected, prefix, out var previousType, out _)) return false;
@@ -401,12 +407,12 @@ public class {{{modelName}}}MergePatchUpdate
             {
                 if (targetName is not null && target[targetName] is JsonObject existingChild)
                 {
-                    MergeObject(existingChild, patchChild, childType, rejected, path);
+                    MergeObject(existingChild, patchChild, childType, rejected, path, rejectedObjects, [.. segments, wireName]);
                 }
                 else
                 {
                     var targetChild = new JsonObject();
-                    if (MergeObject(targetChild, patchChild, childType, rejected, path))
+                    if (MergeObject(targetChild, patchChild, childType, rejected, path, rejectedObjects, [.. segments, wireName]))
                         target[targetName ?? wireName] = targetChild;
                 }
                 continue;
