@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-27
+
 ### Fixed
 
 - Discriminated model defaults now instantiate the concrete subtype selected by the default's discriminator value, including nested objects, arrays, and inherited properties. Discriminator tags are not emitted as C# property assignments. See [Default property values](docs/models.md#default-property-values).
