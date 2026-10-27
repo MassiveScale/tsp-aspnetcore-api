@@ -219,9 +219,13 @@ namespace MassiveScale.Petshop.Api.Helpers
         /// </summary>
         private static void PatchObject(object target, Type type, IEnumerable<KeyValuePair<string, JsonElement>> values, List<string> rejected, string prefix, JsonSerializerOptions? options)
         {
+            var patchObject = new JsonObject();
+            foreach (var (name, value) in values) patchObject[name] = JsonNode.Parse(value.GetRawText());
+            if (!TryResolvePatchType(type, type, null, patchObject, rejected, prefix, out _, out var discriminatorName)) return;
             var entries = new List<PatchEntry>();
             foreach (var (name, element) in values)
             {
+                if (string.Equals(name, discriminatorName, StringComparison.OrdinalIgnoreCase)) continue;
                 var member = FindMember(type, name);
                 if (member is null)
                 {
@@ -317,6 +321,57 @@ namespace MassiveScale.Petshop.Api.Helpers
 
         private static string JoinPath(string prefix, string name) => prefix.Length == 0 ? name : $"{prefix}.{name}";
 
+        private static bool TryResolvePatchType(Type declaredType, Type? runtimeType, JsonObject? existing, JsonObject patch, List<string> rejected, string prefix, out Type resolvedType, out string? discriminatorName)
+        {
+            resolvedType = runtimeType ?? declaredType;
+            discriminatorName = null;
+            for (Type? current = declaredType; current is not null; current = current.BaseType)
+            {
+                var polymorphic = current.GetCustomAttribute<JsonPolymorphicAttribute>(inherit: false);
+                if (polymorphic is null) continue;
+                discriminatorName = polymorphic.TypeDiscriminatorPropertyName ?? "$type";
+                var supplied = FindJsonProperty(patch, discriminatorName);
+                var previous = existing is null ? null : FindJsonProperty(existing, discriminatorName);
+                var tag = supplied ?? previous;
+                if (tag is null)
+                {
+                    if (runtimeType is not null || !declaredType.IsAbstract) return true;
+                    rejected.Add(JoinPath(prefix, discriminatorName));
+                    return false;
+                }
+                Type? selected = null;
+                if (tag.Value.Value is JsonValue value && value.TryGetValue<string>(out var text))
+                {
+                    foreach (var derived in current.GetCustomAttributes<JsonDerivedTypeAttribute>(inherit: false))
+                    {
+                        if (derived.TypeDiscriminator is string name && name == text)
+                        {
+                            selected = derived.DerivedType;
+                            break;
+                        }
+                    }
+                }
+                if (selected is null || !declaredType.IsAssignableFrom(selected) || (runtimeType is not null && runtimeType != selected)
+                    || (supplied is not null && previous is not null && !JsonNode.DeepEquals(supplied.Value.Value, previous.Value.Value)))
+                {
+                    rejected.Add(JoinPath(prefix, discriminatorName));
+                    return false;
+                }
+                resolvedType = selected;
+                return true;
+            }
+            return true;
+        }
+
+        private static KeyValuePair<string, JsonNode?>? FindJsonProperty(JsonObject value, string name)
+        {
+            foreach (var entry in value)
+            {
+                if (string.Equals(entry.Key, name, StringComparison.OrdinalIgnoreCase)) return entry;
+            }
+            return null;
+        }
+
         /// <summary>
         /// Returns <see langword="true"/> for a model class that a nested object value is merged
         /// into in place: not a string, collection, dictionary, free-form JSON value, or framework type.
@@ -336,11 +391,18 @@ namespace MassiveScale.Petshop.Api.Helpers
         /// free-form JSON value (<see cref="JsonElement"/>, <see cref="JsonNode"/>, <see cref="object"/>)
         /// are data, so any key is accepted and matched exactly.
         /// </summary>
-        private static void MergeObject(JsonObject target, JsonObject patch, Type targetType, List<string> rejected, string prefix)
+        private static bool MergeObject(JsonObject target, JsonObject patch, Type targetType, List<string> rejected, string prefix)
         {
+            if (!TryResolvePatchType(targetType, null, target, patch, rejected, prefix, out var concreteType, out var discriminatorName)) return false;
+            targetType = concreteType;
+            if (discriminatorName is not null && FindJsonProperty(patch, discriminatorName) is { } tag)
+            {
+                target[discriminatorName] = tag.Value?.DeepClone();
+            }
             var openValueType = GetOpenObjectValueType(targetType);
             foreach (var (patchName, patchValue) in patch)
             {
+                if (string.Equals(patchName, discriminatorName, StringComparison.OrdinalIgnoreCase)) continue;
                 string wireName;
                 Type childType;
                 if (openValueType is not null)
@@ -386,14 +448,15 @@ namespace MassiveScale.Petshop.Api.Helpers
                     else
                     {
                         var targetChild = new JsonObject();
-                        MergeObject(targetChild, patchChild, childType, rejected, path);
-                        target[targetName ?? wireName] = targetChild;
+                        if (MergeObject(targetChild, patchChild, childType, rejected, path))
+                            target[targetName ?? wireName] = targetChild;
                     }
                     continue;
                 }
 
                 target[targetName ?? wireName] = patchValue.DeepClone();
             }
+            return true;
         }
 
         /// <summary>

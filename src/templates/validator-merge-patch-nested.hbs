@@ -81,6 +81,13 @@ this.RuleFor(x => x).Custom((patch, context) =>
             continue;
         }
         var nestedPatch = {{{mergePatchFactoryTypeName}}}.FromJson(entry.Value.GetRawText(), jsonSerializerOptions);
+{{#if mergePatchDiscriminatorName}}
+        if (!nestedPatch.IsDefined({{csharpString mergePatchDiscriminatorName}}))
+        {
+            context.AddFailure($"{{{name}}}[{entry.Name}]." + {{csharpString mergePatchDiscriminatorName}}, "The discriminator is required.");
+            continue;
+        }
+{{/if}}
         var nestedResult = {{{mergePatchValidatorExpression}}}.Validate(nestedPatch);
         foreach (var failure in nestedResult.Errors)
             context.AddFailure($"{{{name}}}[{entry.Name}].{failure.PropertyName}", failure.ErrorMessage);
@@ -97,6 +104,13 @@ this.RuleFor(x => x).Custom((patch, context) =>
         return;
     }
     var nestedPatch = {{{mergePatchFactoryTypeName}}}.FromJson(element.GetRawText(), jsonSerializerOptions);
+{{#if mergePatchDiscriminatorName}}
+    if (!nestedPatch.IsDefined({{csharpString mergePatchDiscriminatorName}}))
+    {
+        context.AddFailure("{{{name}}}." + {{csharpString mergePatchDiscriminatorName}}, "The discriminator is required.");
+        return;
+    }
+{{/if}}
     var nestedResult = {{{mergePatchValidatorExpression}}}.Validate(nestedPatch);
     foreach (var failure in nestedResult.Errors)
         context.AddFailure($"{{{name}}}.{failure.PropertyName}", failure.ErrorMessage);

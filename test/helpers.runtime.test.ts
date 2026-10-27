@@ -10,11 +10,15 @@ const hasDotnet =
     stdio: "ignore",
   }).status === 0;
 
-const SPEC = `
+const SPEC = (versionAware: boolean) => `
   import "@typespec/http";
+  import "@typespec/versioning";
   using TypeSpec.Http;
+  using TypeSpec.Versioning;
 
+  ${versionAware ? "@versioned(Versions)" : ""}
   @service namespace Demo;
+  ${versionAware ? 'enum Versions { v1: "v1", v2: "v2" }' : ""}
 
   enum Theme { light, dark }
   model WidgetLayout { density?: int32 = 10; }
@@ -26,14 +30,28 @@ const SPEC = `
   }
   model WidgetSlot { name: string; }
   @discriminator("kind")
-  model Gadget { kind: string; }
-  model Gear extends Gadget { kind: "gear"; teeth?: int32; }
+  model Gadget {
+    @encodedName("application/json", "$type") kind: string;
+    @maxLength(4) label?: string;
+  }
+  model Gear extends Gadget {
+    kind: "gear";
+    ${versionAware ? "@added(Versions.v2)" : ""}
+    @minValue(2) teeth?: int32;
+    friend?: Gadget;
+    layout?: WidgetLayout;
+  }
+  model Cog extends Gadget { kind: "cog"; size?: int32; }
+  @discriminator("kind") model PlainPet { kind: string; @maxLength(4) name?: string; }
+  model PlainDog extends PlainPet { kind: "dog"; @minValue(10) value?: int32; required: string; }
   model Widget {
     name?: string;
     appearance?: WidgetAppearance = #{ label: "default", layout: #{} };
     values?: int32[];
     slots?: WidgetSlot[];
     gadgets?: Gadget[];
+    gadget?: Gadget;
+    catalog?: Record<Gadget>;
     labels?: Record<string>;
     groups?: Record<Record<string>>;
     extra?: unknown;
@@ -43,10 +61,15 @@ const SPEC = `
   @route("/widgets") interface Widgets {
     @patch update(@body body: WidgetPatch): void;
   }
+  @route("/plain") @patch op updatePlain(@body body: PlainPet): void;
+  @route("/plain") @post op createPlain(@body body: PlainPet): void;
 `;
 
-async function runGeneratedHelper(style: "generic" | "typed"): Promise<void> {
-  const files = await emit(SPEC, {
+async function runGeneratedHelper(
+  style: "generic" | "typed",
+  versionAware = false,
+): Promise<void> {
+  const files = await emit(SPEC(versionAware), {
     "merge-patch-style": style,
     "emit-controllers": false,
     "emit-services": false,
@@ -65,7 +88,6 @@ async function runGeneratedHelper(style: "generic" | "typed"): Promise<void> {
         !path.startsWith("Validators/")
       )
         continue;
-      if (path.endsWith("ValidatorsInitializer.g.cs")) continue;
       const destination = join(directory, path);
       await mkdir(join(destination, ".."), { recursive: true });
       await writeFile(destination, content, "utf8");
@@ -84,6 +106,7 @@ async function runGeneratedHelper(style: "generic" | "typed"): Promise<void> {
       join(directory, "Program.cs"),
       `using Demo.Models;
     using Demo.Validators;
+using Microsoft.Extensions.DependencyInjection;
 using ${style === "generic" ? "Demo.Helpers" : "Demo.Models"};
 
 static void Check(bool condition, string message)
@@ -160,12 +183,21 @@ widget.Name = "before";
 Patch(widget, """{"name":"after","values":[7],"appearance":{"label":"both"}}""");
 Check(widget.Name == "after" && widget.Values is [7] && widget.Appearance.Label == "both", "several properties must apply together");
 
-var jsonOptions = Microsoft.Extensions.Options.Options.Create(new Microsoft.AspNetCore.Mvc.JsonOptions());
-var widgetValidator = new WidgetPatchValidator(
-    jsonOptions,
-    new WidgetAppearancePatchValidator(jsonOptions, new WidgetLayoutPatchValidator()),
-    new WidgetSlotValidator(),
-    new GadgetValidator(new GearValidator()));
+var services = new ServiceCollection();
+services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new Microsoft.AspNetCore.Mvc.JsonOptions()));
+services.AddHttpContextAccessor();
+services.AddGeneratedValidators();
+using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+var widgetValidator = provider.GetRequiredService<WidgetPatchValidator>();
+${
+  versionAware
+    ? `
+var accessor = provider.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
+accessor.HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+accessor.HttpContext.Request.Headers["api-version"] = "v2";
+`
+    : ""
+}
 
 var abstractItem = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("""{"gadgets":[{"teeth":3}]}""");
 var abstractResult = widgetValidator.Validate(abstractItem);
@@ -189,6 +221,72 @@ Check(requiredResult.Errors.Any(failure => failure.PropertyName == "Appearance.L
 var invalidArrayItem = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("""{"slots":[{}]}""");
 var arrayResult = widgetValidator.Validate(invalidArrayItem);
 Check(arrayResult.Errors.Any(failure => failure.PropertyName == "Slots[0].Name"), "replacement array items must receive complete model validation");
+
+FluentValidation.Results.ValidationResult ValidateGadget(string json) =>
+    widgetValidator.Validate(${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson(json));
+
+var derivedFailure = ValidateGadget("""{"gadget":{"$type":"gear","teeth":1,"label":"too long"}}""");
+Check(derivedFailure.Errors.Count(failure => failure.PropertyName == "Gadget.Teeth") == 1, "derived-only properties must be validated exactly once");
+Check(derivedFailure.Errors.Count(failure => failure.PropertyName == "Gadget.Label") == 1, "inherited properties must be validated exactly once");
+Check(ValidateGadget("""{"gadget":{"$type":"gear"}}""").IsValid, "a discriminated object must remain a partial update");
+foreach (var json in new[] {
+    """{"gadget":{}}""",
+    """{"gadget":{"teeth":3}}""",
+    """{"gadget":{"$type":"missing"}}""",
+    """{"gadget":{"$type":null}}""",
+    """{"gadget":{"$type":4}}"""
+})
+    Check(ValidateGadget(json).Errors.Any(failure => failure.PropertyName == "Gadget.$type"), "nested discriminators must be present, string-valued, and recognized");
+Check(ValidateGadget("""{}""").IsValid && ValidateGadget("""{"gadget":null}""").IsValid, "omitted and nullable nested properties do not require a discriminator");
+Check(ValidateGadget("""{"gadget":{"$TYPE":"gear","teeth":2}}""").IsValid, "discriminator property lookup must follow case-insensitive patch lookup");
+Check(ValidateGadget("""{"catalog":{"first":{"$type":"gear","teeth":1}}}""").Errors.Any(failure => failure.PropertyName == "Catalog[first].Teeth"), "record values must dispatch to derived PATCH validators");
+Check(ValidateGadget("""{"catalog":{"first":{}}}""").Errors.Any(failure => failure.PropertyName == "Catalog[first].$type"), "record values must require discriminators");
+Check(ValidateGadget("""{"catalog":{"first":null}}""").IsValid, "record deletions do not require discriminators");
+Check(ValidateGadget("""{"gadget":{"$type":"gear","friend":{"$type":"gear","teeth":1}}}""").Errors.Any(failure => failure.PropertyName == "Gadget.Friend.Teeth"), "recursive polymorphic patches must resolve validators lazily");
+Check(ValidateGadget("""{"gadget":{"$type":"gear","layout":{"density":4}}}""").IsValid, "derived-only nested models must have registered PATCH validators");
+
+bool ApplyGadget(Widget target, string json, out System.Collections.Generic.IReadOnlyList<string> rejectedPaths)
+{
+    var patch = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson(json);
+    Check(widgetValidator.Validate(patch).IsValid, "the end-to-end patch must first pass validation");
+    return patch.TryPatch(target, out rejectedPaths);
+}
+var gear = new Gear { Teeth = 5, Label = "old" };
+var polymorphic = new Widget { Gadget = gear };
+Check(ApplyGadget(polymorphic, """{"gadget":{"$type":"gear","teeth":6}}""", out var sameRejected) && sameRejected.Count == 0, "matching discriminator metadata must not be rejected");
+Check(ReferenceEquals(polymorphic.Gadget, gear) && gear.Teeth == 6, "same-type patches preserve object identity");
+Check(!ApplyGadget(polymorphic, """{"name":"ok","gadget":{"$type":"cog","teeth":1,"label":"new"}}""", out var mismatchRejected), "a different discriminator must be rejected");
+Check(mismatchRejected.Contains("gadget.$type") && gear.Teeth == 6 && gear.Label == "old" && polymorphic.Name == "ok", "a mismatch must reject the entire affected object before mutation, while independent siblings apply");
+foreach (var tag in new[] { "null", "4", "\\"unknown\\"" })
+{
+    var invalid = ${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}.FromJson("{\\"gadget\\":{\\"$type\\":" + tag + ",\\"teeth\\":1}}");
+    Check(!invalid.TryPatch(polymorphic, out _) && gear.Teeth == 6, "application must reject invalid tags without relying on validation");
+}
+var missingGadget = new Widget();
+Check(ApplyGadget(missingGadget, """{"gadget":{"teeth":7,"$TYPE":"gear"}}""", out _) && missingGadget.Gadget is Gear { Teeth: 7 }, "a missing polymorphic value must be created with canonical metadata regardless of tag order or casing");
+var dictionary = new Widget { Catalog = new Dictionary<string, Gadget> { ["a"] = new Gear { Teeth = 5 } } };
+Check(ApplyGadget(dictionary, """{"catalog":{"a":{"$type":"gear","teeth":6},"b":{"$type":"cog","size":3}}}""", out _) && dictionary.Catalog["a"] is Gear { Teeth: 6 } && dictionary.Catalog["b"] is Cog { Size: 3 }, "dictionary values must merge and materialize as concrete types");
+Check(!ApplyGadget(dictionary, """{"catalog":{"a":{"$type":"cog","teeth":1},"b":{"$type":"cog","size":4}}}""", out var dictionaryRejected) && dictionaryRejected.Contains("catalog.a.$type") && dictionary.Catalog["a"] is Gear { Teeth: 6 } && dictionary.Catalog["b"] is Cog { Size: 4 }, "dictionary mismatches must preserve the affected entry and still apply valid siblings");
+Check(ApplyGadget(dictionary, """{"catalog":{"a":null}}""", out _) && !dictionary.Catalog.ContainsKey("a"), "polymorphic dictionary entries must still support deletion");
+Check(ApplyGadget(new Widget(), """{"catalog":{"a":{"$type":"gear","teeth":8}}}""", out _), "a missing dictionary must support polymorphic creation");
+var rootPatch = ${style === "generic" ? "MergePatch<Gadget>" : "GadgetMergePatchUpdate"}.FromJson("""{"$type":"cog","teeth":1}""");
+Check(!rootPatch.TryPatch(gear, out var rootRejected) && rootRejected.Contains("$type") && gear.Teeth == 6, "a root mismatch must not mutate the entity");
+var matchingRoot = ${style === "generic" ? "MergePatch<Gadget>" : "GadgetMergePatchUpdate"}.FromJson("""{"$type":"gear","teeth":9}""");
+Check(matchingRoot.TryPatch(gear, out _) && gear.Teeth == 9, "matching root metadata must be accepted");
+var plainValidator = provider.GetRequiredService<PlainPetPatchValidator>();
+var plainFailure = plainValidator.Validate(new PlainDog { Value = 1, Name = "long name" });
+Check(plainFailure.Errors.Count(f => f.PropertyName == "Value") == 1 && plainFailure.Errors.Count(f => f.PropertyName == "Name") == 1, "plain PATCH dispatch must validate derived and inherited constraints exactly once");
+Check(plainValidator.Validate(new PlainDog { Value = 10 }).IsValid, "plain PATCH must inject PATCH rather than POST rules when both exist");
+${
+  versionAware
+    ? `
+accessor.HttpContext.Request.Headers["api-version"] = "v1";
+Check(ValidateGadget("""{"gadget":{"$type":"gear","teeth":1}}""").IsValid, "derived PATCH rules must honor the requested API version");
+accessor.HttpContext.Request.Headers["api-version"] = "v2";
+Check(!ValidateGadget("""{"gadget":{"$type":"gear","teeth":1}}""").IsValid, "derived PATCH rules must read the API version per validation");
+`
+    : ""
+}
 `,
       "utf8",
     );
@@ -222,6 +320,9 @@ describe("generated merge-patch runtime behavior", { skip: !hasDotnet }, () => {
     it(`recursively merges nested values with ${style} helpers`, async () => {
       await runGeneratedHelper(style);
     });
+    it(`dispatches version-aware polymorphic patches with ${style} helpers`, async () => {
+      await runGeneratedHelper(style, true);
+    });
   }
 });
 
@@ -242,11 +343,16 @@ const AWKWARD_NAMES_SPEC = `
     \`$ref\`: string;
     mode?: Mode = Mode.aB;
     status?: "in-progress" | "" = "";
+    pet?: Pet = #{ kind: "say \\"woof\\"", name: "Rex" };
+    pets?: Pet[] = #[#{ kind: "say \\"woof\\"", name: "Spot" }];
   }
 
   @discriminator("kind")
-  model Pet { @encodedName("application/json", "$type") kind: string; }
-  model Dog extends Pet { kind: "say \\"woof\\""; name: string; }
+  model Pet {
+    @encodedName("application/json", "$type") kind: string;
+    name: string;
+  }
+  model Dog extends Pet { kind: "say \\"woof\\""; }
 
   @route("/items/{class}") interface Items {
     @post create(
@@ -268,10 +374,17 @@ static void Check(bool condition, string message)
 }
 
 var error = new Error { ErrorValue = "e", UserId = "snake", UserId2 = "camel", _1st = "first", Ref = "r" };
+Check(error.Pet is Dog { Name: "Rex" }, "discriminated defaults must instantiate the concrete subtype with inherited properties");
+Check(error.Pets is [Dog { Name: "Spot" }], "array defaults must instantiate concrete subtypes");
+var other = new Error();
+error.Pet!.Name = "changed";
+Check(other.Pet is Dog { Name: "Rex" }, "discriminated defaults must not share instances");
 var json = JsonSerializer.Serialize(error);
 Check(json.Contains("\\"error\\":\\"e\\"") && json.Contains("\\"user_id\\":\\"snake\\"") && json.Contains("\\"userId\\":\\"camel\\""), json);
 Check(json.Contains("\\"1st\\":\\"first\\"") && json.Contains("\\"$ref\\":\\"r\\""), json);
 Check(json.Contains("\\"mode\\":\\"aB\\"") && json.Contains("\\"status\\":\\"\\""), json);
+var roundTrip = JsonSerializer.Deserialize<Error>(json);
+Check(roundTrip?.Pet is Dog { Name: "changed" }, "discriminated defaults must round-trip through JSON");
 
 var pet = JsonSerializer.Deserialize<Pet>("""{"$type":"say \\"woof\\"","name":"Rex"}""");
 Check(pet is Dog { Name: "Rex" }, "polymorphic deserialization must use the encoded discriminator name");

@@ -146,6 +146,16 @@ The supplied properties of each object are applied in a single serialize/merge/d
 
 `Patch` keeps its existing non-throwing, in-place signature and ignores the diagnostics returned by `TryPatch`. Use `TryPatch` to detect unknown, read-only, or invalid values. It returns `false` and rejected JSON paths; rejected paths are left unchanged while valid siblings are still applied. Raw exception messages are not included. Pass a `JsonSerializerOptions` instance if custom converters are needed.
 
+#### Polymorphic values
+
+The helpers recognize the generated `[JsonPolymorphic]` and `[JsonDerivedType]` metadata. A supplied discriminator is metadata, not a reflected CLR property, so a matching tag is accepted without assigning a property. Its wire name follows `@encodedName`; property-name matching is case-insensitive, while tag values match exactly.
+
+An existing instance keeps its CLR type and identity. A conflicting, unknown, null, or non-string tag rejects the **entire affected object before any of its members change**, with a rejected path such as `pet.kind`. Independent siblings can still apply. A conflicting root tag rejects the whole root update. Subtype replacement is not supported.
+
+For a null model property or a new `Record<Pet>` entry, a recognized tag selects the concrete class to create. Existing dictionary entries resolve their subtype from their serialized discriminator, so derived-only fields are retained and updated rather than treated as unknown base members. Dictionary entry deletion with `null` is unchanged.
+
+Always validate before applying and use `TryPatch` to check target-dependent errors: a raw-patch validator can select rules from the supplied tag but cannot know whether it matches the existing entity. Applying a patch does not itself enforce FluentValidation constraints.
+
 `PatchAsync` returns a `ValueTask` (no allocation on the hot path) and checks the cancellation token before starting work. The patch application itself is synchronous — `PatchAsync` exists for seamless composition in async controller actions.
 
 ### Fine-grained: `IsDefined` and `TryGetValue`

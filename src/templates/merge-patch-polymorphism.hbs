@@ -1,0 +1,50 @@
+    private static bool TryResolvePatchType(Type declaredType, Type? runtimeType, JsonObject? existing, JsonObject patch, List<string> rejected, string prefix, out Type resolvedType, out string? discriminatorName)
+    {
+        resolvedType = runtimeType ?? declaredType;
+        discriminatorName = null;
+        for (Type? current = declaredType; current is not null; current = current.BaseType)
+        {
+            var polymorphic = current.GetCustomAttribute<JsonPolymorphicAttribute>(inherit: false);
+            if (polymorphic is null) continue;
+            discriminatorName = polymorphic.TypeDiscriminatorPropertyName ?? "$type";
+            var supplied = FindJsonProperty(patch, discriminatorName);
+            var previous = existing is null ? null : FindJsonProperty(existing, discriminatorName);
+            var tag = supplied ?? previous;
+            if (tag is null)
+            {
+                if (runtimeType is not null || !declaredType.IsAbstract) return true;
+                rejected.Add(JoinPath(prefix, discriminatorName));
+                return false;
+            }
+            Type? selected = null;
+            if (tag.Value.Value is JsonValue value && value.TryGetValue<string>(out var text))
+            {
+                foreach (var derived in current.GetCustomAttributes<JsonDerivedTypeAttribute>(inherit: false))
+                {
+                    if (derived.TypeDiscriminator is string name && name == text)
+                    {
+                        selected = derived.DerivedType;
+                        break;
+                    }
+                }
+            }
+            if (selected is null || !declaredType.IsAssignableFrom(selected) || (runtimeType is not null && runtimeType != selected)
+                || (supplied is not null && previous is not null && !JsonNode.DeepEquals(supplied.Value.Value, previous.Value.Value)))
+            {
+                rejected.Add(JoinPath(prefix, discriminatorName));
+                return false;
+            }
+            resolvedType = selected;
+            return true;
+        }
+        return true;
+    }
+
+    private static KeyValuePair<string, JsonNode?>? FindJsonProperty(JsonObject value, string name)
+    {
+        foreach (var entry in value)
+        {
+            if (string.Equals(entry.Key, name, StringComparison.OrdinalIgnoreCase)) return entry;
+        }
+        return null;
+    }

@@ -41,6 +41,7 @@ import {
   csharpModelName,
   enumMemberIdentifier,
   enumMemberIdentifiers,
+  propertyIdentifier,
   propertyIdentifiers,
   qualifyTypeName,
 } from "./naming.js";
@@ -657,34 +658,69 @@ function objectInitializer(
   options: ResolvedOptions,
   program: Program,
 ): string | undefined {
-  const model = modelTypeForInitializer(targetSpecType);
+  let model = modelTypeForInitializer(targetSpecType);
   if (!model) return undefined;
   if (isArrayModelType(model) || isRecordModelType(model)) return undefined;
-  if (getDiscriminator(program, model)) return undefined;
+  const discriminatorNames = new Set<string>();
+  const inheritedDiscriminator = discriminatorPropertyNameInHierarchy(
+    program,
+    model,
+  );
+  if (inheritedDiscriminator) discriminatorNames.add(inheritedDiscriminator);
+  for (
+    let discriminator = getDiscriminator(program, model);
+    discriminator;
+    discriminator = getDiscriminator(program, model)
+  ) {
+    discriminatorNames.add(discriminator.propertyName);
+    const tag = value.properties.get(discriminator.propertyName)?.value;
+    const wireValue =
+      tag?.valueKind === "StringValue"
+        ? tag.value
+        : tag?.valueKind === "EnumValue"
+          ? (tag.value.value ?? tag.value.name)
+          : undefined;
+    if (typeof wireValue !== "string") return undefined;
+    const [union] = getDiscriminatedUnionFromInheritance(model, discriminator);
+    const concreteModel = union.variants.get(wireValue);
+    if (!concreteModel || concreteModel === model) return undefined;
+    model = concreteModel;
+  }
 
   const modelType = typeReference(model, options, program);
-  const properties = classProperties(program, model);
-  const memberNames = propertyIdentifiers(program, model);
+  const properties = new Map<string, { prop: ModelProperty; owner: Model }>();
+  for (
+    let current: Model | undefined = model;
+    current;
+    current = emittedBaseModel(program, current)
+  ) {
+    for (const prop of classProperties(program, current)) {
+      if (!properties.has(prop.name)) {
+        properties.set(prop.name, { prop, owner: current });
+      }
+    }
+  }
   const assignments: string[] = [];
 
   for (const descriptor of value.properties.values()) {
-    const prop = properties.find(
-      (candidate) => candidate.name === descriptor.name,
-    );
-    if (!prop) return undefined;
+    // Discriminator tags select the runtime type; they are not C# properties.
+    if (discriminatorNames.has(descriptor.name)) continue;
+    const property = properties.get(descriptor.name);
+    if (!property) return undefined;
+    const { prop, owner } = property;
 
-    const memberName = memberNames.get(prop)!;
+    const memberName = propertyIdentifier(program, model, prop);
     const encoding = resolvePropertyEncoding(program, prop, options);
     const targetType = propertyTypeName(
       program,
-      model,
+      owner,
       prop,
       options,
       encoding.typeOverride,
     );
     const inferredEnumType = inferredEnumTypeNameForProperty(
       program,
-      model,
+      owner,
       prop,
     );
     const qualifiedInferredEnumType = inferredEnumType

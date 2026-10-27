@@ -65,10 +65,11 @@ const VALIDATOR_TEMPLATE_NAMES: readonly ValidatorTemplateName[] = [
 ];
 
 /**
- * Partials shared by the built-in validator templates, keyed by partial name.
+ * Partials shared by the built-in templates, keyed by partial name.
  * Custom templates can include them too (see `docs/custom-templates.md`).
  */
 const VALIDATOR_PARTIALS: Readonly<Record<string, string>> = {
+  mergePatchPolymorphism: "merge-patch-polymorphism.hbs",
   mergePatchNestedRules: "validator-merge-patch-nested.hbs",
   mergePatchPropertyRules: "validator-merge-patch-property-rules.hbs",
   typedPropertyRules: "validator-typed-property-rules.hbs",

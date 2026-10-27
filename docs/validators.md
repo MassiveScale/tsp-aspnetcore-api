@@ -232,6 +232,8 @@ RuleFor(x => x).SetInheritanceValidator(v =>
 
 The derived-type validators are injected as `AbstractValidator<TDerived>` constructor parameters and resolved from DI via the registrations in `ValidatorsInitializer.g.cs`. A derived type the base also references through a property is injected once.
 
+Plain (non-MergePatch) PATCH bodies also use `SetInheritanceValidator` to check the concrete runtime subtype. Their dispatch injects concrete `{Derived}PatchValidator` classes, so an endpoint with both POST and PATCH validators does not accidentally use POST required-field rules for a partial update. Version-aware and per-version PATCH validators follow the same behavior.
+
 Every validator checks the properties a model inherits as well as its own, so `DogValidator` and `DogPatchValidator` also check `Pet.name`. To avoid reporting each inherited failure twice, the base validator wraps its own property rules in a guard that skips the derived types it dispatches to:
 
 ```csharp
@@ -241,4 +243,16 @@ When(x => !_derivedTypes.Contains(x.GetType()), () =>
 });
 ```
 
-> **Note:** Polymorphic dispatch is emitted only for POST validators. MergePatch-based PATCH validators operate on a generic `MergePatch<T>` wrapper that is not polymorphic, so inheritance dispatch does not apply there. A `MergePatch<Pet>` validator checks only the properties `Pet` declares; [applying the patch](merge-patch.md#applying-the-patch) still updates the properties of the runtime type.
+MergePatch-based PATCH validators dispatch using the raw JSON discriminator rather than the wrapper's runtime type. For example, when a nested `pet` property is declared as `Pet`, this patch selects `DogPatchValidator` and validates both the supplied inherited properties and the supplied Dog-only properties:
+
+```json
+{ "pet": { "kind": "dog", "bark": false } }
+```
+
+Non-null nested polymorphic objects **must include a discriminator**, even for an empty object patch (`{ "pet": {} }`). Missing, null, non-string, and unrecognized tags produce validation failures, with paths such as `Pet.kind`. Use the JSON wire name when `@encodedName` renames the discriminator. An omitted or nullable `pet: null` does not require a tag. `Record<Pet>` values follow the same rule, except that `null` removes an entry. Arrays still replace their contents and use complete-model POST validation for each item.
+
+The selected subtype uses PATCH semantics: absent fields are not required, inherited properties are validated once, and subtype-only nested models and recursive references are validated too. Both generic and typed MergePatch helpers support this dispatch, including all version strategies; version-aware child rules read the current request's API version.
+
+A top-level `MergePatch<Pet>` also dispatches when its discriminator is supplied. Without one it retains base-only validation: a raw patch cannot infer the existing entity's runtime type. Validation selects rules; it does not change the existing instance's CLR type when [applying the patch](merge-patch.md#applying-the-patch).
+
+Application rejects a discriminator that conflicts with the target's existing subtype before changing that object. Validation alone cannot detect this mismatch because it has no target instance: always check `TryPatch` as well. A valid matching discriminator is accepted as metadata, and missing polymorphic properties and new dictionary entries are materialized as their tagged concrete type.

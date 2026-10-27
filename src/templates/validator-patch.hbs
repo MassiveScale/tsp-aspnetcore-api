@@ -42,7 +42,20 @@ public partial class {{{validatorName}}} : AbstractValidator<{{{qualifiedPatchBo
         var jsonSerializerOptions = jsonOptions.Value.JsonSerializerOptions;
 
 {{/if}}
+{{#if derivedTypeValidators}}
+        When(x => !_derivedTypes.Contains(x.GetType()), () =>
+        {
+            {{> validatorRules}}
+        });
+        RuleFor(x => x).SetInheritanceValidator(v =>
+        {
+{{#each derivedTypeValidators}}
+            v.Add<{{{qualifiedTypeName}}}>({{#if lazy}}_ => {{/if}}{{{validatorExpression}}});
+{{/each}}
+        });
+{{else}}
         {{> validatorRules}}
+{{/if}}
         ExtendRules();
     }
     {{> validatorHelpers}}
