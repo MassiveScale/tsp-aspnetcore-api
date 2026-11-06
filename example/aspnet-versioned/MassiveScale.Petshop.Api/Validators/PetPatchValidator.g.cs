@@ -86,6 +86,13 @@ public partial class PetPatchValidator : AbstractValidator<MergePatch<Pet>>
             .WithName("LastModifiedDateTime")
             .WithMessage("'LastModifiedDateTime' is read-only and cannot be modified.");
 
+        // Name must hold a value of its declared type when provided
+        this.RuleFor(x => x)
+            .Must(x => x.IsValidPropertyValue("name"))
+            .When(x => x.IsDefined("name") && !x.IsNull("name"))
+            .WithName("Name")
+            .WithMessage("'Name' is not a valid value.");
+
         // PhotoUrls is required and cannot be removed
         this.RuleFor(x => x)
             .Must(x => !x.IsNull("photoUrls"))
@@ -93,12 +100,26 @@ public partial class PetPatchValidator : AbstractValidator<MergePatch<Pet>>
             .WithName("PhotoUrls")
             .WithMessage("'PhotoUrls' is required and cannot be null.");
 
+        // PhotoUrls must hold a value of its declared type when provided
+        this.RuleFor(x => x)
+            .Must(x => x.IsValidPropertyValue("photoUrls"))
+            .When(x => x.IsDefined("photoUrls") && !x.IsNull("photoUrls"))
+            .WithName("PhotoUrls")
+            .WithMessage("'PhotoUrls' is not a valid value.");
+
         // PhotoUrls cannot contain more than 5 items when provided
         this.RuleFor(x => x)
             .Must(x => x.Properties.TryGetValue("photoUrls", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array && items.GetArrayLength() <= 5)
             .When(x => x.IsDefined("photoUrls") && !x.IsNull("photoUrls"))
             .WithName("PhotoUrls")
             .WithMessage("'PhotoUrls' must be an array with no more than 5 items.");
+
+        // Status must hold a value of its declared type when provided
+        this.RuleFor(x => x)
+            .Must(x => x.IsValidPropertyValue("status"))
+            .When(x => x.IsDefined("status") && !x.IsNull("status"))
+            .WithName("Status")
+            .WithMessage("'Status' is not a valid value.");
 
         // Rules for v2.0 and later
         When(_ => IsVersionInRange("v2.0", null), () =>

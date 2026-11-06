@@ -26,50 +26,60 @@ this.RuleFor(x => x)
     .WithMessage("'{{{name}}}' is required and cannot be null.");
 
 {{/if}}
-{{#if notEmpty}}
-// {{{name}}} must not be empty when provided
+{{#if validatesValueType}}
+// {{{name}}} must hold a value of its declared type when provided
 this.RuleFor(x => x)
-    .Must(x => (x.GetString("{{{jsonName}}}")?.Length ?? 0) > 0)
+    .Must(x => x.IsValidPropertyValue("{{{jsonName}}}"))
     .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
     .WithName("{{{name}}}")
-    .WithMessage("'{{{name}}}' must not be empty.");
+    .WithMessage("'{{{name}}}' is not a valid value.");
+
+{{/if}}
+{{!--
+  String rules use the same FluentValidation validators as a POST validator, so
+  both reject the same values with the same messages. They run only on a JSON
+  string; any other value is reported once, by the type rule above.
+--}}
+{{#if notEmpty}}
+// {{{name}}} must not be empty when provided
+this.RuleFor(x => x.GetString("{{{jsonName}}}"))
+    .NotEmpty()
+    .OverridePropertyName("{{{name}}}")
+    .When(x => x.IsString("{{{jsonName}}}"));
 
 {{/if}}
 {{#if minLength}}
 // {{{name}}} must be at least {{minLength}} characters when provided
-this.RuleFor(x => x)
-    .Must(x => (x.GetString("{{{jsonName}}}")?.Length ?? 0) >= {{minLength}})
-    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
-    .WithName("{{{name}}}")
-    .WithMessage("'{{{name}}}' must be at least {{minLength}} characters.");
+this.RuleFor(x => x.GetString("{{{jsonName}}}"))
+    .MinimumLength({{minLength}})
+    .OverridePropertyName("{{{name}}}")
+    .When(x => x.IsString("{{{jsonName}}}"));
 
 {{/if}}
 {{!-- isDefined, not a plain #if: a zero maximum is still a limit. --}}
 {{#if (isDefined maxLength)}}
 // {{{name}}} cannot exceed a MaxLength of {{maxLength}} when provided
-this.RuleFor(x => x)
-    .Must(x => (x.GetString("{{{jsonName}}}")?.Length ?? 0) <= {{maxLength}})
-    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
-    .WithName("{{{name}}}")
-    .WithMessage("'{{{name}}}' must be {{maxLength}} characters or fewer.");
+this.RuleFor(x => x.GetString("{{{jsonName}}}"))
+    .MaximumLength({{maxLength}})
+    .OverridePropertyName("{{{name}}}")
+    .When(x => x.IsString("{{{jsonName}}}"));
 
 {{/if}}
 {{#if pattern}}
 // {{{name}}} must match the pattern '{{pattern}}' when provided
-this.RuleFor(x => x)
-    .Must(x => IsMatch({{{patternField}}}, x.GetString("{{{jsonName}}}")))
-    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
-    .WithName("{{{name}}}")
-    .WithMessage("'{{{name}}}' is not in the correct format.");
+this.RuleFor(x => x.GetString("{{{jsonName}}}"))
+    .Must(value => IsMatch({{{patternField}}}, value))
+    .WithMessage("'{PropertyName}' is not in the correct format.")
+    .OverridePropertyName("{{{name}}}")
+    .When(x => x.IsString("{{{jsonName}}}"));
 
 {{/if}}
 {{#if emailAddress}}
 // {{{name}}} must be a valid email address when provided
-this.RuleFor(x => x)
-    .Must(x => System.Net.Mail.MailAddress.TryCreate(x.GetString("{{{jsonName}}}") ?? string.Empty, out _))
-    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
-    .WithName("{{{name}}}")
-    .WithMessage("'{{{name}}}' is not a valid email address.");
+this.RuleFor(x => x.GetString("{{{jsonName}}}"))
+    .EmailAddress()
+    .OverridePropertyName("{{{name}}}")
+    .When(x => x.IsString("{{{jsonName}}}"));
 
 {{/if}}
 {{#if minValue}}
@@ -124,15 +134,6 @@ this.RuleFor(x => x)
     .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
     .WithName("{{{name}}}")
     .WithMessage("'{{{name}}}' must be an array with no more than {{maxItems}} items.");
-
-{{/if}}
-{{#if isInEnum}}
-// {{{name}}} must be a valid {{{enumTypeName}}} value when provided
-this.RuleFor(x => x)
-    .Must(x => x.TryGetValue<{{{enumTypeName}}}?>("{{{jsonName}}}", out _))
-    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
-    .WithName("{{{name}}}")
-    .WithMessage("'{{{name}}}' is not a valid value.");
 
 {{/if}}
 {{#if referencedModelName}}

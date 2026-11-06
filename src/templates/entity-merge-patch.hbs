@@ -3,6 +3,8 @@
 
   Generates a concrete, non-generic RFC 7396 JSON Merge Patch container class
   named {ModelName}MergePatchUpdate (e.g. WidgetMergePatchUpdate for Widget).
+  A converter reads it through the same [JsonExtensionData] shape and also
+  remembers the serializer options, which IsValidPropertyValue uses.
 
   Override via tspconfig.yaml:
     options:
@@ -20,6 +22,7 @@
 /// distinguish "field absent from the request" from "field explicitly set to null".
 /// </summary>
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+[JsonConverter(typeof({{{modelName}}}MergePatchUpdate.ReadOptionsConverter))]
 public class {{{modelName}}}MergePatchUpdate
 {
     /// <summary>
@@ -28,6 +31,14 @@ public class {{{modelName}}}MergePatchUpdate
     /// </summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement> Properties { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The serializer options this patch was read with, such as the application's MVC
+    /// JSON options when ASP.NET Core binds a request body. <see cref="IsValidPropertyValue"/>
+    /// uses them when no options are passed, so values are checked the way a POST body
+    /// is read. <see langword="null"/> for a patch built in code.
+    /// </summary>
+    internal JsonSerializerOptions? ReadOptions { get; set; }
 
     /// <summary>
     /// Returns <see langword="true"/> if <paramref name="propertyName"/> was explicitly
@@ -53,6 +64,13 @@ public class {{{modelName}}}MergePatchUpdate
         if (element.ValueKind == JsonValueKind.Null) return null;
         return element.ValueKind == JsonValueKind.String ? element.GetString() : element.ToString();
     }
+
+    /// <summary>
+    /// Returns <see langword="true"/> if <paramref name="propertyName"/> is present in the
+    /// patch and its JSON value is a string.
+    /// </summary>
+    public bool IsString(string propertyName) =>
+        Properties.TryGetValue(propertyName, out var el) && el.ValueKind == JsonValueKind.String;
 
     /// <summary>
     /// Attempts to deserialize <paramref name="propertyName"/> to <typeparamref name="TValue"/>.
@@ -115,6 +133,53 @@ public class {{{modelName}}}MergePatchUpdate
             return true;
         }
         catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the patch value of <paramref name="propertyName"/>
+    /// fits the declared property type on <see cref="{{{qualifiedModelName}}}"/>, the same way
+    /// a request body must deserialize before it is validated. An object merged into a model
+    /// or a dictionary is checked member by member, so a partial object is valid, and a
+    /// <see langword="null"/> member, which removes that member, is always valid.
+    /// Also returns <see langword="true"/> when the property is absent, its value is
+    /// <see langword="null"/>, or <see cref="{{{qualifiedModelName}}}"/> declares no such property.
+    /// Values are read with <paramref name="options"/> when given, otherwise with the
+    /// options this patch was deserialized with.
+    /// </summary>
+    public bool IsValidPropertyValue(string propertyName, JsonSerializerOptions? options = null)
+    {
+        if (!Properties.TryGetValue(propertyName, out var element)) return true;
+        var prop = FindProperty(propertyName);
+        return prop is null || IsValidPatchValue(element, prop.PropertyType, options ?? ReadOptions);
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="value"/> can be merged into a value
+    /// of <paramref name="type"/>; see <see cref="IsValidPropertyValue"/>.
+    /// </summary>
+    private static bool IsValidPatchValue(JsonElement value, Type type, JsonSerializerOptions? options)
+    {
+        if (value.ValueKind == JsonValueKind.Null) return true;
+        var openValueType = GetOpenObjectValueType(type);
+        if (value.ValueKind == JsonValueKind.Object && (openValueType is not null || IsModelType(type)))
+        {
+            foreach (var member in value.EnumerateObject())
+            {
+                // Unknown members are not a type error; TryPatch reports them when applying.
+                var memberType = openValueType ?? FindMember(type, member.Name)?.Property.PropertyType;
+                if (memberType is not null && !IsValidPatchValue(member.Value, memberType, options)) return false;
+            }
+            return true;
+        }
+        try
+        {
+            JsonSerializer.Deserialize(value, type, options);
+            return true;
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
         {
             return false;
         }
@@ -493,5 +558,34 @@ public class {{{modelName}}}MergePatchUpdate
             map.TryAdd(wireName, (property, wireName));
         }
         return map;
+    }
+
+    /// <summary>
+    /// The JSON shape of a patch. Reading and writing through it keeps the exact behavior
+    /// of <c>[JsonExtensionData]</c>, so the converter only adds <see cref="ReadOptions"/>.
+    /// </summary>
+    private sealed class Wire
+    {
+        [JsonExtensionData]
+        public Dictionary<string, JsonElement> Properties { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public IEnumerable<string> DefinedProperties => Properties.Keys;
+    }
+
+    /// <summary>
+    /// Reads a patch and remembers the serializer options it was read with.
+    /// </summary>
+    internal sealed class ReadOptionsConverter : JsonConverter<{{{modelName}}}MergePatchUpdate>
+    {
+        public override {{{modelName}}}MergePatchUpdate? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            // A message-less JsonException gets the same message, path and position as before.
+            if (reader.TokenType != JsonTokenType.StartObject) throw new JsonException();
+            var wire = JsonSerializer.Deserialize<Wire>(ref reader, options)!;
+            return new {{{modelName}}}MergePatchUpdate { Properties = wire.Properties, ReadOptions = options };
+        }
+
+        public override void Write(Utf8JsonWriter writer, {{{modelName}}}MergePatchUpdate value, JsonSerializerOptions options) =>
+            JsonSerializer.Serialize(writer, new Wire { Properties = value.Properties }, options);
     }
 }

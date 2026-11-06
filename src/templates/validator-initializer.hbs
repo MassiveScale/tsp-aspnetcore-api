@@ -36,8 +36,8 @@ public static class ValidatorsInitializer
     /// Registers all auto-generated FluentValidation validators.
     /// Each validator is registered as its concrete type, as <see cref="AbstractValidator{T}"/>
     /// (for cascade injection between validators), and as <see cref="IValidator{T}"/>
-    /// (for the FluentValidation pipeline). Validators hold no per-request state, so they
-    /// are registered as singletons and built once.
+    /// (for the FluentValidation pipeline). Validators are registered as scoped services,
+    /// so each request scope gets its own instance.
     {{#if isVersionAware}}
     /// <para>
     /// Version-aware validators require <see cref="IHttpContextAccessor"/>. Ensure
@@ -49,9 +49,9 @@ public static class ValidatorsInitializer
     public static IServiceCollection AddGeneratedValidators(this IServiceCollection services)
     {
 {{#each registrations}}
-        services.AddSingleton<{{{validatorName}}}>();
-        services.AddSingleton<AbstractValidator<{{{qualifiedModelTypeName}}}>>(sp => sp.GetRequiredService<{{{validatorName}}}>());
-        services.AddSingleton<IValidator<{{{qualifiedModelTypeName}}}>>(sp => sp.GetRequiredService<{{{validatorName}}}>());
+        services.AddScoped<{{{validatorName}}}>();
+        services.AddScoped<AbstractValidator<{{{qualifiedModelTypeName}}}>>(sp => sp.GetRequiredService<{{{validatorName}}}>());
+        services.AddScoped<IValidator<{{{qualifiedModelTypeName}}}>>(sp => sp.GetRequiredService<{{{validatorName}}}>());
 
 {{/each}}
         return services;

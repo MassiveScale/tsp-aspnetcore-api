@@ -201,7 +201,13 @@ services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new Microsoft.
 services.AddHttpContextAccessor();
 services.AddGeneratedValidators();
 using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
-var widgetValidator = provider.GetRequiredService<WidgetPatchValidator>();
+using var scope = provider.CreateScope();
+var widgetValidator = scope.ServiceProvider.GetRequiredService<WidgetPatchValidator>();
+Check(ReferenceEquals(widgetValidator, scope.ServiceProvider.GetRequiredService<FluentValidation.IValidator<${style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate"}>>()), "a validator must be shared within a request scope");
+using (var otherScope = provider.CreateScope())
+{
+    Check(!ReferenceEquals(widgetValidator, otherScope.ServiceProvider.GetRequiredService<WidgetPatchValidator>()), "validators must be scoped, not shared across requests");
+}
 ${
   versionAware
     ? `
@@ -313,7 +319,7 @@ var rootPatch = ${style === "generic" ? "MergePatch<Gadget>" : "GadgetMergePatch
 Check(!rootPatch.TryPatch(gear, out var rootRejected) && rootRejected.Contains("$type") && gear.Teeth == 6, "a root mismatch must not mutate the entity");
 var matchingRoot = ${style === "generic" ? "MergePatch<Gadget>" : "GadgetMergePatchUpdate"}.FromJson("""{"$type":"gear","teeth":9}""");
 Check(matchingRoot.TryPatch(gear, out _) && gear.Teeth == 9, "matching root metadata must be accepted");
-var plainValidator = provider.GetRequiredService<PlainPetPatchValidator>();
+var plainValidator = scope.ServiceProvider.GetRequiredService<PlainPetPatchValidator>();
 var plainFailure = plainValidator.Validate(new PlainDog { Value = 1, Name = "long name" });
 Check(plainFailure.Errors.Count(f => f.PropertyName == "Value") == 1 && plainFailure.Errors.Count(f => f.PropertyName == "Name") == 1, "plain PATCH dispatch must validate derived and inherited constraints exactly once");
 Check(plainValidator.Validate(new PlainDog { Value = 10 }).IsValid, "plain PATCH must inject PATCH rather than POST rules when both exist");
@@ -485,4 +491,259 @@ describe("generated code with awkward names", { skip: !hasDotnet }, () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+});
+
+const VALUE_PARITY_SPEC = `
+  import "@typespec/http";
+  using TypeSpec.Http;
+
+  @service namespace Demo;
+
+  enum Theme { light, dark }
+  model Gadget { @maxLength(4) label?: string; }
+  @discriminator("kind") model Animal { kind: string; @maxLength(4) name?: string; }
+  model Dog extends Animal { kind: "dog"; @minValue(1) legs?: int32; }
+  model Widget {
+    @maxLength(20) name: string;
+    @minLength(2) nickname?: string;
+    @pattern("^[0-9]+$") code?: string;
+    @format("email") email?: string;
+    theme?: Theme;
+    status?: "active" | "retired";
+    count?: int32;
+    flag?: boolean;
+    createdOn?: utcDateTime;
+    tags?: string[];
+    scores?: Record<int32>;
+    extra?: unknown;
+    gadget?: Gadget;
+    pet?: Animal;
+  }
+
+  @route("/widgets") interface Widgets {
+    @post create(@body body: Widget): void;
+    @patch update(@body body: MergePatchUpdate<Widget>): void;
+  }
+`;
+
+/**
+ * C# program that holds a MergePatch validator to the same rules as the POST
+ * path, where ASP.NET Core first deserializes the body and the POST validator
+ * then runs. Collects every failure before exiting, so one run reports them all.
+ */
+function valueParityProgram(style: "generic" | "typed"): string {
+  const patchType =
+    style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate";
+  return `using System.Text.Json;
+using System.Text.Json.Nodes;
+using Demo.Models;
+using Demo.Validators;
+using FluentValidation.Results;
+using Microsoft.Extensions.DependencyInjection;
+using ${style === "generic" ? "Demo.Helpers" : "Demo.Models"};
+
+var failures = new List<string>();
+void Check(bool condition, string message)
+{
+    if (!condition) failures.Add(message);
+}
+
+var services = new ServiceCollection();
+services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new Microsoft.AspNetCore.Mvc.JsonOptions()));
+services.AddGeneratedValidators();
+using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+using var scope = provider.CreateScope();
+var postValidator = scope.ServiceProvider.GetRequiredService<WidgetValidator>();
+var patchValidator = scope.ServiceProvider.GetRequiredService<WidgetPatchValidator>();
+var web = new Microsoft.AspNetCore.Mvc.JsonOptions().JsonSerializerOptions;
+
+string Describe(IEnumerable<ValidationFailure> errors) =>
+    "[" + string.Join("; ", errors.Select(e => e.PropertyName + ": " + e.ErrorMessage)) + "]";
+
+List<ValidationFailure> PatchErrors(string json) =>
+    patchValidator.Validate(${patchType}.FromJson(json, web)).Errors;
+
+// Mirrors ASP.NET Core model binding: a body that cannot be deserialized is rejected
+// (null) before the POST validator runs. A required name is added when absent.
+List<ValidationFailure>? PostErrors(string json)
+{
+    var body = JsonNode.Parse(json)!.AsObject();
+    if (!body.ContainsKey("name")) body["name"] = "ok";
+    try
+    {
+        return postValidator.Validate(body.Deserialize<Widget>(web)!).Errors;
+    }
+    catch (JsonException)
+    {
+        return null;
+    }
+}
+
+foreach (var (json, property) in new[]
+{
+    ("""{"name":123}""", "Name"),
+    ("""{"name":true}""", "Name"),
+    ("""{"name":{"a":1}}""", "Name"),
+    ("""{"code":123}""", "Code"),
+    ("""{"email":5}""", "Email"),
+    ("""{"status":"bogus"}""", "Status"),
+    ("""{"status":42}""", "Status"),
+    ("""{"theme":"neon"}""", "Theme"),
+    ("""{"theme":1}""", "Theme"),
+    ("""{"count":"abc"}""", "Count"),
+    ("""{"count":1.5}""", "Count"),
+    ("""{"flag":"yes"}""", "Flag"),
+    ("""{"createdOn":"not a date"}""", "CreatedOn"),
+    ("""{"tags":"x"}""", "Tags"),
+    ("""{"tags":[1]}""", "Tags"),
+    ("""{"scores":{"a":"x"}}""", "Scores"),
+    ("""{"scores":[1]}""", "Scores"),
+})
+{
+    Check(PostErrors(json) is null, $"POST must reject {json} when deserializing the body");
+    var errors = PatchErrors(json);
+    Check(errors.Count == 1 && errors[0].PropertyName == property, $"PATCH must reject {json} once, on {property}; got {Describe(errors)}");
+}
+
+foreach (var (json, property) in new[]
+{
+    ("""{"name":"   "}""", "Name"),
+    ("""{"name":"012345678901234567890"}""", "Name"),
+    ("""{"nickname":"a"}""", "Nickname"),
+    ("""{"code":"abc"}""", "Code"),
+    ("""{"email":"not-an-email"}""", "Email"),
+})
+{
+    var post = PostErrors(json)?.Where(e => e.PropertyName == property).ToList() ?? new();
+    var patch = PatchErrors(json).Where(e => e.PropertyName == property).ToList();
+    Check(post.Count > 0, $"POST must reject {json} on {property}");
+    Check(post.Select(e => e.ErrorMessage).SequenceEqual(patch.Select(e => e.ErrorMessage)), $"PATCH must reject {json} exactly like POST: POST {Describe(post)}, PATCH {Describe(patch)}");
+}
+
+Check(PostErrors("""{"count":"12"}""") is { Count: 0 }, "POST reads a number from a string with the web defaults");
+foreach (var json in new[]
+{
+    """{}""",
+    """{"nickname":null}""",
+    """{"name":"ok","nickname":"ab","code":"123","email":"a@b.co"}""",
+    """{"status":"retired","theme":"dark"}""",
+    """{"count":12,"flag":true,"createdOn":"2026-01-01T00:00:00Z"}""",
+    """{"count":"12"}""",
+    """{"tags":["a","b"]}""",
+    """{"scores":{"a":5,"b":null}}""",
+    """{"extra":{"anything":[1,"x",null]}}""",
+    """{"gadget":{"label":"ab"}}""",
+    """{"pet":{"kind":"dog","legs":3}}""",
+})
+{
+    var errors = PatchErrors(json);
+    Check(errors.Count == 0, $"PATCH must accept {json}; got {Describe(errors)}");
+    var target = new Widget { Name = "x", Scores = new Dictionary<string, int> { ["b"] = 1 }, Gadget = new Gadget(), Pet = new Dog() };
+    var applied = ${patchType}.FromJson(json, web).TryPatch(target, out var rejected, web);
+    Check(applied && rejected.Count == 0, $"an accepted patch {json} must apply; rejected [{string.Join(", ", rejected)}]");
+}
+
+Check(PatchErrors("""{"gadget":{"label":5}}""").Any(e => e.PropertyName == "Gadget.Label"), "nested patch values must be type-checked at their dotted path");
+Check(PatchErrors("""{"gadget":{"label":"   "}}""") is { Count: 0 }, "an optional nested string has no NotEmpty rule");
+Check(PatchErrors("""{"pet":{"kind":"dog","legs":"x"}}""").Any(e => e.PropertyName == "Pet.Legs"), "derived nested patch values must be type-checked");
+
+// The type check uses the options the patch body was read with, as POST binding does.
+var strict = new JsonSerializerOptions(web) { NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.Strict };
+var strictErrors = patchValidator.Validate(${patchType}.FromJson("""{"count":"12"}""", strict)).Errors;
+Check(strictErrors.Count == 1 && strictErrors[0].PropertyName == "Count", $"a patch read with strict number handling must reject a number in a string; got {Describe(strictErrors)}");
+var unread = new ${patchType} { Properties = { ["count"] = JsonDocument.Parse("12").RootElement } };
+Check(patchValidator.Validate(unread).Errors.Count == 0, "a patch built in code must use the default options");
+
+// Reading through the converter must not change what a patch holds or how it serializes.
+// The expected values were recorded from the [JsonExtensionData]-only helpers, before the converter.
+foreach (var (options, expectedKeys, expectedJson) in new[]
+{
+    (web,
+        """Name="b",count=null,extra={"k":[1]}""",
+        """{"definedProperties":["Name","count","extra"],"Name":"b","count":null,"extra":{"k":[1]}}"""),
+    (new JsonSerializerOptions(),
+        """Name="b",count=null,definedProperties=["x"],extra={"k":[1]}""",
+        """{"DefinedProperties":["Name","count","definedProperties","extra"],"Name":"b","count":null,"definedProperties":["x"],"extra":{"k":[1]}}"""),
+})
+{
+    var read = ${patchType}.FromJson("""{"Name":"a","name":"b","count":null,"definedProperties":["x"],"extra":{"k":[1]}}""", options);
+    var keys = string.Join(",", read.Properties.Select(p => p.Key + "=" + p.Value.GetRawText()));
+    var written = JsonSerializer.Serialize(read, options);
+    Check(read.Properties.Comparer == StringComparer.OrdinalIgnoreCase, "patch keys must stay case-insensitive");
+    Check(keys == expectedKeys, $"patch keys changed: {keys}");
+    Check(written == expectedJson, $"serialized patch changed: {written}");
+}
+try
+{
+    ${patchType}.FromJson("[]", web);
+    Check(false, "a JSON array must not read as a patch");
+}
+catch (JsonException ex)
+{
+    Check(ex.Message.StartsWith("The JSON value could not be converted to ") && ex.Message.Contains("Path: $"), $"a non-object body must keep the binding error message; got {ex.Message}");
+}
+
+if (failures.Count > 0)
+{
+    Console.WriteLine(string.Join(Environment.NewLine, failures));
+    Environment.Exit(1);
+}
+`;
+}
+
+describe("MergePatch validation matches POST", { skip: !hasDotnet }, () => {
+  for (const style of ["generic", "typed"] as const) {
+    it(`rejects the values POST rejects and accepts every RFC 7396 patch, with ${style} helpers`, async () => {
+      const files = await emit(VALUE_PARITY_SPEC, {
+        "merge-patch-style": style,
+        "emit-controllers": false,
+        "emit-services": false,
+        "emit-interfaces": false,
+        "emit-validators": true,
+        "emit-helpers": true,
+      });
+      const directory = await mkdtemp(join(tmpdir(), "merge-patch-parity-"));
+
+      try {
+        for (const [path, content] of Object.entries(files)) {
+          if (!path.endsWith(".g.cs")) continue;
+          const destination = join(directory, path);
+          await mkdir(join(destination, ".."), { recursive: true });
+          await writeFile(destination, content, "utf8");
+        }
+        await writeFile(
+          join(directory, "Runtime.csproj"),
+          `<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup><ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /><PackageReference Include="FluentValidation" Version="12.1.1" /></ItemGroup></Project>`,
+          "utf8",
+        );
+        await writeFile(
+          join(directory, "Program.cs"),
+          valueParityProgram(style),
+          "utf8",
+        );
+
+        try {
+          execFileSync(
+            "dotnet",
+            [
+              "run",
+              "--project",
+              join(directory, "Runtime.csproj"),
+              "--verbosity",
+              "quiet",
+            ],
+            { stdio: "pipe" },
+          );
+        } catch (error) {
+          const result = error as { stdout?: Buffer; stderr?: Buffer };
+          throw new Error(
+            `${result.stdout?.toString() ?? ""}${result.stderr?.toString() ?? ""}`,
+            { cause: error },
+          );
+        }
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
+  }
 });

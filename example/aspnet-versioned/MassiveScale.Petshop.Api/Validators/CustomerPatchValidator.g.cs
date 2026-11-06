@@ -59,19 +59,24 @@ public partial class CustomerPatchValidator : AbstractValidator<MergePatch<Custo
             .WithName("FirstName")
             .WithMessage("'FirstName' is required and cannot be null.");
 
-        // FirstName must not be empty when provided
+        // FirstName must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("firstName")?.Length ?? 0) > 0)
+            .Must(x => x.IsValidPropertyValue("firstName"))
             .When(x => x.IsDefined("firstName") && !x.IsNull("firstName"))
             .WithName("FirstName")
-            .WithMessage("'FirstName' must not be empty.");
+            .WithMessage("'FirstName' is not a valid value.");
+
+        // FirstName must not be empty when provided
+        this.RuleFor(x => x.GetString("firstName"))
+            .NotEmpty()
+            .OverridePropertyName("FirstName")
+            .When(x => x.IsString("firstName"));
 
         // FirstName cannot exceed a MaxLength of 100 when provided
-        this.RuleFor(x => x)
-            .Must(x => (x.GetString("firstName")?.Length ?? 0) <= 100)
-            .When(x => x.IsDefined("firstName") && !x.IsNull("firstName"))
-            .WithName("FirstName")
-            .WithMessage("'FirstName' must be 100 characters or fewer.");
+        this.RuleFor(x => x.GetString("firstName"))
+            .MaximumLength(100)
+            .OverridePropertyName("FirstName")
+            .When(x => x.IsString("firstName"));
 
         // LastName is required and cannot be removed
         this.RuleFor(x => x)
@@ -80,40 +85,56 @@ public partial class CustomerPatchValidator : AbstractValidator<MergePatch<Custo
             .WithName("LastName")
             .WithMessage("'LastName' is required and cannot be null.");
 
-        // LastName must not be empty when provided
+        // LastName must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("lastName")?.Length ?? 0) > 0)
+            .Must(x => x.IsValidPropertyValue("lastName"))
             .When(x => x.IsDefined("lastName") && !x.IsNull("lastName"))
             .WithName("LastName")
-            .WithMessage("'LastName' must not be empty.");
+            .WithMessage("'LastName' is not a valid value.");
+
+        // LastName must not be empty when provided
+        this.RuleFor(x => x.GetString("lastName"))
+            .NotEmpty()
+            .OverridePropertyName("LastName")
+            .When(x => x.IsString("lastName"));
 
         // LastName cannot exceed a MaxLength of 100 when provided
+        this.RuleFor(x => x.GetString("lastName"))
+            .MaximumLength(100)
+            .OverridePropertyName("LastName")
+            .When(x => x.IsString("lastName"));
+
+        // Email must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("lastName")?.Length ?? 0) <= 100)
-            .When(x => x.IsDefined("lastName") && !x.IsNull("lastName"))
-            .WithName("LastName")
-            .WithMessage("'LastName' must be 100 characters or fewer.");
+            .Must(x => x.IsValidPropertyValue("email"))
+            .When(x => x.IsDefined("email") && !x.IsNull("email"))
+            .WithName("Email")
+            .WithMessage("'Email' is not a valid value.");
 
         // Email cannot exceed a MaxLength of 255 when provided
-        this.RuleFor(x => x)
-            .Must(x => (x.GetString("email")?.Length ?? 0) <= 255)
-            .When(x => x.IsDefined("email") && !x.IsNull("email"))
-            .WithName("Email")
-            .WithMessage("'Email' must be 255 characters or fewer.");
+        this.RuleFor(x => x.GetString("email"))
+            .MaximumLength(255)
+            .OverridePropertyName("Email")
+            .When(x => x.IsString("email"));
 
         // Email must be a valid email address when provided
-        this.RuleFor(x => x)
-            .Must(x => System.Net.Mail.MailAddress.TryCreate(x.GetString("email") ?? string.Empty, out _))
-            .When(x => x.IsDefined("email") && !x.IsNull("email"))
-            .WithName("Email")
-            .WithMessage("'Email' is not a valid email address.");
+        this.RuleFor(x => x.GetString("email"))
+            .EmailAddress()
+            .OverridePropertyName("Email")
+            .When(x => x.IsString("email"));
 
-        // PhoneNumber cannot exceed a MaxLength of 20 when provided
+        // PhoneNumber must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("phoneNumber")?.Length ?? 0) <= 20)
+            .Must(x => x.IsValidPropertyValue("phoneNumber"))
             .When(x => x.IsDefined("phoneNumber") && !x.IsNull("phoneNumber"))
             .WithName("PhoneNumber")
-            .WithMessage("'PhoneNumber' must be 20 characters or fewer.");
+            .WithMessage("'PhoneNumber' is not a valid value.");
+
+        // PhoneNumber cannot exceed a MaxLength of 20 when provided
+        this.RuleFor(x => x.GetString("phoneNumber"))
+            .MaximumLength(20)
+            .OverridePropertyName("PhoneNumber")
+            .When(x => x.IsString("phoneNumber"));
 
         ExtendRules();
     }

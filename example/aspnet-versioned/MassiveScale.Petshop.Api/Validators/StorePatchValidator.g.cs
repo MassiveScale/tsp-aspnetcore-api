@@ -60,19 +60,24 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
             .WithName("Name")
             .WithMessage("'Name' is required and cannot be null.");
 
-        // Name must not be empty when provided
+        // Name must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("name")?.Length ?? 0) > 0)
+            .Must(x => x.IsValidPropertyValue("name"))
             .When(x => x.IsDefined("name") && !x.IsNull("name"))
             .WithName("Name")
-            .WithMessage("'Name' must not be empty.");
+            .WithMessage("'Name' is not a valid value.");
+
+        // Name must not be empty when provided
+        this.RuleFor(x => x.GetString("name"))
+            .NotEmpty()
+            .OverridePropertyName("Name")
+            .When(x => x.IsString("name"));
 
         // Name cannot exceed a MaxLength of 100 when provided
-        this.RuleFor(x => x)
-            .Must(x => (x.GetString("name")?.Length ?? 0) <= 100)
-            .When(x => x.IsDefined("name") && !x.IsNull("name"))
-            .WithName("Name")
-            .WithMessage("'Name' must be 100 characters or fewer.");
+        this.RuleFor(x => x.GetString("name"))
+            .MaximumLength(100)
+            .OverridePropertyName("Name")
+            .When(x => x.IsString("name"));
 
         // PhoneNumber is required and cannot be removed
         this.RuleFor(x => x)
@@ -81,12 +86,18 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
             .WithName("PhoneNumber")
             .WithMessage("'PhoneNumber' is required and cannot be null.");
 
-        // PhoneNumber must not be empty when provided
+        // PhoneNumber must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => (x.GetString("phoneNumber")?.Length ?? 0) > 0)
+            .Must(x => x.IsValidPropertyValue("phoneNumber"))
             .When(x => x.IsDefined("phoneNumber") && !x.IsNull("phoneNumber"))
             .WithName("PhoneNumber")
-            .WithMessage("'PhoneNumber' must not be empty.");
+            .WithMessage("'PhoneNumber' is not a valid value.");
+
+        // PhoneNumber must not be empty when provided
+        this.RuleFor(x => x.GetString("phoneNumber"))
+            .NotEmpty()
+            .OverridePropertyName("PhoneNumber")
+            .When(x => x.IsString("phoneNumber"));
 
         // Pets is required and cannot be removed
         this.RuleFor(x => x)
@@ -149,26 +160,30 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
                 .WithName("Email")
                 .WithMessage("'Email' is required and cannot be null.");
 
-            // Email must not be empty when provided
+            // Email must hold a value of its declared type when provided
             this.RuleFor(x => x)
-                .Must(x => (x.GetString("email")?.Length ?? 0) > 0)
+                .Must(x => x.IsValidPropertyValue("email"))
                 .When(x => x.IsDefined("email") && !x.IsNull("email"))
                 .WithName("Email")
-                .WithMessage("'Email' must not be empty.");
+                .WithMessage("'Email' is not a valid value.");
+
+            // Email must not be empty when provided
+            this.RuleFor(x => x.GetString("email"))
+                .NotEmpty()
+                .OverridePropertyName("Email")
+                .When(x => x.IsString("email"));
 
             // Email cannot exceed a MaxLength of 255 when provided
-            this.RuleFor(x => x)
-                .Must(x => (x.GetString("email")?.Length ?? 0) <= 255)
-                .When(x => x.IsDefined("email") && !x.IsNull("email"))
-                .WithName("Email")
-                .WithMessage("'Email' must be 255 characters or fewer.");
+            this.RuleFor(x => x.GetString("email"))
+                .MaximumLength(255)
+                .OverridePropertyName("Email")
+                .When(x => x.IsString("email"));
 
             // Email must be a valid email address when provided
-            this.RuleFor(x => x)
-                .Must(x => System.Net.Mail.MailAddress.TryCreate(x.GetString("email") ?? string.Empty, out _))
-                .When(x => x.IsDefined("email") && !x.IsNull("email"))
-                .WithName("Email")
-                .WithMessage("'Email' is not a valid email address.");
+            this.RuleFor(x => x.GetString("email"))
+                .EmailAddress()
+                .OverridePropertyName("Email")
+                .When(x => x.IsString("email"));
 
         });
 
