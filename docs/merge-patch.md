@@ -253,7 +253,7 @@ this.RuleFor(x => x.GetString("name"))
     .When(x => x.IsString("name"));
 ```
 
-Numeric bounds read the raw JSON number, so exponent notation (`1e2`) is accepted and a value that isn't a JSON number fails. See [Validators — PATCH body shapes](validators.md#patch-body-shapes) for every rule shape.
+Numeric bounds read the raw JSON number, so exponent notation (`1e2`) is accepted. A number in a JSON string is held to the same bounds whenever POST would read it, and a value that isn't a number is reported once, by the type rule. See [Validators — PATCH body shapes](validators.md#patch-body-shapes) for every rule shape.
 
 ## Choosing a style: `merge-patch-style`
 

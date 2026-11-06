@@ -93,12 +93,12 @@ PATCH validators emit one of two rule shapes, chosen by the body type of the `@p
 ```csharp
 this.RuleFor(x => x)
     .Must(x => TryGetNumber(x, "target", out var n) && n >= 0m)
-    .When(x => x.IsDefined("target") && !x.IsNull("target"))
+    .When(x => x.IsDefined("target") && !x.IsNull("target") && x.IsValidPropertyValue("target"))
     .WithName("Target")
     .WithMessage("'Target' must be a number greater than or equal to 0.");
 ```
 
-Every rule has a message. Numeric bounds accept any JSON number, including exponent notation such as `1e2`. A value that isn't a JSON number (for example the string `"50"`) fails the bound.
+Every rule has a message. Numeric bounds accept any JSON number, including exponent notation such as `1e2`. A number in a JSON string, such as `"50"`, is held to the same bounds whenever POST would read it: with the ASP.NET Core web defaults, or on a property with `@encode(string)`. A bound runs only on a value the type rule accepts, so a value that isn't a number is reported once, as `'Target' is not a valid value.`
 
 A POST body is deserialized into the model before its validator runs, so a value of the wrong type never reaches the validator. A MergePatch body keeps the raw JSON, so its validator checks the type itself. Every writable property that doesn't hold a model gets a rule that reads the supplied value as the property's declared C# type, with the [JSON options](#json-options) the body was read with:
 

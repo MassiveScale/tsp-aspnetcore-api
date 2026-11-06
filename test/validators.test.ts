@@ -2338,12 +2338,9 @@ describe("csharp emitter - validators", () => {
           "private static bool TryGetNumber(MergePatch<Measure> patch, string name, out decimal value)",
           "element.ValueKind != System.Text.Json.JsonValueKind.Number",
           "element.TryGetDecimal(out value)",
+          '.When(x => x.IsDefined("count") && !x.IsNull("count") && x.IsValidPropertyValue("count"))',
+          "decimal.TryParse(element.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value)",
         ],
-      );
-      expectNone(
-        results["Validators/MeasurePatchValidator.g.cs"],
-        "MeasurePatchValidator",
-        ["NumberStyles", "decimal.TryParse"],
       );
     });
 
@@ -2831,6 +2828,8 @@ describe("csharp emitter - validators", () => {
         '.Must(x => TryGetNumber(x, "qty", out var n) && n >= 2m)',
         "private static bool TryGetDouble(MergePatch<Measure> patch, string name, out double value)",
         "private static bool TryGetNumber(MergePatch<Measure> patch, string name, out decimal value)",
+        "double.TryParse(element.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value)",
+        '.When(x => x.IsDefined("ratio") && !x.IsNull("ratio") && x.IsValidPropertyValue("ratio"))',
       ]);
       expectNone(patch, "MeasurePatchValidator", [
         "1e+30m",

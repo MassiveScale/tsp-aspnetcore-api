@@ -29,15 +29,20 @@ private static bool IsMatch(System.Text.RegularExpressions.Regex pattern, string
 {{#if usesNumberRules}}
 
 /// <summary>
-/// Reads the JSON number supplied for <paramref name="name"/>. Returns
-/// <see langword="false"/> when the value is absent or is not a JSON number.
-/// A number outside the <see cref="decimal"/> range is clamped to it, which keeps
-/// every comparison with a bound correct.
+/// Reads the number supplied for <paramref name="name"/>, as a JSON number or as a
+/// number in a JSON string. Returns <see langword="false"/> when the value is absent
+/// or is not a number. A JSON number outside the <see cref="decimal"/> range is
+/// clamped to it, which keeps every comparison with a bound correct.
+/// Range rules call this only after the type rule accepts the value, so a string
+/// is read only when the JSON options or the property's attributes allow it.
 /// </summary>
 private static bool TryGetNumber({{{qualifiedPatchBodyTypeName}}} patch, string name, out decimal value)
 {
     value = 0m;
-    if (!patch.Properties.TryGetValue(name, out var element) || element.ValueKind != System.Text.Json.JsonValueKind.Number) return false;
+    if (!patch.Properties.TryGetValue(name, out var element)) return false;
+    if (element.ValueKind == System.Text.Json.JsonValueKind.String)
+        return decimal.TryParse(element.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value);
+    if (element.ValueKind != System.Text.Json.JsonValueKind.Number) return false;
     if (!element.TryGetDecimal(out value))
     {
         value = element.GetRawText().StartsWith('-') ? decimal.MinValue : decimal.MaxValue;
@@ -48,15 +53,21 @@ private static bool TryGetNumber({{{qualifiedPatchBodyTypeName}}} patch, string 
 {{#if usesDoubleRules}}
 
 /// <summary>
-/// Reads the JSON number supplied for <paramref name="name"/> as a <see cref="double"/>,
-/// for the bounds of a floating-point property. Returns <see langword="false"/> when the
-/// value is absent or is not a JSON number. A number outside the <see cref="double"/>
-/// range is clamped to it, which keeps every comparison with a bound correct.
+/// Reads the number supplied for <paramref name="name"/> as a <see cref="double"/>, for
+/// the bounds of a floating-point property, as a JSON number or as a number in a JSON
+/// string. Returns <see langword="false"/> when the value is absent or is not a number.
+/// A JSON number outside the <see cref="double"/> range is clamped to it, which keeps
+/// every comparison with a bound correct.
+/// Range rules call this only after the type rule accepts the value, so a string
+/// is read only when the JSON options or the property's attributes allow it.
 /// </summary>
 private static bool TryGetDouble({{{qualifiedPatchBodyTypeName}}} patch, string name, out double value)
 {
     value = 0d;
-    if (!patch.Properties.TryGetValue(name, out var element) || element.ValueKind != System.Text.Json.JsonValueKind.Number) return false;
+    if (!patch.Properties.TryGetValue(name, out var element)) return false;
+    if (element.ValueKind == System.Text.Json.JsonValueKind.String)
+        return double.TryParse(element.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value);
+    if (element.ValueKind != System.Text.Json.JsonValueKind.Number) return false;
     if (!element.TryGetDouble(out value))
     {
         value = element.GetRawText().StartsWith('-') ? double.MinValue : double.MaxValue;
