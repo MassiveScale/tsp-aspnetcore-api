@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-06
+
+### Fixed
+
+- MergePatch PATCH range rules (`@minValue`, `@maxValue`, `@minValueExclusive`, `@maxValueExclusive`) hold a number sent as a JSON string to the same bounds as POST whenever POST would read it: with the ASP.NET Core web defaults, or on a property with `@encode(string)`. Previously `{"legs":"3"}` failed `@minValue(1)`. A value that isn't a number is reported once, by the type rule, instead of also failing every bound. See [Validators — PATCH body shapes](docs/validators.md#patch-body-shapes).
+
 ## [1.2.1] - 2026-11-06
 
 ### Fixed

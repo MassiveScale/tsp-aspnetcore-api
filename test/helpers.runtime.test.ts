@@ -511,6 +511,9 @@ const VALUE_PARITY_SPEC = `
     theme?: Theme;
     status?: "active" | "retired";
     count?: int32;
+    @minValue(1) @maxValue(10) level?: int32;
+    @encode(string) @minValue(1) rank?: int64;
+    @minValue(0.5) ratio?: float64;
     flag?: boolean;
     @encode(string) active?: boolean;
     @encode(string) serial?: int64;
@@ -596,6 +599,9 @@ foreach (var (json, property) in new[]
     ("""{"theme":1}""", "Theme"),
     ("""{"count":"abc"}""", "Count"),
     ("""{"count":1.5}""", "Count"),
+    ("""{"level":"x"}""", "Level"),
+    ("""{"level":true}""", "Level"),
+    ("""{"ratio":"x"}""", "Ratio"),
     ("""{"flag":"yes"}""", "Flag"),
     ("""{"active":"maybe"}""", "Active"),
     ("""{"serial":"abc"}""", "Serial"),
@@ -626,6 +632,23 @@ foreach (var (json, property) in new[]
     Check(post.Select(e => e.ErrorMessage).SequenceEqual(patch.Select(e => e.ErrorMessage)), $"PATCH must reject {json} exactly like POST: POST {Describe(post)}, PATCH {Describe(patch)}");
 }
 
+// A number POST reads from a string is held to the same bounds in PATCH, and reported once.
+foreach (var (json, property) in new[]
+{
+    ("""{"level":"30"}""", "Level"),
+    ("""{"level":"0"}""", "Level"),
+    ("""{"level":11}""", "Level"),
+    ("""{"rank":"0"}""", "Rank"),
+    ("""{"ratio":"0.25"}""", "Ratio"),
+})
+{
+    Check(PostErrors(json) is { } post && post.Any(e => e.PropertyName == property), $"POST must reject {json} on {property}");
+    var errors = PatchErrors(json);
+    Check(errors.Count == 1 && errors[0].PropertyName == property, $"PATCH must reject {json} once, on {property}; got {Describe(errors)}");
+}
+var outOfRangePet = PatchErrors("""{"pet":{"kind":"dog","legs":"0"}}""");
+Check(outOfRangePet.Count == 1 && outOfRangePet[0].PropertyName == "Pet.Legs", $"a derived nested number in a string must be held to its bounds once; got {Describe(outOfRangePet)}");
+
 Check(PostErrors("""{"count":"12"}""") is { Count: 0 }, "POST reads a number from a string with the web defaults");
 foreach (var json in new[]
 {
@@ -642,6 +665,9 @@ foreach (var json in new[]
     """{"gadget":{"label":"ab"}}""",
     """{"pet":{"kind":"dog","legs":3}}""",
     """{"pet":{"kind":"dog","weight":"3"}}""",
+    """{"level":"3","rank":"5","ratio":"0.75"}""",
+    """{"level":10,"rank":1,"ratio":0.5}""",
+    """{"pet":{"kind":"dog","legs":"3"}}""",
 })
 {
     var errors = PatchErrors(json);
@@ -663,6 +689,12 @@ Check(strictErrors.Count == 1 && strictErrors[0].PropertyName == "Count", $"a pa
 Check(JsonSerializer.Deserialize<Widget>("""{"name":"ok","serial":"12","active":"true"}""", strict) is { Serial: 12, Active: true }, "POST reads @encode(string) values with strict options");
 var encodedErrors = patchValidator.Validate(${patchType}.FromJson("""{"serial":"12","active":"true"}""", strict)).Errors;
 Check(encodedErrors.Count == 0, $"a patch read with strict options must accept @encode(string) values; got {Describe(encodedErrors)}");
+var strictRank = patchValidator.Validate(${patchType}.FromJson("""{"rank":"5"}""", strict)).Errors;
+Check(strictRank.Count == 0, $"an @encode(string) number in range must pass its bounds with strict options; got {Describe(strictRank)}");
+var strictLowRank = patchValidator.Validate(${patchType}.FromJson("""{"rank":"0"}""", strict)).Errors;
+Check(strictLowRank.Count == 1 && strictLowRank[0].PropertyName == "Rank", $"an @encode(string) number out of range must fail its bounds once with strict options; got {Describe(strictLowRank)}");
+var strictLevel = patchValidator.Validate(${patchType}.FromJson("""{"level":"3"}""", strict)).Errors;
+Check(strictLevel.Count == 1 && strictLevel[0].PropertyName == "Level" && strictLevel[0].ErrorMessage == "'Level' is not a valid value.", $"a number in a string that strict options reject must be reported once, as a type error; got {Describe(strictLevel)}");
 // A derived patch keeps the options the base patch was read with.
 var animalValidator = scope.ServiceProvider.GetRequiredService<AnimalPatchValidator>();
 var webPetErrors = animalValidator.Validate(${animalPatchType}.FromJson("""{"kind":"dog","weight":"3"}""", web)).Errors;

@@ -82,11 +82,16 @@ this.RuleFor(x => x.GetString("{{{jsonName}}}"))
     .When(x => x.IsString("{{{jsonName}}}"));
 
 {{/if}}
+{{!--
+  Range rules run only on a value the type rule accepts, so a value that is not
+  a number is reported once. That includes a number in a JSON string when the
+  patch's JSON options or the property's own attributes let POST read it.
+--}}
 {{#if minValue}}
 // {{{name}}} must be greater than or equal to {{minValue.display}} when provided
 this.RuleFor(x => x)
     .Must(x => {{{minValue.patchReader}}}(x, "{{{jsonName}}}", out var n) && n >= {{{minValue.patchLiteral}}})
-    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}") && x.IsValidPropertyValue("{{{jsonName}}}"))
     .WithName("{{{name}}}")
     .WithMessage("'{{{name}}}' must be a number greater than or equal to {{minValue.display}}.");
 
@@ -95,7 +100,7 @@ this.RuleFor(x => x)
 // {{{name}}} must be greater than {{minValueExclusive.display}} when provided
 this.RuleFor(x => x)
     .Must(x => {{{minValueExclusive.patchReader}}}(x, "{{{jsonName}}}", out var n) && n > {{{minValueExclusive.patchLiteral}}})
-    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}") && x.IsValidPropertyValue("{{{jsonName}}}"))
     .WithName("{{{name}}}")
     .WithMessage("'{{{name}}}' must be a number greater than {{minValueExclusive.display}}.");
 
@@ -104,7 +109,7 @@ this.RuleFor(x => x)
 // {{{name}}} cannot exceed a MaxValue of {{maxValue.display}} when provided
 this.RuleFor(x => x)
     .Must(x => {{{maxValue.patchReader}}}(x, "{{{jsonName}}}", out var n) && n <= {{{maxValue.patchLiteral}}})
-    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}") && x.IsValidPropertyValue("{{{jsonName}}}"))
     .WithName("{{{name}}}")
     .WithMessage("'{{{name}}}' must be a number less than or equal to {{maxValue.display}}.");
 
@@ -113,7 +118,7 @@ this.RuleFor(x => x)
 // {{{name}}} must be less than {{maxValueExclusive.display}} when provided
 this.RuleFor(x => x)
     .Must(x => {{{maxValueExclusive.patchReader}}}(x, "{{{jsonName}}}", out var n) && n < {{{maxValueExclusive.patchLiteral}}})
-    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}"))
+    .When(x => x.IsDefined("{{{jsonName}}}") && !x.IsNull("{{{jsonName}}}") && x.IsValidPropertyValue("{{{jsonName}}}"))
     .WithName("{{{name}}}")
     .WithMessage("'{{{name}}}' must be a number less than {{maxValueExclusive.display}}.");
 
