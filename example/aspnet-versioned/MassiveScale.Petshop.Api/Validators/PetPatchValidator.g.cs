@@ -48,14 +48,14 @@ public partial class PetPatchValidator : AbstractValidator<MergePatch<Pet>>
             {
                 case "cat":
                 {
-                    var derivedPatch = new MergePatch<Cat> { Properties = patch.Properties };
+                    var derivedPatch = new MergePatch<Cat> { Properties = patch.Properties, ReadOptions = patch.ReadOptions };
                     foreach (var failure in catPatchValidator.Validate(derivedPatch).Errors)
                         context.AddFailure(failure);
                     break;
                 }
                 case "dog":
                 {
-                    var derivedPatch = new MergePatch<Dog> { Properties = patch.Properties };
+                    var derivedPatch = new MergePatch<Dog> { Properties = patch.Properties, ReadOptions = patch.ReadOptions };
                     foreach (var failure in dogPatchValidator.Validate(derivedPatch).Errors)
                         context.AddFailure(failure);
                     break;

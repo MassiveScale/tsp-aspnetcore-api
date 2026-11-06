@@ -1658,7 +1658,7 @@ describe("csharp emitter - validators", () => {
             ok(base.includes('case "canine":'), base);
             ok(
               base.includes(
-                `new ${patchType} { Properties = patch.Properties }`,
+                `new ${patchType} { Properties = patch.Properties, ReadOptions = patch.ReadOptions }`,
               ),
               base,
             );
@@ -3133,7 +3133,8 @@ describe("csharp emitter - validators", () => {
         expectAll(helper, `${style} patch helper`, [
           converter,
           "internal JsonSerializerOptions? ReadOptions { get; set; }",
-          "IsValidPatchValue(element, prop.PropertyType, options ?? ReadOptions)",
+          "IsValidPatchValue(element, prop.PropertyType, prop, options ?? ReadOptions)",
+          "JsonSerializer.Deserialize(value, type, property is null ? options : PropertyReadOptions(property, options))",
         ]);
       });
     }

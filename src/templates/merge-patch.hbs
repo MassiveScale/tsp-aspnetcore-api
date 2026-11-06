@@ -151,20 +151,22 @@ public class MergePatch<T>
     /// Also returns <see langword="true"/> when the property is absent, its value is
     /// <see langword="null"/>, or <typeparamref name="T"/> declares no such property.
     /// Values are read with <paramref name="options"/> when given, otherwise with the
-    /// options this patch was deserialized with.
+    /// options this patch was deserialized with, plus the property's own
+    /// <c>[JsonConverter]</c> or <c>[JsonNumberHandling]</c>.
     /// </summary>
     public bool IsValidPropertyValue(string propertyName, JsonSerializerOptions? options = null)
     {
         if (!Properties.TryGetValue(propertyName, out var element)) return true;
         var prop = FindProperty(propertyName);
-        return prop is null || IsValidPatchValue(element, prop.PropertyType, options ?? ReadOptions);
+        return prop is null || IsValidPatchValue(element, prop.PropertyType, prop, options ?? ReadOptions);
     }
 
     /// <summary>
     /// Returns <see langword="true"/> when <paramref name="value"/> can be merged into a value
-    /// of <paramref name="type"/>; see <see cref="IsValidPropertyValue"/>.
+    /// of <paramref name="type"/>, held by <paramref name="property"/> when it is a model or
+    /// dictionary member; see <see cref="IsValidPropertyValue"/>.
     /// </summary>
-    private static bool IsValidPatchValue(JsonElement value, Type type, JsonSerializerOptions? options)
+    private static bool IsValidPatchValue(JsonElement value, Type type, PropertyInfo? property, JsonSerializerOptions? options)
     {
         if (value.ValueKind == JsonValueKind.Null) return true;
         var openValueType = GetOpenObjectValueType(type);
@@ -172,21 +174,53 @@ public class MergePatch<T>
         {
             foreach (var member in value.EnumerateObject())
             {
+                // A dictionary's values share the dictionary property's JSON attributes, as they do when deserializing.
+                var memberProperty = openValueType is null ? FindMember(type, member.Name)?.Property : property;
+                var memberType = openValueType ?? memberProperty?.PropertyType;
                 // Unknown members are not a type error; TryPatch reports them when applying.
-                var memberType = openValueType ?? FindMember(type, member.Name)?.Property.PropertyType;
-                if (memberType is not null && !IsValidPatchValue(member.Value, memberType, options)) return false;
+                if (memberType is not null && !IsValidPatchValue(member.Value, memberType, memberProperty, options)) return false;
             }
             return true;
         }
         try
         {
-            JsonSerializer.Deserialize(value, type, options);
+            JsonSerializer.Deserialize(value, type, property is null ? options : PropertyReadOptions(property, options));
             return true;
         }
         catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// The options for each serializer options instance and property, built once because creating
+    /// <see cref="JsonSerializerOptions"/> rebuilds the serializer's metadata cache.
+    /// </summary>
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<JsonSerializerOptions, System.Collections.Concurrent.ConcurrentDictionary<PropertyInfo, JsonSerializerOptions>> _propertyReadOptions = new();
+
+    /// <summary>
+    /// Returns <paramref name="options"/> with the <c>[JsonConverter]</c> and
+    /// <c>[JsonNumberHandling]</c> declared on <paramref name="property"/> applied, so a value
+    /// is read the way deserializing the whole model reads it.
+    /// </summary>
+    private static JsonSerializerOptions PropertyReadOptions(PropertyInfo property, JsonSerializerOptions? options)
+    {
+        options ??= JsonSerializerOptions.Default;
+        return _propertyReadOptions.GetOrCreateValue(options).GetOrAdd(property, static (member, baseOptions) =>
+        {
+            var converterAttribute = member.GetCustomAttribute<JsonConverterAttribute>();
+            var converter = converterAttribute is null
+                ? null
+                : converterAttribute.CreateConverter(member.PropertyType)
+                    ?? (converterAttribute.ConverterType is { } converterType ? (JsonConverter?)Activator.CreateInstance(converterType) : null);
+            var numberHandling = member.GetCustomAttribute<JsonNumberHandlingAttribute>()?.Handling;
+            if (converter is null && numberHandling is null) return baseOptions;
+            var propertyOptions = new JsonSerializerOptions(baseOptions);
+            if (converter is not null) propertyOptions.Converters.Insert(0, converter);
+            if (numberHandling is { } handling) propertyOptions.NumberHandling = handling;
+            return propertyOptions;
+        }, options);
     }
 
     /// <summary>

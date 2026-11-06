@@ -149,7 +149,7 @@ A MergePatch validator reads values with the application's JSON settings, so it 
 builder.Services.AddControllers().AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new MyConverter()));
 ```
 
-The value-type checks need no setup. When ASP.NET Core binds the request body, the patch remembers the `JsonSerializerOptions` it was read with, and `IsValidPropertyValue` uses them. A patch made with `FromJson(json, options)` uses `options`; a patch built in code uses the `System.Text.Json` defaults.
+The value-type checks need no setup. When ASP.NET Core binds the request body, the patch remembers the `JsonSerializerOptions` it was read with, and `IsValidPropertyValue` uses them. A property's own `[JsonConverter]` or `[JsonNumberHandling]`, such as the ones `@encode(string)` adds, applies on top, as it does when a POST body is deserialized. A derived patch selected by a discriminator keeps the options of the patch it came from. A patch made with `FromJson(json, options)` uses `options`; a patch built in code uses the `System.Text.Json` defaults.
 
 A MergePatch validator that validates nested values also takes `IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>` in its constructor, which `AddControllers()` registers, and passes `JsonSerializerOptions` to every nested deserialization. Validators without nested model properties keep their existing constructor.
 

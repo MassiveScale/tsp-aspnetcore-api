@@ -502,7 +502,7 @@ const VALUE_PARITY_SPEC = `
   enum Theme { light, dark }
   model Gadget { @maxLength(4) label?: string; }
   @discriminator("kind") model Animal { kind: string; @maxLength(4) name?: string; }
-  model Dog extends Animal { kind: "dog"; @minValue(1) legs?: int32; }
+  model Dog extends Animal { kind: "dog"; @minValue(1) legs?: int32; weight?: int32; }
   model Widget {
     @maxLength(20) name: string;
     @minLength(2) nickname?: string;
@@ -512,6 +512,8 @@ const VALUE_PARITY_SPEC = `
     status?: "active" | "retired";
     count?: int32;
     flag?: boolean;
+    @encode(string) active?: boolean;
+    @encode(string) serial?: int64;
     createdOn?: utcDateTime;
     tags?: string[];
     scores?: Record<int32>;
@@ -534,6 +536,8 @@ const VALUE_PARITY_SPEC = `
 function valueParityProgram(style: "generic" | "typed"): string {
   const patchType =
     style === "generic" ? "MergePatch<Widget>" : "WidgetMergePatchUpdate";
+  const animalPatchType =
+    style === "generic" ? "MergePatch<Animal>" : "AnimalMergePatchUpdate";
   return `using System.Text.Json;
 using System.Text.Json.Nodes;
 using Demo.Models;
@@ -593,6 +597,8 @@ foreach (var (json, property) in new[]
     ("""{"count":"abc"}""", "Count"),
     ("""{"count":1.5}""", "Count"),
     ("""{"flag":"yes"}""", "Flag"),
+    ("""{"active":"maybe"}""", "Active"),
+    ("""{"serial":"abc"}""", "Serial"),
     ("""{"createdOn":"not a date"}""", "CreatedOn"),
     ("""{"tags":"x"}""", "Tags"),
     ("""{"tags":[1]}""", "Tags"),
@@ -629,11 +635,13 @@ foreach (var json in new[]
     """{"status":"retired","theme":"dark"}""",
     """{"count":12,"flag":true,"createdOn":"2026-01-01T00:00:00Z"}""",
     """{"count":"12"}""",
+    """{"active":"true","serial":"12"}""",
     """{"tags":["a","b"]}""",
     """{"scores":{"a":5,"b":null}}""",
     """{"extra":{"anything":[1,"x",null]}}""",
     """{"gadget":{"label":"ab"}}""",
     """{"pet":{"kind":"dog","legs":3}}""",
+    """{"pet":{"kind":"dog","weight":"3"}}""",
 })
 {
     var errors = PatchErrors(json);
@@ -651,6 +659,16 @@ Check(PatchErrors("""{"pet":{"kind":"dog","legs":"x"}}""").Any(e => e.PropertyNa
 var strict = new JsonSerializerOptions(web) { NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.Strict };
 var strictErrors = patchValidator.Validate(${patchType}.FromJson("""{"count":"12"}""", strict)).Errors;
 Check(strictErrors.Count == 1 && strictErrors[0].PropertyName == "Count", $"a patch read with strict number handling must reject a number in a string; got {Describe(strictErrors)}");
+// A property's own [JsonNumberHandling] and [JsonConverter] apply on top of the options, as they do for POST.
+Check(JsonSerializer.Deserialize<Widget>("""{"name":"ok","serial":"12","active":"true"}""", strict) is { Serial: 12, Active: true }, "POST reads @encode(string) values with strict options");
+var encodedErrors = patchValidator.Validate(${patchType}.FromJson("""{"serial":"12","active":"true"}""", strict)).Errors;
+Check(encodedErrors.Count == 0, $"a patch read with strict options must accept @encode(string) values; got {Describe(encodedErrors)}");
+// A derived patch keeps the options the base patch was read with.
+var animalValidator = scope.ServiceProvider.GetRequiredService<AnimalPatchValidator>();
+var webPetErrors = animalValidator.Validate(${animalPatchType}.FromJson("""{"kind":"dog","weight":"3"}""", web)).Errors;
+Check(webPetErrors.Count == 0, $"a derived patch read with web options must accept a number in a string; got {Describe(webPetErrors)}");
+var strictPetErrors = animalValidator.Validate(${animalPatchType}.FromJson("""{"kind":"dog","weight":"3"}""", strict)).Errors;
+Check(strictPetErrors.Count == 1 && strictPetErrors[0].PropertyName == "Weight", $"a derived patch read with strict options must reject a number in a string; got {Describe(strictPetErrors)}");
 var unread = new ${patchType} { Properties = { ["count"] = JsonDocument.Parse("12").RootElement } };
 Check(patchValidator.Validate(unread).Errors.Count == 0, "a patch built in code must use the default options");
 

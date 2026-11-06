@@ -99,7 +99,8 @@ public class MergePatch<T>
     // body must deserialize. Objects merged into a model or dictionary are
     // checked member by member, so partial objects and null members (removals)
     // are valid. Also true when the property is absent, null, or unknown to T.
-    // Uses options when given, otherwise the options the patch was read with.
+    // Uses options when given, otherwise the options the patch was read with,
+    // plus the property's own [JsonConverter] or [JsonNumberHandling].
     public bool IsValidPropertyValue(string propertyName,
         JsonSerializerOptions? options = null);
 
