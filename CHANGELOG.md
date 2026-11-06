@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-06
+
+### Fixed
+
+- MergePatch PATCH validators now reject a value that doesn't fit the property's declared type, as deserializing a POST body does: `123` or `{}` for a `string`, `"abc"` for an `int32`, `"yes"` for a `boolean`, and a value outside an enum or a string-literal union such as `"available" | "sold"`. Previously a property without a constraint accepted any JSON value, and string-literal unions were never checked. Values are read the way a POST body is: with the application's JSON options, a property's own `[JsonConverter]` or `[JsonNumberHandling]` (such as `@encode(string)`), and, for a derived patch selected by a discriminator, the options of the patch it came from. `Record<T>` values are checked key by key, so a `null` value that removes a key is still accepted, and omitted properties are never read. See [Validators — PATCH body shapes](docs/validators.md#patch-body-shapes).
+- MergePatch string rules use the same FluentValidation validators as POST (`NotEmpty()`, `MinimumLength()`, `MaximumLength()`, `EmailAddress()`) on string values only. A whitespace-only value for a required string is now rejected, a non-string value no longer passes string rules by being converted to text, and length and email failures use the same messages as POST.
+
+### Added
+
+- `IsString` and `IsValidPropertyValue` on `MergePatch<T>` and the typed `{Model}MergePatchUpdate` helpers. See [JSON Merge Patch](docs/merge-patch.md).
+
+### Changed
+
+- Generated validators are registered as scoped services instead of singletons. Resolve them from a request or service scope, not from the root provider or a singleton.
+- `MergePatch<T>` and the typed `{Model}MergePatchUpdate` helpers are read through a JSON converter that keeps the `[JsonExtensionData]` shape and remembers the serializer options, so the value-type checks use the application's JSON options without a new validator constructor parameter. Reading and writing a patch is unchanged. The runtime OpenAPI document (`Microsoft.AspNetCore.OpenApi`) now describes a MergePatch body as `{}` instead of an object with a `definedProperties` array. See [Validators — JSON options](docs/validators.md#json-options).
+- Custom `merge-patch` or `entity-merge-patch` template overrides must add `IsString` and `IsValidPropertyValue`.
+
 ## [1.2.0] - 2026-10-27
 
 ### Fixed

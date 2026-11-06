@@ -117,6 +117,13 @@ interface PropertyData {
    * explicitly nullable types such as `string | null`.
    */
   rejectNull: boolean;
+  /**
+   * True for a writable property that does not hold a model: MergePatch
+   * validators check that its JSON value fits the declared C# type, read with
+   * the options the patch body was read with, as deserializing a POST body
+   * does. Model values are checked by their nested validators instead.
+   */
+  validatesValueType?: boolean;
   /** True when the property is read-only (not writable for the target lifecycle). */
   isReadOnly?: boolean;
   /**
@@ -860,6 +867,7 @@ function buildSinglePropertyData(
     notEmpty,
     notNull,
     rejectNull,
+    validatesValueType: !modelRef || undefined,
     nullable,
     minLength,
     maxLength,

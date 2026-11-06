@@ -57,6 +57,9 @@ public class MergePatch<T>
     [JsonExtensionData]
     public Dictionary<string, JsonElement> Properties { get; init; }
 
+    // The serializer options the patch was read with (internal; see below).
+    internal JsonSerializerOptions? ReadOptions { get; set; }
+
     // True when the property was present in the JSON payload (even if null).
     public bool IsDefined(string propertyName);
 
@@ -64,7 +67,11 @@ public class MergePatch<T>
     public bool IsNull(string propertyName);
 
     // Returns the string value of a property, or null when absent or null.
+    // A non-string value is returned as its JSON text.
     public string? GetString(string propertyName);
+
+    // True when the property is present and its value is a JSON string.
+    public bool IsString(string propertyName);
 
     // Attempts to deserialize a property to TValue.
     // Returns true when the property is present (even if its value is null).
@@ -86,6 +93,15 @@ public class MergePatch<T>
     // Returns false when the property is absent from the patch, T has no
     // such property, or deserialization fails.
     public bool TryGetPropertyValue(string name, out object? value,
+        JsonSerializerOptions? options = null);
+
+    // True when the patch value fits T's declared property type, as a request
+    // body must deserialize. Objects merged into a model or dictionary are
+    // checked member by member, so partial objects and null members (removals)
+    // are valid. Also true when the property is absent, null, or unknown to T.
+    // Uses options when given, otherwise the options the patch was read with,
+    // plus the property's own [JsonConverter] or [JsonNumberHandling].
+    public bool IsValidPropertyValue(string propertyName,
         JsonSerializerOptions? options = null);
 
     // Serializes value and stores it as a patch entry for the named property.
@@ -214,21 +230,27 @@ patch.Patch(entity);
 
 ## Validator integration
 
-The generated PATCH validator uses `IsDefined` to block read-only properties and enforce constraints only when a property is present:
+The generated PATCH validator uses `IsDefined` to block read-only properties and enforce constraints only when a property is present. An absent property is never read, so a patch that leaves fields out is always valid:
 
 ```csharp
 // Read-only property: reject if client tries to set it
 this.RuleFor(x => x)
     .Must(x => !x.IsDefined("id"))
-    .WithName("id")
-    .WithMessage("'id' is read-only and cannot be modified.");
+    .WithName("Id")
+    .WithMessage("'Id' is read-only and cannot be modified.");
 
-// Optional string constraint: only validate when the property is present
+// Supplied value: must fit the declared type, as a POST body must deserialize
 this.RuleFor(x => x)
-    .Must(x => (x.GetString("name")?.Length ?? 0) > 0)
+    .Must(x => x.IsValidPropertyValue("name"))
     .When(x => x.IsDefined("name") && !x.IsNull("name"))
-    .WithName("name")
-    .WithMessage("'name' must not be empty.");
+    .WithName("Name")
+    .WithMessage("'Name' is not a valid value.");
+
+// String constraint: the same FluentValidation validator as POST, on a string value only
+this.RuleFor(x => x.GetString("name"))
+    .NotEmpty()
+    .OverridePropertyName("Name")
+    .When(x => x.IsString("name"));
 ```
 
 Numeric bounds read the raw JSON number, so exponent notation (`1e2`) is accepted and a value that isn't a JSON number fails. See [Validators — PATCH body shapes](validators.md#patch-body-shapes) for every rule shape.
@@ -242,7 +264,7 @@ The `merge-patch-style` option controls whether the emitter uses a single shared
 | `"generic"` | ✓       | Emits one shared `MergePatch<T>` class in the helpers directory. All PATCH operations share this class via generics.       |
 | `"typed"`   |         | Emits a concrete `{Model}MergePatchUpdate` class per entity directly in the models directory. No generic helper is needed. |
 
-Both styles expose the same API surface (`IsDefined`, `IsNull`, `Patch`, `PatchAsync`, `FromJson`, `From`, etc.).
+Both styles expose the same API surface (`IsDefined`, `IsNull`, `IsString`, `IsValidPropertyValue`, `Patch`, `PatchAsync`, `FromJson`, `From`, etc.).
 
 ```yaml
 options:

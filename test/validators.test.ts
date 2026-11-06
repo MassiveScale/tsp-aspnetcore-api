@@ -575,7 +575,8 @@ describe("csharp emitter - validators", () => {
       const authorPatch = results["Validators/AuthorPatchValidator.g.cs"];
       ok(
         authorPatch.includes("public AuthorPatchValidator()") &&
-          !authorPatch.includes("jsonOptions"),
+          !authorPatch.includes("jsonOptions") &&
+          authorPatch.includes('x.IsValidPropertyValue("name")'),
         `expected validators without nested values to keep a parameterless constructor:\n${authorPatch}`,
       );
     });
@@ -678,7 +679,7 @@ describe("csharp emitter - validators", () => {
           appearancePatch.includes("Leaf.{failure.PropertyName}") &&
             appearancePatch.includes("'Leaf' must be an object.") &&
             appearancePatch.includes('IsNull("label")') &&
-            appearancePatch.includes("TryGetValue<Theme?>"),
+            appearancePatch.includes('x.IsValidPropertyValue("theme")'),
           `expected second-level object validation in ${style} child patch:\n${appearancePatch}`,
         );
         ok(
@@ -1084,9 +1085,11 @@ describe("csharp emitter - validators", () => {
         `.WithMessage("'Slot' cannot be changed after creation.");`,
         `.WithMessage("'Id' is read-only and cannot be modified.");`,
       ]);
+      // Only the reject-null rule is checked: the value-type rule of every
+      // writable property also guards on `!x.IsNull(...)`.
       for (const absent of [
-        'IsNull("optCount")',
-        'IsNull("defCount")',
+        '.Must(x => !x.IsNull("optCount"))',
+        '.Must(x => !x.IsNull("defCount"))',
         'IsNull("slot")',
         'IsNull("id")',
       ]) {
@@ -1176,8 +1179,7 @@ describe("csharp emitter - validators", () => {
           `expected no non-null rule for ${name} in:\n${post}`,
         );
         ok(
-          !patch.includes(`IsNull("${wireName(name)}"))\n`) &&
-            !patch.includes(`.Must(x => !x.IsNull("${wireName(name)}"))`),
+          !patch.includes(`.Must(x => !x.IsNull("${wireName(name)}"))`),
           `expected no reject-null rule for ${name} in:\n${patch}`,
         );
       }
@@ -1298,6 +1300,8 @@ describe("csharp emitter - validators", () => {
       "GetString(",
       "IsDefined(",
       "IsNull(",
+      "IsString(",
+      "IsValidPropertyValue(",
       "TryGetValue<",
     ];
 
@@ -1654,7 +1658,7 @@ describe("csharp emitter - validators", () => {
             ok(base.includes('case "canine":'), base);
             ok(
               base.includes(
-                `new ${patchType} { Properties = patch.Properties }`,
+                `new ${patchType} { Properties = patch.Properties, ReadOptions = patch.ReadOptions }`,
               ),
               base,
             );
@@ -1711,7 +1715,7 @@ describe("csharp emitter - validators", () => {
       const registrations = results["Validators/ValidatorsInitializer.g.cs"];
       ok(
         registrations.includes(
-          "AddSingleton<AbstractValidator<MergePatch<Owner>>>(sp => sp.GetRequiredService<OwnerPatchValidator>())",
+          "AddScoped<AbstractValidator<MergePatch<Owner>>>(sp => sp.GetRequiredService<OwnerPatchValidator>())",
         ),
         `expected the Owner patch validator to be registered:\n${registrations}`,
       );
@@ -1746,7 +1750,7 @@ describe("csharp emitter - validators", () => {
       );
       ok(
         results["Validators/ValidatorsInitializer.g.cs"].includes(
-          "AddSingleton<GearValidator>()",
+          "AddScoped<GearValidator>()",
         ),
         "expected the Gear validator to be registered",
       );
@@ -1792,10 +1796,10 @@ describe("csharp emitter - validators", () => {
       const registrations = results["Validators/ValidatorsInitializer.g.cs"];
       ok(
         registrations.includes(
-          "AddSingleton<AbstractValidator<Address>>(sp => sp.GetRequiredService<AddressPatchValidator>())",
+          "AddScoped<AbstractValidator<Address>>(sp => sp.GetRequiredService<AddressPatchValidator>())",
         ) &&
           registrations.includes(
-            "AddSingleton<AbstractValidator<MergePatch<Address>>>(sp => sp.GetRequiredService<AddressMergePatchValidator>())",
+            "AddScoped<AbstractValidator<MergePatch<Address>>>(sp => sp.GetRequiredService<AddressMergePatchValidator>())",
           ),
         `expected both validators to be registered:\n${registrations}`,
       );
@@ -2141,12 +2145,12 @@ describe("csharp emitter - validators", () => {
         `expected a patch validator, got ${Object.keys(results).join(", ")}`,
       );
       ok(
-        patch.includes('x.TryGetValue<Color?>("pet_color", out _)') &&
+        patch.includes('x.IsValidPropertyValue("pet_color")') &&
           patch.includes('TryGetNumber(x, "pet_count", out var n)'),
         `expected wire-name value reads in:\n${patch}`,
       );
       ok(
-        !patch.includes('TryGetValue<Color?>("PetColor"') &&
+        !patch.includes('IsValidPropertyValue("PetColor"') &&
           !patch.includes('TryGetNumber(x, "PetCount"'),
         `expected no C#-name value reads in:\n${patch}`,
       );
@@ -2513,14 +2517,14 @@ describe("csharp emitter - validators", () => {
         results["Validators/ValidatorsInitializer.g.cs"],
         "ValidatorsInitializer",
         [
-          "services.AddSingleton<WidgetValidator>();",
-          "services.AddSingleton<IValidator<Widget>>(sp => sp.GetRequiredService<WidgetValidator>());",
+          "services.AddScoped<WidgetValidator>();",
+          "services.AddScoped<IValidator<Widget>>(sp => sp.GetRequiredService<WidgetValidator>());",
         ],
       );
       expectNone(
         results["Validators/ValidatorsInitializer.g.cs"],
         "ValidatorsInitializer",
-        ["AddScoped"],
+        ["AddSingleton"],
       );
     });
 
@@ -2556,7 +2560,7 @@ describe("csharp emitter - validators", () => {
         "DogPatchValidator",
         [
           '.Must(x => !x.IsDefined("id"))',
-          '.Must(x => (x.GetString("name")?.Length ?? 0) <= 20)',
+          'this.RuleFor(x => x.GetString("name"))\n            .MaximumLength(20)',
         ],
       );
       expectAll(results["Validators/PetValidator.g.cs"], "PetValidator", [
@@ -2628,7 +2632,7 @@ describe("csharp emitter - validators", () => {
         results["Validators/ValidatorsInitializer.g.cs"],
         "ValidatorsInitializer",
         [
-          "services.AddSingleton<IValidator<Doc>>(sp => sp.GetRequiredService<DocValidator>());",
+          "services.AddScoped<IValidator<Doc>>(sp => sp.GetRequiredService<DocValidator>());",
         ],
       );
     });
@@ -2654,18 +2658,24 @@ describe("csharp emitter - validators", () => {
       );
       const patch = results["Validators/WidgetPatchValidator.g.cs"];
       expectAll(patch, "WidgetPatchValidator", [
-        `.WithMessage("'Name' must not be empty.");`,
-        `.WithMessage("'Name' must be at least 2 characters.");`,
-        `.WithMessage("'Name' must be 9 characters or fewer.");`,
-        `.WithMessage("'Name' is not in the correct format.");`,
-        `.WithMessage("'Owner' is not a valid email address.");`,
+        `.WithMessage("'{PropertyName}' is not in the correct format.")`,
         `.WithMessage("'Count' must be a number greater than or equal to 1.");`,
         `.WithMessage("'Count' must be a number less than or equal to 9.");`,
         `.WithMessage("'Color' is not a valid value.");`,
+        `.WithMessage("'Name' is not a valid value.");`,
       ]);
-      const ruleCount = patch.split("this.RuleFor(x => x)").length - 1;
-      const messageCount = patch.split(".WithMessage(").length - 1;
-      strictEqual(messageCount, ruleCount, patch);
+      // String rules use FluentValidation's own validators, whose default
+      // messages match the POST validator; every other rule sets a message.
+      const builtInMessage =
+        /\.(NotEmpty|MinimumLength|MaximumLength|EmailAddress)\(/;
+      const rules = patch.split("this.RuleFor(").slice(1);
+      ok(rules.length > 0, patch);
+      for (const rule of rules) {
+        ok(
+          rule.includes(".WithMessage(") || builtInMessage.test(rule),
+          `expected a message for rule:\nthis.RuleFor(${rule}`,
+        );
+      }
     });
 
     it("compiles each pattern once into a static Regex with a match timeout", async () => {
@@ -2824,8 +2834,10 @@ describe("csharp emitter - validators", () => {
       ]);
       expectNone(patch, "MeasurePatchValidator", [
         "1e+30m",
-        '"wide"',
-        '"money"',
+        'TryGetNumber(x, "wide"',
+        'TryGetNumber(x, "money"',
+        'TryGetDouble(x, "wide"',
+        'TryGetDouble(x, "money"',
       ]);
     });
 
@@ -2885,7 +2897,7 @@ describe("csharp emitter - validators", () => {
         "KeyedPatchValidator",
         [
           "System.Text.RegularExpressions.Regex _classPattern = new(",
-          '.Must(x => IsMatch(_classPattern, x.GetString("klass")))',
+          'this.RuleFor(x => x.GetString("klass"))\n            .Must(value => IsMatch(_classPattern, value))',
         ],
       );
       for (const name of ["KeyedValidator", "KeyedPatchValidator"]) {
@@ -2918,9 +2930,245 @@ describe("csharp emitter - validators", () => {
         "BoxPatchValidator",
         [
           "items.GetArrayLength() <= 0",
-          '.Must(x => (x.GetString("blank")?.Length ?? 0) <= 0)',
+          'this.RuleFor(x => x.GetString("blank"))\n            .MaximumLength(0)',
         ],
       );
+    });
+  });
+
+  describe("MergePatch values follow the POST rules", () => {
+    const OPTIONS = {
+      "emit-validators": true,
+      "emit-controllers": false,
+      "emit-services": false,
+      "emit-interfaces": false,
+      "emit-helpers": true,
+    };
+
+    const SOURCE = `
+      import "@typespec/http";
+      using TypeSpec.Http;
+      @service namespace Demo;
+
+      enum Theme { light, dark }
+      model Gadget { label?: string; }
+      model Widget {
+        @visibility(Lifecycle.Read) id: string;
+        @maxLength(20) name: string;
+        @minLength(2) nickname?: string;
+        @pattern("^[0-9]+$") code?: string;
+        @format("email") email?: string;
+        theme?: Theme;
+        status?: "active" | "retired";
+        count?: int32;
+        flag?: boolean;
+        tags?: string[];
+        scores?: Record<int32>;
+        gadget?: Gadget;
+        gadgets?: Gadget[];
+      }
+
+      @route("/widgets") interface Widgets {
+        @post create(@body body: Widget): void;
+        @patch update(@body body: MergePatchUpdate<Widget>): void;
+      }
+    `;
+
+    /** Asserts every expected snippet is present in `file`. */
+    function expectAll(
+      file: string | undefined,
+      label: string,
+      snippets: string[],
+    ): void {
+      ok(file, `expected ${label} to be emitted`);
+      for (const snippet of snippets) {
+        ok(
+          file.includes(snippet),
+          `expected ${label} to contain:\n  ${snippet}\n\nin:\n${file}`,
+        );
+      }
+    }
+
+    /** Asserts no forbidden snippet is present in `file`. */
+    function expectNone(
+      file: string | undefined,
+      label: string,
+      snippets: string[],
+    ): void {
+      ok(file, `expected ${label} to be emitted`);
+      for (const snippet of snippets) {
+        ok(
+          !file.includes(snippet),
+          `expected ${label} not to contain:\n  ${snippet}\n\nin:\n${file}`,
+        );
+      }
+    }
+
+    /** The rule a MergePatch validator emits for one string validator. */
+    function stringRule(
+      jsonName: string,
+      name: string,
+      validator: string,
+    ): string {
+      return [
+        `        this.RuleFor(x => x.GetString("${jsonName}"))`,
+        `            .${validator}`,
+        `            .OverridePropertyName("${name}")`,
+        `            .When(x => x.IsString("${jsonName}"));`,
+      ].join("\n");
+    }
+
+    for (const style of ["generic", "typed"] as const) {
+      it(`applies the POST string validators to string values with ${style} helpers`, async () => {
+        const results = await emit(SOURCE, {
+          ...OPTIONS,
+          "merge-patch-style": style,
+        });
+        const patch = results["Validators/WidgetPatchValidator.g.cs"];
+        expectAll(patch, "WidgetPatchValidator", [
+          stringRule("name", "Name", "NotEmpty()"),
+          stringRule("name", "Name", "MaximumLength(20)"),
+          stringRule("nickname", "Nickname", "MinimumLength(2)"),
+          stringRule("email", "Email", "EmailAddress()"),
+          [
+            `        this.RuleFor(x => x.GetString("code"))`,
+            `            .Must(value => IsMatch(_codePattern, value))`,
+            `            .WithMessage("'{PropertyName}' is not in the correct format.")`,
+            `            .OverridePropertyName("Code")`,
+            `            .When(x => x.IsString("code"));`,
+          ].join("\n"),
+        ]);
+        expectNone(patch, "WidgetPatchValidator", [
+          "?.Length ?? 0",
+          "MailAddress.TryCreate",
+          'IsMatch(_codePattern, x.GetString("code"))',
+        ]);
+      });
+
+      it(`checks every writable non-model value against its declared type with ${style} helpers`, async () => {
+        const results = await emit(SOURCE, {
+          ...OPTIONS,
+          "merge-patch-style": style,
+        });
+        const patch = results["Validators/WidgetPatchValidator.g.cs"];
+        const typeRule = (jsonName: string, name: string): string =>
+          [
+            `        this.RuleFor(x => x)`,
+            `            .Must(x => x.IsValidPropertyValue("${jsonName}"))`,
+            `            .When(x => x.IsDefined("${jsonName}") && !x.IsNull("${jsonName}"))`,
+            `            .WithName("${name}")`,
+            `            .WithMessage("'${name}' is not a valid value.");`,
+          ].join("\n");
+        expectAll(
+          patch,
+          "WidgetPatchValidator",
+          [
+            ["name", "Name"],
+            ["nickname", "Nickname"],
+            ["code", "Code"],
+            ["email", "Email"],
+            ["theme", "Theme"],
+            ["status", "Status"],
+            ["count", "Count"],
+            ["flag", "Flag"],
+            ["tags", "Tags"],
+            ["scores", "Scores"],
+          ].map(([jsonName, name]) => typeRule(jsonName, name)),
+        );
+        expectNone(patch, "WidgetPatchValidator", [
+          'IsValidPropertyValue("id"',
+          'IsValidPropertyValue("gadget"',
+          'IsValidPropertyValue("gadgets"',
+          "TryGetValue<Theme?>",
+        ]);
+      });
+
+      it(`keeps a parameterless constructor for type checks with ${style} helpers`, async () => {
+        const results = await emit(SOURCE, {
+          ...OPTIONS,
+          "merge-patch-style": style,
+        });
+        const patchType =
+          style === "generic" ? "MergePatch<Gadget>" : "GadgetMergePatchUpdate";
+        const gadget = results["Validators/GadgetPatchValidator.g.cs"];
+        expectAll(gadget, "GadgetPatchValidator", [
+          "public GadgetPatchValidator()",
+          `AbstractValidator<${patchType}>`,
+          'x.IsValidPropertyValue("label")',
+        ]);
+        expectNone(gadget, "GadgetPatchValidator", [
+          "jsonOptions",
+          "jsonSerializerOptions",
+        ]);
+      });
+
+      it(`adds IsString and IsValidPropertyValue to the ${style} patch helper`, async () => {
+        const results = await emit(SOURCE, {
+          ...OPTIONS,
+          "merge-patch-style": style,
+        });
+        const helper =
+          style === "generic"
+            ? results["Helpers/MergePatch.g.cs"]
+            : results["Models/WidgetMergePatchUpdate.g.cs"];
+        expectAll(helper, `${style} patch helper`, [
+          "public bool IsString(string propertyName) =>",
+          "public bool IsValidPropertyValue(string propertyName, JsonSerializerOptions? options = null)",
+        ]);
+      });
+
+      it(`remembers the JSON options a ${style} patch was read with`, async () => {
+        const results = await emit(SOURCE, {
+          ...OPTIONS,
+          "merge-patch-style": style,
+        });
+        const helper =
+          style === "generic"
+            ? results["Helpers/MergePatch.g.cs"]
+            : results["Models/WidgetMergePatchUpdate.g.cs"];
+        const converter =
+          style === "generic"
+            ? "[JsonConverter(typeof(MergePatchJsonConverterFactory))]"
+            : "[JsonConverter(typeof(WidgetMergePatchUpdate.ReadOptionsConverter))]";
+        expectAll(helper, `${style} patch helper`, [
+          converter,
+          "internal JsonSerializerOptions? ReadOptions { get; set; }",
+          "IsValidPatchValue(element, prop.PropertyType, prop, options ?? ReadOptions)",
+          "JsonSerializer.Deserialize(value, type, property is null ? options : PropertyReadOptions(property, options))",
+        ]);
+      });
+    }
+
+    it("adds no JSON options parameter to version-aware MergePatch validators for type checks", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using TypeSpec.Http;
+        using TypeSpec.Versioning;
+
+        @versioned(Versions)
+        @service namespace Demo;
+        enum Versions { v1, v2 }
+
+        model Widget {
+          count?: int32;
+          @added(Versions.v2) flag?: boolean;
+        }
+
+        @route("/widgets") interface Widgets {
+          @patch update(@body body: MergePatchUpdate<Widget>): void;
+        }
+        `,
+        { ...OPTIONS, "validators-version-strategy": "version-aware" },
+      );
+      const patch = results["Validators/WidgetPatchValidator.g.cs"];
+      expectAll(patch, "WidgetPatchValidator", [
+        "public WidgetPatchValidator(IHttpContextAccessor httpContextAccessor)",
+        '.Must(x => x.IsValidPropertyValue("count"))',
+        '                .Must(x => x.IsValidPropertyValue("flag"))',
+      ]);
+      expectNone(patch, "WidgetPatchValidator", ["jsonOptions"]);
     });
   });
 });

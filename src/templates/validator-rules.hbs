@@ -21,7 +21,7 @@ RuleFor(x => x).Custom((patch, context) =>
 {{#each mergePatchDiscriminator.variants}}
         case {{csharpString value}}:
         {
-            var derivedPatch = new {{{patchTypeName}}} { Properties = patch.Properties };
+            var derivedPatch = new {{{patchTypeName}}} { Properties = patch.Properties, ReadOptions = patch.ReadOptions };
             foreach (var failure in {{{validatorExpression}}}.Validate(derivedPatch).Errors)
                 context.AddFailure(failure);
             break;

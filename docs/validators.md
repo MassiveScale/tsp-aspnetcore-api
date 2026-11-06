@@ -27,7 +27,7 @@ Register in your `Program.cs` or `Startup.cs`:
 builder.Services.AddGeneratedValidators();
 ```
 
-Validators are registered as singletons. They hold no per-request state (version-aware validators read the API version from the current request each time they validate), so each one is built once.
+Validators are registered as scoped services, so each request scope gets its own instance. Resolve them from a scope (`HttpContext.RequestServices` or `IServiceScopeFactory`), not from the root provider or a singleton.
 
 ## Extracted rules
 
@@ -56,11 +56,11 @@ Numeric bounds are written as literals of the property's C# type (`0.5m` for `de
 
 A property is **required** when it is not optional (`?`) and has no default value. Required rules apply to every type, not just strings. If the declared type explicitly allows `null` (`note: string | null`, `count: int32 | null`), the property must be present, but `null` is a valid value, so it gets no `NotNull()` or reject-null rule.
 
-| Validator                     | Required string                                                                                                     | Required non-string                             |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| POST                          | `NotEmpty()`                                                                                                        | `NotNull()`                                     |
-| PATCH (`MergePatchUpdate<T>`) | May be omitted. An explicit `null` is rejected ("is required and cannot be null"), and an empty string is rejected. | May be omitted. An explicit `null` is rejected. |
-| PATCH (plain body)            | `NotEmpty()` when supplied                                                                                          | No rule (`null` means "not supplied")           |
+| Validator                     | Required string                                                                                                                                             | Required non-string                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| POST                          | `NotEmpty()`                                                                                                                                                | `NotNull()`                                     |
+| PATCH (`MergePatchUpdate<T>`) | May be omitted. An explicit `null` is rejected ("is required and cannot be null"), and `NotEmpty()` rejects an empty or whitespace-only string, as in POST. | May be omitted. An explicit `null` is rejected. |
+| PATCH (plain body)            | `NotEmpty()` when supplied                                                                                                                                  | No rule (`null` means "not supplied")           |
 
 `NotNull()` is only emitted when the C# property can hold `null`. That's always true with the default `nullable-properties: true`. With `nullable-properties: false`, a required value type (`int`, `bool`, `DateTimeOffset`, …) is non-nullable, and an absent field reads as `0` / `false`, so no rule can tell it apart. Reference types (models, arrays, `Uri`) are still checked.
 
@@ -100,6 +100,27 @@ this.RuleFor(x => x)
 
 Every rule has a message. Numeric bounds accept any JSON number, including exponent notation such as `1e2`. A value that isn't a JSON number (for example the string `"50"`) fails the bound.
 
+A POST body is deserialized into the model before its validator runs, so a value of the wrong type never reaches the validator. A MergePatch body keeps the raw JSON, so its validator checks the type itself. Every writable property that doesn't hold a model gets a rule that reads the supplied value as the property's declared C# type, with the [JSON options](#json-options) the body was read with:
+
+```csharp
+this.RuleFor(x => x)
+    .Must(x => x.IsValidPropertyValue("count"))
+    .When(x => x.IsDefined("count") && !x.IsNull("count"))
+    .WithName("Count")
+    .WithMessage("'Count' is not a valid value.");
+```
+
+It rejects `"abc"` for an `int32`, `123` for a `string`, `"yes"` for a `boolean`, and a value that is not a member of an enum or a string-literal union (`"available" | "sold"`). An object merged into a `Record<T>` or free-form value is checked key by key, so a `null` value, which removes that key, is accepted. Model values are checked by their [nested validators](#patch-body-shapes) instead.
+
+String rules use the same FluentValidation validators as the POST validator, on the string value, so both reject the same values with the same messages. They run only when the value is a JSON string; any other value is reported once, by the type rule:
+
+```csharp
+this.RuleFor(x => x.GetString("name"))
+    .NotEmpty()
+    .OverridePropertyName("Name")
+    .When(x => x.IsString("name"));
+```
+
 **Plain model body.** When the `@patch` operation takes an ordinary model instead, the body is a plain POCO with no `IsDefined`/`GetString`/`IsNull` members, so rules use typed property access guarded on null:
 
 ```csharp
@@ -122,13 +143,15 @@ Nested-only validators are emitted and registered when reachable through a PATCH
 
 #### JSON options
 
-A MergePatch validator that validates nested values reads them with the application's JSON settings, so it accepts the same payloads as model binding (case-insensitive property names, numbers sent as strings, custom converters). Its constructor takes `IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>`, which `AddControllers()` registers, and passes `JsonSerializerOptions` to every nested deserialization. Configure it the usual way:
+A MergePatch validator reads values with the application's JSON settings, so it accepts the same payloads as model binding (case-insensitive property names, numbers sent as strings, custom converters). Configure them the usual way:
 
 ```csharp
 builder.Services.AddControllers().AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new MyConverter()));
 ```
 
-Validators without nested model properties keep their existing constructor.
+The value-type checks need no setup. When ASP.NET Core binds the request body, the patch remembers the `JsonSerializerOptions` it was read with, and `IsValidPropertyValue` uses them. A property's own `[JsonConverter]` or `[JsonNumberHandling]`, such as the ones `@encode(string)` adds, applies on top, as it does when a POST body is deserialized. A derived patch selected by a discriminator keeps the options of the patch it came from. A patch made with `FromJson(json, options)` uses `options`; a patch built in code uses the `System.Text.Json` defaults.
+
+A MergePatch validator that validates nested values also takes `IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>` in its constructor, which `AddControllers()` registers, and passes `JsonSerializerOptions` to every nested deserialization. Validators without nested model properties keep their existing constructor.
 
 #### Recursive models
 
