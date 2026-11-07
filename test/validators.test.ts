@@ -894,6 +894,39 @@ describe("csharp emitter - validators", () => {
         !validator.includes("virtual void ExtendRules"),
         `expected no virtual ExtendRules() in:\n${validator}`,
       );
+      ok(
+        validator.includes(
+          "    partial void ExtendRules(System.IServiceProvider services);",
+        ),
+        `expected a partial ExtendRules(IServiceProvider) declaration in:\n${validator}`,
+      );
+    }
+
+    /**
+     * Asserts the second constructor that DI uses: the generated parameters,
+     * then `IServiceProvider`, chaining to the first and calling the
+     * services overload.
+     */
+    function assertServicesConstructor(
+      validator: string | undefined,
+      className: string,
+      parameters: string,
+      argumentList: string,
+    ): void {
+      ok(validator, "expected the validator file to be emitted");
+      const separator = parameters.length > 0 ? ", " : "";
+      ok(
+        validator.includes(
+          [
+            `    public ${className}(${parameters}${separator}System.IServiceProvider services)`,
+            `        : this(${argumentList})`,
+            "    {",
+            "        ExtendRules(services);",
+            "    }",
+          ].join("\n"),
+        ),
+        `expected a services constructor in:\n${validator}`,
+      );
     }
 
     it("declares ExtendRules() as a partial method in standard POST and PATCH validators", async () => {
@@ -921,6 +954,18 @@ describe("csharp emitter - validators", () => {
 
       assertPartialMethodHook(results["Validators/WidgetValidator.g.cs"]);
       assertPartialMethodHook(results["Validators/WidgetPatchValidator.g.cs"]);
+      assertServicesConstructor(
+        results["Validators/WidgetValidator.g.cs"],
+        "WidgetValidator",
+        "",
+        "",
+      );
+      assertServicesConstructor(
+        results["Validators/WidgetPatchValidator.g.cs"],
+        "WidgetPatchValidator",
+        "",
+        "",
+      );
     });
 
     it("declares ExtendRules() as a partial method in version-aware POST and PATCH validators", async () => {
@@ -966,6 +1011,52 @@ describe("csharp emitter - validators", () => {
       );
       assertPartialMethodHook(postValidator);
       assertPartialMethodHook(patchValidator);
+      assertServicesConstructor(
+        patchValidator,
+        "WidgetPatchValidator",
+        "IHttpContextAccessor httpContextAccessor",
+        "httpContextAccessor",
+      );
+    });
+
+    it("passes the loop-closing serviceProvider to ExtendRules instead of adding a constructor", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        using TypeSpec.Http;
+
+        @service
+        namespace Demo;
+
+        model Root { branch?: Branch; }
+        model Branch { leaf?: Leaf; }
+        model Leaf { root?: Root; }
+
+        @route("/roots") interface Roots {
+          @post create(@body body: Root): void;
+        }
+        `,
+        VALIDATOR_OPTIONS,
+      );
+
+      const leaf = results["Validators/LeafValidator.g.cs"];
+      ok(
+        /^ {8}ExtendRules\(\);\r?\n {8}ExtendRules\(serviceProvider\);\r?\n {4}\}/m.test(
+          leaf,
+        ),
+        `expected the constructor to call both ExtendRules overloads in:\n${leaf}`,
+      );
+      strictEqual(
+        leaf.split("public LeafValidator(").length - 1,
+        1,
+        `expected a single constructor in:\n${leaf}`,
+      );
+      assertServicesConstructor(
+        results["Validators/RootValidator.g.cs"],
+        "RootValidator",
+        "AbstractValidator<Branch> branchValidator",
+        "branchValidator",
+      );
     });
   });
 
@@ -1029,13 +1120,13 @@ describe("csharp emitter - validators", () => {
       );
       const post = results["Validators/WidgetValidator.g.cs"];
       assertLines(post, "WidgetValidator", [
-        "RuleFor(x => x.Name).NotEmpty();",
-        "RuleFor(x => x.Count).NotNull();",
-        "RuleFor(x => x.Enabled).NotNull();",
-        "RuleFor(x => x.Size).NotNull();",
-        "RuleFor(x => x.Part).NotNull();",
-        "RuleFor(x => x.Tags).NotNull();",
-        "RuleFor(x => x.Slot).NotNull();",
+        'RuleFor(x => x.Name).NotEmpty().WithName("Name");',
+        'RuleFor(x => x.Count).NotNull().WithName("Count");',
+        'RuleFor(x => x.Enabled).NotNull().WithName("Enabled");',
+        'RuleFor(x => x.Size).NotNull().WithName("Size");',
+        'RuleFor(x => x.Part).NotNull().WithName("Part");',
+        'RuleFor(x => x.Tags).NotNull().WithName("Tags");',
+        'RuleFor(x => x.Slot).NotNull().WithName("Slot");',
       ]);
       for (const absent of ["x.OptCount", "x.DefCount", "x.Name).NotNull"]) {
         ok(!post.includes(absent), `expected no ${absent} rule in:\n${post}`);
@@ -1050,7 +1141,7 @@ describe("csharp emitter - validators", () => {
       const post = results["Validators/WidgetValidator.g.cs"];
       assertLines(post, "WidgetValidator", [
         "// Revision can only be set by an update and must not be set on creation",
-        "RuleFor(x => x.Revision).Null();",
+        'RuleFor(x => x.Revision).Null().WithName("Revision");',
         "// Id is read-only and must not be set on creation",
       ]);
       ok(
@@ -1102,7 +1193,7 @@ describe("csharp emitter - validators", () => {
       const patch = results["Validators/WidgetPatchValidator.g.cs"];
       assertLines(patch, "WidgetPatchValidator", [
         "// Slot cannot be changed after creation and must not be supplied",
-        "RuleFor(x => x.Slot).Null();",
+        'RuleFor(x => x.Slot).Null().WithName("Slot");',
       ]);
       ok(
         !patch.includes("NotNull()"),
@@ -1118,8 +1209,8 @@ describe("csharp emitter - validators", () => {
       const post = results["Validators/WidgetValidator.g.cs"];
       const patch = results["Validators/WidgetPatchValidator.g.cs"];
       assertLines(post, "WidgetValidator", [
-        "RuleFor(x => x.Part).NotNull();",
-        "RuleFor(x => x.Tags).NotNull();",
+        'RuleFor(x => x.Part).NotNull().WithName("Part");',
+        'RuleFor(x => x.Tags).NotNull().WithName("Tags");',
       ]);
       for (const absent of [
         "x.Count)",
@@ -1167,7 +1258,7 @@ describe("csharp emitter - validators", () => {
       const post = results["Validators/WidgetValidator.g.cs"];
       const patch = results["Validators/WidgetPatchValidator.g.cs"];
       assertLines(post, "WidgetValidator", [
-        "RuleFor(x => x.Name).NotEmpty();",
+        'RuleFor(x => x.Name).NotEmpty().WithName("Name");',
       ]);
       assertLines(patch, "WidgetPatchValidator", [
         '.Must(x => !x.IsNull("name"))',
@@ -1223,7 +1314,7 @@ describe("csharp emitter - validators", () => {
           `${dir}/WidgetValidator`,
           [
             "// Revision can only be set by an update and must not be set on creation",
-            "RuleFor(x => x.Revision).Null();",
+            'RuleFor(x => x.Revision).Null().WithName("Revision");',
           ],
         );
         assertLines(
@@ -1268,8 +1359,8 @@ describe("csharp emitter - validators", () => {
       const post = results["Validators/WidgetValidator.g.cs"];
       assertLines(post, "WidgetValidator", [
         "Rules for v2.0 and later",
-        "RuleFor(x => x.Count).NotNull();",
-        "RuleFor(x => x.Weight).NotNull();",
+        'RuleFor(x => x.Count).NotNull().WithName("Count");',
+        'RuleFor(x => x.Weight).NotNull().WithName("Weight");',
       ]);
       const patch = results["Validators/WidgetPatchValidator.g.cs"];
       assertLines(patch, "WidgetPatchValidator", [
@@ -1376,13 +1467,13 @@ describe("csharp emitter - validators", () => {
       );
 
       for (const expected of [
-        "RuleFor(x => x.Target).GreaterThanOrEqualTo(0).When(x => x.Target is not null);",
-        "RuleFor(x => x.Ceiling).LessThanOrEqualTo(100).When(x => x.Ceiling is not null);",
-        "RuleFor(x => x.Name).MinimumLength(2).When(x => x.Name is not null);",
-        "RuleFor(x => x.Name).MaximumLength(50).When(x => x.Name is not null);",
-        `RuleFor(x => x.Slug).Must(value => IsMatch(_slugPattern, value)).WithMessage("'{PropertyName}' is not in the correct format.").When(x => x.Slug is not null);`,
-        "RuleFor(x => x.Owner).EmailAddress().When(x => x.Owner is not null);",
-        "RuleFor(x => x.Channel).IsInEnum().When(x => x.Channel is not null);",
+        'RuleFor(x => x.Target).GreaterThanOrEqualTo(0).WithName("Target").When(x => x.Target is not null);',
+        'RuleFor(x => x.Ceiling).LessThanOrEqualTo(100).WithName("Ceiling").When(x => x.Ceiling is not null);',
+        'RuleFor(x => x.Name).MinimumLength(2).WithName("Name").When(x => x.Name is not null);',
+        'RuleFor(x => x.Name).MaximumLength(50).WithName("Name").When(x => x.Name is not null);',
+        `RuleFor(x => x.Slug).Must(value => IsMatch(_slugPattern, value)).WithMessage("'{PropertyName}' is not in the correct format.").WithName("Slug").When(x => x.Slug is not null);`,
+        'RuleFor(x => x.Owner).EmailAddress().WithName("Owner").When(x => x.Owner is not null);',
+        'RuleFor(x => x.Channel).IsInEnum().WithName("Channel").When(x => x.Channel is not null);',
       ]) {
         ok(
           validator.includes(expected),
@@ -1433,7 +1524,9 @@ describe("csharp emitter - validators", () => {
         results["Validators/QuotaGroupUpdatePatchValidator.g.cs"];
       ok(validator, "expected QuotaGroupUpdatePatchValidator.g.cs");
       ok(
-        validator.includes("RuleFor(x => x.CreatedAt).Null();"),
+        validator.includes(
+          'RuleFor(x => x.CreatedAt).Null().WithName("CreatedAt");',
+        ),
         `expected a Null() rule for the read-only property in:\n${validator}`,
       );
     });
@@ -1503,7 +1596,7 @@ describe("csharp emitter - validators", () => {
       // Base block.
       ok(
         validator.includes(
-          "RuleFor(x => x.Target).GreaterThanOrEqualTo(0).When(x => x.Target is not null);",
+          'RuleFor(x => x.Target).GreaterThanOrEqualTo(0).WithName("Target").When(x => x.Target is not null);',
         ) &&
           validator.includes(
             "RuleFor(x => x.Targeting!).SetValidator(targetingValidator).When(x => x.Targeting is not null);",
@@ -1513,7 +1606,7 @@ describe("csharp emitter - validators", () => {
       // Per-version block.
       ok(
         validator.includes(
-          "RuleFor(x => x.Ceiling).LessThanOrEqualTo(100).When(x => x.Ceiling is not null);",
+          'RuleFor(x => x.Ceiling).LessThanOrEqualTo(100).WithName("Ceiling").When(x => x.Ceiling is not null);',
         ) &&
           validator.includes(
             "RuleFor(x => x.Extra!).SetValidator(targetingValidator).When(x => x.Extra is not null);",
@@ -2269,7 +2362,9 @@ describe("csharp emitter - validators", () => {
         "RuleFor(x => x.Status).Null()",
         "RuleFor(x => x.Version).Null()",
       ]);
-      expectAll(post, "PetValidator", ["RuleFor(x => x.Id).Null();"]);
+      expectAll(post, "PetValidator", [
+        'RuleFor(x => x.Id).Null().WithName("Id");',
+      ]);
       expectNone(
         results["Validators/PetPatchValidator.g.cs"],
         "PetPatchValidator",
@@ -2314,18 +2409,18 @@ describe("csharp emitter - validators", () => {
         results["Validators/MeasureValidator.g.cs"],
         "MeasureValidator",
         [
-          "RuleFor(x => x.Price).GreaterThanOrEqualTo(0.5m);",
-          "RuleFor(x => x.Price).LessThanOrEqualTo(99.5m);",
-          "RuleFor(x => x.Ratio).GreaterThanOrEqualTo(0.5f);",
-          "RuleFor(x => x.Count).GreaterThanOrEqualTo(1);",
-          "RuleFor(x => x.Count).LessThanOrEqualTo(9);",
-          "RuleFor(x => x.Open).GreaterThan(0);",
-          "RuleFor(x => x.Open).LessThan(10);",
-          "RuleFor(x => x.Small).GreaterThanOrEqualTo((short)1);",
-          "RuleFor(x => x.Unsigned).GreaterThanOrEqualTo(0u);",
-          "RuleFor(x => x.Unsigned).LessThanOrEqualTo(7u);",
-          "RuleFor(x => x.Big).LessThanOrEqualTo(5000000000L);",
-          "RuleFor(x => x.Weight).GreaterThanOrEqualTo(0.25d);",
+          'RuleFor(x => x.Price).GreaterThanOrEqualTo(0.5m).WithName("Price");',
+          'RuleFor(x => x.Price).LessThanOrEqualTo(99.5m).WithName("Price");',
+          'RuleFor(x => x.Ratio).GreaterThanOrEqualTo(0.5f).WithName("Ratio");',
+          'RuleFor(x => x.Count).GreaterThanOrEqualTo(1).WithName("Count");',
+          'RuleFor(x => x.Count).LessThanOrEqualTo(9).WithName("Count");',
+          'RuleFor(x => x.Open).GreaterThan(0).WithName("Open");',
+          'RuleFor(x => x.Open).LessThan(10).WithName("Open");',
+          'RuleFor(x => x.Small).GreaterThanOrEqualTo((short)1).WithName("Small");',
+          'RuleFor(x => x.Unsigned).GreaterThanOrEqualTo(0u).WithName("Unsigned");',
+          'RuleFor(x => x.Unsigned).LessThanOrEqualTo(7u).WithName("Unsigned");',
+          'RuleFor(x => x.Big).LessThanOrEqualTo(5000000000L).WithName("Big");',
+          'RuleFor(x => x.Weight).GreaterThanOrEqualTo(0.25d).WithName("Weight");',
         ],
       );
       expectAll(
@@ -2434,7 +2529,9 @@ describe("csharp emitter - validators", () => {
       ]);
       const legacyGroup = post.indexOf('IsVersionInRange("v1", "v2")');
       const interimGroup = post.indexOf('IsVersionInRange("v2", "v3")');
-      const legacyRule = post.indexOf("RuleFor(x => x.Legacy).NotEmpty();");
+      const legacyRule = post.indexOf(
+        'RuleFor(x => x.Legacy).NotEmpty().WithName("Legacy");',
+      );
       ok(
         legacyRule > legacyGroup && legacyRule < interimGroup,
         `expected Legacy inside the v1 block:\n${post}`,
@@ -2464,7 +2561,9 @@ describe("csharp emitter - validators", () => {
         'When(_ => IsVersionInRange("v1", "v2"), () =>',
       );
       ok(
-        group >= 0 && post.indexOf("RuleFor(x => x.Note).NotEmpty();") > group,
+        group >= 0 &&
+          post.indexOf('RuleFor(x => x.Note).NotEmpty().WithName("Note");') >
+            group,
         `expected Note to be required only before v2:\n${post}`,
       );
       expectAll(
@@ -2483,12 +2582,12 @@ describe("csharp emitter - validators", () => {
       expectAll(
         perVersion["Validators/v1/WidgetValidator.g.cs"],
         "v1/WidgetValidator",
-        ["RuleFor(x => x.Note).NotEmpty();"],
+        ['RuleFor(x => x.Note).NotEmpty().WithName("Note");'],
       );
       expectNone(
         perVersion["Validators/v2/WidgetValidator.g.cs"],
         "v2/WidgetValidator",
-        ["RuleFor(x => x.Note).NotEmpty();"],
+        ['RuleFor(x => x.Note).NotEmpty().WithName("Note");'],
       );
     });
 
@@ -2547,10 +2646,10 @@ describe("csharp emitter - validators", () => {
         OPTIONS,
       );
       expectAll(results["Validators/DogValidator.g.cs"], "DogValidator", [
-        "RuleFor(x => x.Id).Null();",
-        "RuleFor(x => x.Name).NotEmpty();",
-        "RuleFor(x => x.Name).MaximumLength(20);",
-        "RuleFor(x => x.Barks).NotNull();",
+        'RuleFor(x => x.Id).Null().WithName("Id");',
+        'RuleFor(x => x.Name).NotEmpty().WithName("Name");',
+        'RuleFor(x => x.Name).MaximumLength(20).WithName("Name");',
+        'RuleFor(x => x.Barks).NotNull().WithName("Barks");',
       ]);
       expectAll(
         results["Validators/DogPatchValidator.g.cs"],
@@ -2563,7 +2662,7 @@ describe("csharp emitter - validators", () => {
       expectAll(results["Validators/PetValidator.g.cs"], "PetValidator", [
         "private static readonly System.Collections.Generic.HashSet<System.Type> _derivedTypes = new() { typeof(Dog) };",
         "When(x => !_derivedTypes.Contains(x.GetType()), () =>",
-        "            RuleFor(x => x.Name).NotEmpty();",
+        '            RuleFor(x => x.Name).NotEmpty().WithName("Name");',
       ]);
     });
 
@@ -2587,9 +2686,9 @@ describe("csharp emitter - validators", () => {
         OPTIONS,
       );
       expectAll(results["Validators/AlbumValidator.g.cs"], "AlbumValidator", [
-        `RuleFor(x => x.Photos).Must(value => value is null || value.Count >= 1).WithMessage("'{PropertyName}' must contain at least 1 items.");`,
-        `RuleFor(x => x.Photos).Must(value => value is null || value.Count <= 5).WithMessage("'{PropertyName}' must not contain more than 5 items.");`,
-        "RuleFor(x => x.Rating).GreaterThan(0d);",
+        `RuleFor(x => x.Photos).Must(value => value is null || value.Count >= 1).WithMessage("'{PropertyName}' must contain at least 1 items.").WithName("Photos");`,
+        `RuleFor(x => x.Photos).Must(value => value is null || value.Count <= 5).WithMessage("'{PropertyName}' must not contain more than 5 items.").WithName("Photos");`,
+        'RuleFor(x => x.Rating).GreaterThan(0d).WithName("Rating");',
       ]);
       expectAll(
         results["Validators/AlbumPatchValidator.g.cs"],
@@ -2621,8 +2720,8 @@ describe("csharp emitter - validators", () => {
       );
       const validator = results["Validators/DocValidator.g.cs"];
       expectAll(validator, "DocValidator", [
-        "RuleFor(x => x.Id).Null();",
-        "RuleFor(x => x.Title).NotEmpty();",
+        'RuleFor(x => x.Id).Null().WithName("Id");',
+        'RuleFor(x => x.Title).NotEmpty().WithName("Title");',
       ]);
       expectNone(validator, "DocValidator", ["RuleFor(x => x.Status).Null()"]);
       expectAll(
@@ -2719,7 +2818,7 @@ describe("csharp emitter - validators", () => {
             ? results["Helpers/MergePatch.g.cs"]
             : results["WidgetMergePatchUpdate.g.cs"];
         expectAll(helper, `${style} helper`, [
-          "PatchObject(original, original.GetType(), Properties, rejected, string.Empty, options);",
+          "PatchObject(original, original.GetType(), Properties, rejected, string.Empty, options ?? ReadOptions);",
           "&& property.GetValue(target) is { } nested)",
           "PatchObject(nested, nested.GetType(), nestedValues, rejected, JoinPath(prefix, member.Value.WireName), options);",
           "JsonSerializer.SerializeToNode(target, type, options)",
@@ -2807,11 +2906,11 @@ describe("csharp emitter - validators", () => {
       );
       const post = results["Validators/MeasureValidator.g.cs"];
       expectAll(post, "MeasureValidator", [
-        "RuleFor(x => x.Huge).GreaterThan(1e+30d);",
-        "RuleFor(x => x.Tiny).LessThan(-1e+30d);",
-        "RuleFor(x => x.Ratio).GreaterThanOrEqualTo(0.5f);",
-        "RuleFor(x => x.Richer).GreaterThanOrEqualTo(79228162514264337593543950335m);",
-        "RuleFor(x => x.Qty).GreaterThanOrEqualTo(2);",
+        'RuleFor(x => x.Huge).GreaterThan(1e+30d).WithName("Huge");',
+        'RuleFor(x => x.Tiny).LessThan(-1e+30d).WithName("Tiny");',
+        'RuleFor(x => x.Ratio).GreaterThanOrEqualTo(0.5f).WithName("Ratio");',
+        'RuleFor(x => x.Richer).GreaterThanOrEqualTo(79228162514264337593543950335m).WithName("Richer");',
+        'RuleFor(x => x.Qty).GreaterThanOrEqualTo(2).WithName("Qty");',
       ]);
       expectNone(post, "MeasureValidator", [
         "RuleFor(x => x.Wide)",
@@ -2862,9 +2961,9 @@ describe("csharp emitter - validators", () => {
       ]);
       const validator = results["Validators/SpecialItemValidator.g.cs"];
       expectAll(validator, "SpecialItemValidator", [
-        "RuleFor(x => x.ItemValue).NotEmpty();",
-        "RuleFor(x => x.UserId).NotEmpty();",
-        "RuleFor(x => x.UserId2).NotEmpty();",
+        'RuleFor(x => x.ItemValue).NotEmpty().WithName("ItemValue");',
+        'RuleFor(x => x.UserId).NotEmpty().WithName("UserId");',
+        'RuleFor(x => x.UserId2).NotEmpty().WithName("UserId2");',
       ]);
       expectNone(validator, "SpecialItemValidator", ["RuleFor(x => x.Item)."]);
     });
@@ -2922,7 +3021,7 @@ describe("csharp emitter - validators", () => {
       );
       expectAll(results["Validators/BoxValidator.g.cs"], "BoxValidator", [
         "RuleFor(x => x.None).Must(value => value is null || value.Count <= 0)",
-        "RuleFor(x => x.Blank).MaximumLength(0);",
+        'RuleFor(x => x.Blank).MaximumLength(0).WithName("Blank");',
       ]);
       expectAll(
         results["Validators/BoxPatchValidator.g.cs"],
@@ -3013,6 +3112,7 @@ describe("csharp emitter - validators", () => {
         `        this.RuleFor(x => x.GetString("${jsonName}"))`,
         `            .${validator}`,
         `            .OverridePropertyName("${name}")`,
+        `            .WithName("${name}")`,
         `            .When(x => x.IsString("${jsonName}"));`,
       ].join("\n");
     }
@@ -3034,6 +3134,7 @@ describe("csharp emitter - validators", () => {
             `            .Must(value => IsMatch(_codePattern, value))`,
             `            .WithMessage("'{PropertyName}' is not in the correct format.")`,
             `            .OverridePropertyName("Code")`,
+            `            .WithName("Code")`,
             `            .When(x => x.IsString("code"));`,
           ].join("\n"),
         ]);
@@ -3131,7 +3232,10 @@ describe("csharp emitter - validators", () => {
             : "[JsonConverter(typeof(WidgetMergePatchUpdate.ReadOptionsConverter))]";
         expectAll(helper, `${style} patch helper`, [
           converter,
-          "internal JsonSerializerOptions? ReadOptions { get; set; }",
+          "public JsonSerializerOptions? ReadOptions { get; init; }",
+          "JsonSerializer.Deserialize<TValue>(element.GetRawText(), options ?? ReadOptions)",
+          "JsonSerializer.Deserialize(element.GetRawText(), prop.PropertyType, options ?? ReadOptions)",
+          "PatchObject(original, original.GetType(), Properties, rejected, string.Empty, options ?? ReadOptions)",
           "IsValidPatchValue(element, prop.PropertyType, prop, options ?? ReadOptions)",
           "JsonSerializer.Deserialize(value, type, property is null ? options : PropertyReadOptions(property, options))",
         ]);
@@ -3168,6 +3272,181 @@ describe("csharp emitter - validators", () => {
         '                .Must(x => x.IsValidPropertyValue("flag"))',
       ]);
       expectNone(patch, "WidgetPatchValidator", ["jsonOptions"]);
+    });
+  });
+
+  describe("@patchStrategy and merge-patch-nested-models", () => {
+    const OPTIONS = {
+      "emit-validators": true,
+      "emit-controllers": false,
+      "emit-services": false,
+      "emit-interfaces": false,
+      // The spec imports this library, whose namespace would otherwise change the inferred root.
+      "root-namespace": "Demo",
+    };
+    const REPLACE_ATTRIBUTE =
+      "[JsonObjectCreationHandling(JsonObjectCreationHandling.Replace)]";
+
+    function source(properties: string): string {
+      return `
+        import "@typespec/http";
+        import "@massivescale/tsp-aspnetcore-api";
+        using TypeSpec.Http;
+        using MassiveScale.AspNetCoreApi;
+
+        @service
+        namespace Demo;
+
+        model Badge { code: string; }
+        model Widget {
+          ${properties}
+        }
+
+        @route("/widgets") interface Widgets {
+          @patch update(@body body: MergePatchUpdate<Widget>): void;
+        }
+      `;
+    }
+
+    /** The rendered rule for a property, from its comment to the end of its block. */
+    function ruleFor(validator: string, name: string): string {
+      const start = validator.indexOf(`// ${name} `);
+      ok(start >= 0, `expected a rule for ${name} in:\n${validator}`);
+      return validator.slice(start, validator.indexOf("});", start));
+    }
+
+    it("replaces a decorated property and keeps merging the others", async () => {
+      const results = await emit(
+        source(`
+          @patchStrategy("replace") badge?: Badge;
+          merged?: Badge;
+        `),
+        OPTIONS,
+      );
+
+      const model = results["Models/Widget.g.cs"];
+      ok(
+        model.includes(
+          [
+            `        [JsonPropertyName("badge")]`,
+            `        ${REPLACE_ATTRIBUTE}`,
+            "        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]",
+            "        public Badge? Badge { get; set; }",
+          ].join("\n"),
+        ),
+        `expected the replace attribute on Badge in:\n${model}`,
+      );
+      strictEqual(
+        model.split(REPLACE_ATTRIBUTE).length - 1,
+        1,
+        `expected only Badge to replace in:\n${model}`,
+      );
+
+      const patch = results["Validators/WidgetPatchValidator.g.cs"];
+      const replaced = ruleFor(patch, "Badge");
+      ok(
+        replaced.includes(
+          "replaces the existing value, so it is validated as a complete model",
+        ) &&
+          replaced.includes(
+            "System.Text.Json.JsonSerializer.Deserialize<Badge>(element.GetRawText(), jsonSerializerOptions)",
+          ) &&
+          replaced.includes("badgeValidator.Validate(nestedModel)"),
+        replaced,
+      );
+      ok(
+        ruleFor(patch, "Merged").includes(
+          "badgePatchValidator.Validate(nestedPatch)",
+        ),
+        patch,
+      );
+      ok(
+        patch.includes("AbstractValidator<Badge> badgeValidator") &&
+          patch.includes(
+            "AbstractValidator<MergePatch<Badge>> badgePatchValidator",
+          ),
+        patch,
+      );
+      ok(
+        results["Validators/BadgeValidator.g.cs"],
+        "expected a POST validator for the replaced model",
+      );
+    });
+
+    it("replaces every model property when the option says so, unless @patchStrategy merges", async () => {
+      const results = await emit(
+        source(`
+          badge?: Badge;
+          @patchStrategy("merge") merged?: Badge;
+          label?: string;
+        `),
+        { ...OPTIONS, "merge-patch-nested-models": "replace" },
+      );
+
+      const model = results["Models/Widget.g.cs"];
+      strictEqual(
+        model.split(REPLACE_ATTRIBUTE).length - 1,
+        1,
+        `expected only Badge to replace in:\n${model}`,
+      );
+      const patch = results["Validators/WidgetPatchValidator.g.cs"];
+      ok(
+        ruleFor(patch, "Badge").includes(
+          "badgeValidator.Validate(nestedModel)",
+        ),
+        patch,
+      );
+      ok(
+        ruleFor(patch, "Merged").includes(
+          "badgePatchValidator.Validate(nestedPatch)",
+        ),
+        patch,
+      );
+    });
+
+    it("merges every model property by default", async () => {
+      const results = await emit(source(`badge?: Badge;`), OPTIONS);
+      ok(
+        !results["Models/Widget.g.cs"].includes(REPLACE_ATTRIBUTE),
+        results["Models/Widget.g.cs"],
+      );
+      ok(
+        ruleFor(
+          results["Validators/WidgetPatchValidator.g.cs"],
+          "Badge",
+        ).includes("badgePatchValidator.Validate(nestedPatch)"),
+      );
+    });
+
+    it("warns that @patchStrategy has no effect on a property that does not hold a single model", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(
+        source(`
+          @patchStrategy("replace") label?: string;
+          @patchStrategy("replace") badges?: Badge[];
+          @patchStrategy("replace") byKey?: Record<Badge>;
+          @patchStrategy("replace") badge?: Badge | null;
+        `),
+        OPTIONS,
+      );
+
+      strictEqual(
+        diagnostics.map((d) => `${d.code}:${d.severity}`).join(","),
+        [
+          "@massivescale/tsp-aspnetcore-api/patch-strategy-ignored:warning",
+          "@massivescale/tsp-aspnetcore-api/patch-strategy-ignored:warning",
+          "@massivescale/tsp-aspnetcore-api/patch-strategy-ignored:warning",
+        ].join(","),
+        describeDiagnostics(diagnostics),
+      );
+      ok(
+        diagnostics[0].message.includes('"label"'),
+        describeDiagnostics(diagnostics),
+      );
+      strictEqual(
+        results["Models/Widget.g.cs"].split(REPLACE_ATTRIBUTE).length - 1,
+        1,
+        "only the nullable model property replaces",
+      );
     });
   });
 });

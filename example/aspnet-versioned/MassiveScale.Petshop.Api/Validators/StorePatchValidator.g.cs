@@ -71,12 +71,14 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
         this.RuleFor(x => x.GetString("name"))
             .NotEmpty()
             .OverridePropertyName("Name")
+            .WithName("Name")
             .When(x => x.IsString("name"));
 
         // Name cannot exceed a MaxLength of 100 when provided
         this.RuleFor(x => x.GetString("name"))
             .MaximumLength(100)
             .OverridePropertyName("Name")
+            .WithName("Name")
             .When(x => x.IsString("name"));
 
         // PhoneNumber is required and cannot be removed
@@ -97,6 +99,7 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
         this.RuleFor(x => x.GetString("phoneNumber"))
             .NotEmpty()
             .OverridePropertyName("PhoneNumber")
+            .WithName("PhoneNumber")
             .When(x => x.IsString("phoneNumber"));
 
         // Pets is required and cannot be removed
@@ -171,23 +174,37 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
             this.RuleFor(x => x.GetString("email"))
                 .NotEmpty()
                 .OverridePropertyName("Email")
+                .WithName("Email")
                 .When(x => x.IsString("email"));
 
             // Email cannot exceed a MaxLength of 255 when provided
             this.RuleFor(x => x.GetString("email"))
                 .MaximumLength(255)
                 .OverridePropertyName("Email")
+                .WithName("Email")
                 .When(x => x.IsString("email"));
 
             // Email must be a valid email address when provided
             this.RuleFor(x => x.GetString("email"))
                 .EmailAddress()
                 .OverridePropertyName("Email")
+                .WithName("Email")
                 .When(x => x.IsString("email"));
 
         });
 
         ExtendRules();
+    }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="StorePatchValidator"/> with the auto-generated rules,
+    /// then the custom rules of both <c>ExtendRules</c> methods. Dependency injection uses this
+    /// constructor, so <c>ExtendRules(IServiceProvider)</c> can resolve the services it needs.
+    /// </summary>
+    public StorePatchValidator(IHttpContextAccessor httpContextAccessor, Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions> jsonOptions, AbstractValidator<Pet> petValidator, System.IServiceProvider services)
+        : this(httpContextAccessor, jsonOptions, petValidator)
+    {
+        ExtendRules(services);
     }
 
     /// <summary>
@@ -245,6 +262,16 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
     /// the compiler removes both this declaration and the call to it.
     /// </summary>
     partial void ExtendRules();
+
+    /// <summary>
+    /// Implement this partial method in a hand-written part of this class to add custom
+    /// validation rules that need services, such as another validator or a repository.
+    /// It runs after <c>ExtendRules()</c> whenever the validator is created with an
+    /// <see cref="System.IServiceProvider"/>, as dependency injection does. When no
+    /// implementation exists, the compiler removes both this declaration and the calls to it.
+    /// </summary>
+    /// <param name="services">The service provider the validator was resolved from.</param>
+    partial void ExtendRules(System.IServiceProvider services);
 }
 
 #pragma warning restore CS0612 // Type or member is obsolete

@@ -12,4 +12,5 @@
 export { $onEmit } from "./emitter.js";
 export { $lib } from "./lib.js";
 export { $decorators, getServerName } from "./decorators.js";
+export { $onValidate } from "./validate.js";
 export { $linter } from "./linter.js";

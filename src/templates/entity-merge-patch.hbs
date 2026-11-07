@@ -34,11 +34,12 @@ public class {{{modelName}}}MergePatchUpdate
 
     /// <summary>
     /// The serializer options this patch was read with, such as the application's MVC
-    /// JSON options when ASP.NET Core binds a request body. <see cref="IsValidPropertyValue"/>
-    /// uses them when no options are passed, so values are checked the way a POST body
-    /// is read. <see langword="null"/> for a patch built in code.
+    /// JSON options when ASP.NET Core binds a request body. <see cref="IsValidPropertyValue"/>,
+    /// <see cref="TryGetValue"/>, <see cref="TryGetPropertyValue"/> and <c>TryPatch</c> use them when
+    /// no options are passed, so values are read the way a POST body is read.
+    /// <see langword="null"/> for a patch built in code.
     /// </summary>
-    internal JsonSerializerOptions? ReadOptions { get; set; }
+    public JsonSerializerOptions? ReadOptions { get; init; }
 
     /// <summary>
     /// Returns <see langword="true"/> if <paramref name="propertyName"/> was explicitly
@@ -76,6 +77,7 @@ public class {{{modelName}}}MergePatchUpdate
     /// Attempts to deserialize <paramref name="propertyName"/> to <typeparamref name="TValue"/>.
     /// Returns <see langword="true"/> when the property is present (even if null);
     /// <see langword="false"/> when it is absent or cannot be deserialized.
+    /// Reads with <paramref name="options"/> when given, otherwise with <see cref="ReadOptions"/>.
     /// </summary>
     public bool TryGetValue<TValue>(string propertyName, out TValue? value, JsonSerializerOptions? options = null)
     {
@@ -84,7 +86,7 @@ public class {{{modelName}}}MergePatchUpdate
         if (element.ValueKind == JsonValueKind.Null) return true;
         try
         {
-            value = JsonSerializer.Deserialize<TValue>(element.GetRawText(), options);
+            value = JsonSerializer.Deserialize<TValue>(element.GetRawText(), options ?? ReadOptions);
             return true;
         }
         catch
@@ -119,6 +121,7 @@ public class {{{modelName}}}MergePatchUpdate
     /// deserialized to the declared property type on <see cref="{{{qualifiedModelName}}}"/>.
     /// Returns <see langword="false"/> when the property is absent from the patch,
     /// <see cref="{{{qualifiedModelName}}}"/> declares no such property, or deserialization fails.
+    /// Reads with <paramref name="options"/> when given, otherwise with <see cref="ReadOptions"/>.
     /// </summary>
     public bool TryGetPropertyValue(string name, out object? value, JsonSerializerOptions? options = null)
     {
@@ -129,7 +132,7 @@ public class {{{modelName}}}MergePatchUpdate
         if (element.ValueKind == JsonValueKind.Null) return true;
         try
         {
-            value = JsonSerializer.Deserialize(element.GetRawText(), prop.PropertyType, options);
+            value = JsonSerializer.Deserialize(element.GetRawText(), prop.PropertyType, options ?? ReadOptions);
             return true;
         }
         catch
@@ -166,7 +169,8 @@ public class {{{modelName}}}MergePatchUpdate
     {
         if (value.ValueKind == JsonValueKind.Null) return true;
         var openValueType = GetOpenObjectValueType(type);
-        if (value.ValueKind == JsonValueKind.Object && (openValueType is not null || IsModelType(type)))
+        // A merged object is checked member by member; a replaced one must deserialize as a whole.
+        if (value.ValueKind == JsonValueKind.Object && (openValueType is not null || IsModelType(type)) && !(property is not null && ReplacesOnPatch(property)))
         {
             foreach (var member in value.EnumerateObject())
             {
@@ -281,12 +285,14 @@ public class {{{modelName}}}MergePatchUpdate
     /// sibling properties are still applied. The root instance is never replaced.
     /// Nested models are merged in place unless a discriminator selects a different
     /// subtype, in which case a replacement retains shared serialized properties.
+    /// A property marked <c>[JsonObjectCreationHandling(JsonObjectCreationHandling.Replace)]</c>,
+    /// as <c>@patchStrategy("replace")</c> emits, is replaced by the supplied object instead.
     /// Members are resolved from the runtime type of <paramref name="original"/>, so
     /// the properties of a derived type can be patched through its base type.
     /// </summary>
     /// <param name="original">The entity to mutate.</param>
     /// <param name="rejectedPaths">JSON property paths that could not be applied.</param>
-    /// <param name="options">Serializer options used for the entity and patch values.</param>
+    /// <param name="options">Serializer options used for the entity and patch values; defaults to <see cref="ReadOptions"/>.</param>
     /// <returns><see langword="true"/> when every supplied property was applied.</returns>
     public bool TryPatch({{{qualifiedModelName}}} original, out IReadOnlyList<string> rejectedPaths, JsonSerializerOptions? options = null)
     {
@@ -298,7 +304,7 @@ public class {{{modelName}}}MergePatchUpdate
             return false;
         }
 
-        PatchObject(original, original.GetType(), Properties, rejected, string.Empty, options);
+        PatchObject(original, original.GetType(), Properties, rejected, string.Empty, options ?? ReadOptions);
         return rejected.Count == 0;
     }
 
@@ -337,6 +343,7 @@ public class {{{modelName}}}MergePatchUpdate
             if (element.ValueKind == JsonValueKind.Object
                 && property.CanRead
                 && IsModelType(property.PropertyType)
+                && !ReplacesOnPatch(property)
                 && property.GetValue(target) is { } nested)
             {
                 var nestedPatch = (JsonObject)JsonNode.Parse(element.GetRawText(), documentOptions: new JsonDocumentOptions { MaxDepth = options?.MaxDepth ?? 0 })!;
@@ -440,6 +447,18 @@ public class {{{modelName}}}MergePatchUpdate
         && !type.Namespace.StartsWith("System.", StringComparison.Ordinal);
 
     /// <summary>
+    /// Returns <see langword="true"/> when a patch replaces the value of <paramref name="property"/>
+    /// instead of merging into it: the property is marked
+    /// <c>[JsonObjectCreationHandling(JsonObjectCreationHandling.Replace)]</c>, as
+    /// <c>@patchStrategy("replace")</c> emits. Cached because reflection is slow on the PATCH hot path.
+    /// </summary>
+    private static bool ReplacesOnPatch(PropertyInfo property) =>
+        _replacesOnPatch.GetOrAdd(property, static member =>
+            member.GetCustomAttribute<JsonObjectCreationHandlingAttribute>()?.Handling == JsonObjectCreationHandling.Replace);
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<PropertyInfo, bool> _replacesOnPatch = new();
+
+    /// <summary>
     /// Applies RFC 7396 merge rules from <paramref name="patch"/> onto <paramref name="target"/>.
     /// Keys of a CLR model must match one of its properties; keys of a dictionary or a
     /// free-form JSON value (<see cref="JsonElement"/>, <see cref="JsonNode"/>, <see cref="object"/>)
@@ -468,6 +487,7 @@ public class {{{modelName}}}MergePatchUpdate
             if (string.Equals(patchName, discriminatorName, StringComparison.OrdinalIgnoreCase)) continue;
             string wireName;
             Type childType;
+            var replace = false;
             if (openValueType is not null)
             {
                 wireName = patchName;
@@ -483,6 +503,7 @@ public class {{{modelName}}}MergePatchUpdate
                 }
                 wireName = member.Value.WireName;
                 childType = member.Value.Property.PropertyType;
+                replace = ReplacesOnPatch(member.Value.Property);
             }
             var path = prefix.Length == 0 ? wireName : $"{prefix}.{wireName}";
 
@@ -499,6 +520,12 @@ public class {{{modelName}}}MergePatchUpdate
             if (patchValue is null)
             {
                 if (targetName is not null) target.Remove(targetName);
+                continue;
+            }
+
+            if (replace)
+            {
+                target[targetName ?? wireName] = patchValue.DeepClone();
                 continue;
             }
 

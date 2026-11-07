@@ -18,81 +18,81 @@
 {{else}}
 // {{{name}}} {{#if isImmutable}}can only be set by an update{{else}}is read-only{{/if}} and must not be set on creation
 {{/if}}
-RuleFor(x => x.{{{name}}}).Null();
+RuleFor(x => x.{{{name}}}).Null().WithName("{{{name}}}");
 
 {{/if}}
 {{else}}
 {{#if notEmpty}}
 {{#if @root.isPatch}}
 // {{{name}}} must not be empty when provided
-RuleFor(x => x.{{{name}}}).NotEmpty(){{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}};
+RuleFor(x => x.{{{name}}}).NotEmpty().WithName("{{{name}}}"){{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}};
 {{else}}
 // {{{name}}} is required
-RuleFor(x => x.{{{name}}}).NotEmpty();
+RuleFor(x => x.{{{name}}}).NotEmpty().WithName("{{{name}}}");
 {{/if}}
 
 {{/if}}
 {{#unless @root.isPatch}}
 {{#if notNull}}
 // {{{name}}} is required
-RuleFor(x => x.{{{name}}}).NotNull();
+RuleFor(x => x.{{{name}}}).NotNull().WithName("{{{name}}}");
 
 {{/if}}
 {{/unless}}
 {{#if minLength}}
 // {{{name}}} must be at least {{minLength}} characters{{#if @root.isPatch}} when provided{{/if}}
-RuleFor(x => x.{{{name}}}).MinimumLength({{minLength}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+RuleFor(x => x.{{{name}}}).MinimumLength({{minLength}}).WithName("{{{name}}}"){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
 
 {{/if}}
 {{!-- isDefined, not a plain #if: a zero maximum is still a limit. --}}
 {{#if (isDefined maxLength)}}
 // {{{name}}} cannot exceed a MaxLength of {{maxLength}}{{#if @root.isPatch}} when provided{{/if}}
-RuleFor(x => x.{{{name}}}).MaximumLength({{maxLength}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+RuleFor(x => x.{{{name}}}).MaximumLength({{maxLength}}).WithName("{{{name}}}"){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
 
 {{/if}}
 {{#if pattern}}
 // {{{name}}} must match the pattern '{{pattern}}'{{#if @root.isPatch}} when provided{{/if}}
-RuleFor(x => x.{{{name}}}).Must(value => IsMatch({{{patternField}}}, value)).WithMessage("'{PropertyName}' is not in the correct format."){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+RuleFor(x => x.{{{name}}}).Must(value => IsMatch({{{patternField}}}, value)).WithMessage("'{PropertyName}' is not in the correct format.").WithName("{{{name}}}"){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
 
 {{/if}}
 {{#if emailAddress}}
 // {{{name}}} must be a valid email address{{#if @root.isPatch}} when provided{{/if}}
-RuleFor(x => x.{{{name}}}).EmailAddress(){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+RuleFor(x => x.{{{name}}}).EmailAddress().WithName("{{{name}}}"){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
 
 {{/if}}
 {{#if minValue}}
 // {{{name}}} must be greater than or equal to {{minValue.display}}{{#if @root.isPatch}} when provided{{/if}}
-RuleFor(x => x.{{{name}}}).GreaterThanOrEqualTo({{{minValue.formatted}}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+RuleFor(x => x.{{{name}}}).GreaterThanOrEqualTo({{{minValue.formatted}}}).WithName("{{{name}}}"){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
 
 {{/if}}
 {{#if minValueExclusive}}
 // {{{name}}} must be greater than {{minValueExclusive.display}}{{#if @root.isPatch}} when provided{{/if}}
-RuleFor(x => x.{{{name}}}).GreaterThan({{{minValueExclusive.formatted}}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+RuleFor(x => x.{{{name}}}).GreaterThan({{{minValueExclusive.formatted}}}).WithName("{{{name}}}"){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
 
 {{/if}}
 {{#if maxValue}}
 // {{{name}}} cannot exceed a MaxValue of {{maxValue.display}}{{#if @root.isPatch}} when provided{{/if}}
-RuleFor(x => x.{{{name}}}).LessThanOrEqualTo({{{maxValue.formatted}}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+RuleFor(x => x.{{{name}}}).LessThanOrEqualTo({{{maxValue.formatted}}}).WithName("{{{name}}}"){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
 
 {{/if}}
 {{#if maxValueExclusive}}
 // {{{name}}} must be less than {{maxValueExclusive.display}}{{#if @root.isPatch}} when provided{{/if}}
-RuleFor(x => x.{{{name}}}).LessThan({{{maxValueExclusive.formatted}}}){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+RuleFor(x => x.{{{name}}}).LessThan({{{maxValueExclusive.formatted}}}).WithName("{{{name}}}"){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
 
 {{/if}}
 {{#if minItems}}
 // {{{name}}} must contain at least {{minItems}} items{{#if @root.isPatch}} when provided{{/if}}
-RuleFor(x => x.{{{name}}}).Must(value => value is null || value.Count >= {{minItems}}).WithMessage("'{PropertyName}' must contain at least {{minItems}} items.");
+RuleFor(x => x.{{{name}}}).Must(value => value is null || value.Count >= {{minItems}}).WithMessage("'{PropertyName}' must contain at least {{minItems}} items.").WithName("{{{name}}}");
 
 {{/if}}
 {{#if (isDefined maxItems)}}
 // {{{name}}} cannot contain more than {{maxItems}} items{{#if @root.isPatch}} when provided{{/if}}
-RuleFor(x => x.{{{name}}}).Must(value => value is null || value.Count <= {{maxItems}}).WithMessage("'{PropertyName}' must not contain more than {{maxItems}} items.");
+RuleFor(x => x.{{{name}}}).Must(value => value is null || value.Count <= {{maxItems}}).WithMessage("'{PropertyName}' must not contain more than {{maxItems}} items.").WithName("{{{name}}}");
 
 {{/if}}
 {{#if isInEnum}}
 // {{{name}}} must be a valid enum value{{#if @root.isPatch}} when provided{{/if}}
-RuleFor(x => x.{{{name}}}).IsInEnum(){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
+RuleFor(x => x.{{{name}}}).IsInEnum().WithName("{{{name}}}"){{#if @root.isPatch}}{{#if nullable}}.When(x => x.{{{name}}} is not null){{/if}}{{/if}};
 
 {{/if}}
 {{#if referencedModelName}}

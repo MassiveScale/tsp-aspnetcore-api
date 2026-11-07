@@ -495,7 +495,9 @@ describe("generated code with awkward names", { skip: !hasDotnet }, () => {
 
 const VALUE_PARITY_SPEC = `
   import "@typespec/http";
+  import "@massivescale/tsp-aspnetcore-api";
   using TypeSpec.Http;
+  using MassiveScale.AspNetCoreApi;
 
   @service namespace Demo;
 
@@ -505,6 +507,8 @@ const VALUE_PARITY_SPEC = `
   model Dog extends Animal { kind: "dog"; @minValue(1) legs?: int32; weight?: int32; }
   model Widget {
     @maxLength(20) name: string;
+    @minLength(2) @maxLength(10) displayName: string;
+    @minValue(1) seatCount?: int32;
     @minLength(2) nickname?: string;
     @pattern("^[0-9]+$") code?: string;
     @format("email") email?: string;
@@ -523,7 +527,13 @@ const VALUE_PARITY_SPEC = `
     extra?: unknown;
     gadget?: Gadget;
     pet?: Animal;
+    folder?: Folder;
+    @patchStrategy("replace") badge?: Badge;
+    mergedBadge?: Badge;
   }
+  model Badge { @maxLength(4) code: string; level?: int32; }
+  model Folder { title?: string; parent?: FolderRef; }
+  model FolderRef { label?: string; folder?: Folder; }
 
   @route("/widgets") interface Widgets {
     @post create(@body body: Widget): void;
@@ -557,6 +567,7 @@ void Check(bool condition, string message)
 
 var services = new ServiceCollection();
 services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new Microsoft.AspNetCore.Mvc.JsonOptions()));
+services.AddSingleton(new ReservedNames("reserved-by-service"));
 services.AddGeneratedValidators();
 using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
 using var scope = provider.CreateScope();
@@ -576,6 +587,7 @@ List<ValidationFailure>? PostErrors(string json)
 {
     var body = JsonNode.Parse(json)!.AsObject();
     if (!body.ContainsKey("name")) body["name"] = "ok";
+    if (!body.ContainsKey("displayName")) body["displayName"] = "ok";
     try
     {
         return postValidator.Validate(body.Deserialize<Widget>(web)!).Errors;
@@ -624,6 +636,9 @@ foreach (var (json, property) in new[]
     ("""{"nickname":"a"}""", "Nickname"),
     ("""{"code":"abc"}""", "Code"),
     ("""{"email":"not-an-email"}""", "Email"),
+    ("""{"displayName":"   "}""", "DisplayName"),
+    ("""{"displayName":"a"}""", "DisplayName"),
+    ("""{"displayName":"01234567890"}""", "DisplayName"),
 })
 {
     var post = PostErrors(json)?.Where(e => e.PropertyName == property).ToList() ?? new();
@@ -631,6 +646,36 @@ foreach (var (json, property) in new[]
     Check(post.Count > 0, $"POST must reject {json} on {property}");
     Check(post.Select(e => e.ErrorMessage).SequenceEqual(patch.Select(e => e.ErrorMessage)), $"PATCH must reject {json} exactly like POST: POST {Describe(post)}, PATCH {Describe(patch)}");
 }
+
+// Both ExtendRules overloads run for a validator resolved from DI; the second gets the services.
+Check(PostErrors("""{"name":"reserved-by-rule"}""") is [{ ErrorMessage: "ExtendRules() rejected the name." }], $"ExtendRules() must run; got {Describe(PostErrors("""{"name":"reserved-by-rule"}""") ?? new())}");
+Check(PostErrors("""{"name":"reserved-by-service"}""") is [{ ErrorMessage: "ExtendRules(services) rejected the name." }], $"ExtendRules(services) must run with the DI services; got {Describe(PostErrors("""{"name":"reserved-by-service"}""") ?? new())}");
+// A validator that already takes serviceProvider, to close a reference loop, passes it on.
+var loopErrors = PostErrors("""{"folder":{"parent":{"label":"reserved-by-service"}}}""") ?? new();
+Check(loopErrors is [{ PropertyName: "Folder.Parent.Label", ErrorMessage: "ExtendRules(services) rejected the label." }], $"ExtendRules(services) must run in a validator that closes a loop; got {Describe(loopErrors)}");
+
+// @patchStrategy("replace"): the object is validated as a complete model and replaces the value.
+var replacedErrors = PatchErrors("""{"badge":{"level":2}}""");
+Check(replacedErrors is [{ PropertyName: "Badge.Code", ErrorMessage: "'Code' must not be empty." }], $"a replaced object must be validated as a complete model; got {Describe(replacedErrors)}");
+Check(PatchErrors("""{"mergedBadge":{"level":2}}""") is { Count: 0 }, "a merged object is validated as a partial patch");
+var replacedLong = PatchErrors("""{"badge":{"code":"toolong"}}""");
+Check(replacedLong is [{ PropertyName: "Badge.Code" }], $"a replaced object keeps the model's constraints; got {Describe(replacedLong)}");
+var replacedShape = PatchErrors("""{"badge":"x"}""");
+Check(replacedShape is [{ PropertyName: "Badge", ErrorMessage: "'Badge' must be an object." }], $"a replaced value must be an object; got {Describe(replacedShape)}");
+var replacedType = PatchErrors("""{"badge":{"code":"ab","level":"x"}}""");
+Check(replacedType is [{ PropertyName: "Badge", ErrorMessage: "'Badge' is not a valid value." }], $"a replaced value that does not deserialize is reported once; got {Describe(replacedType)}");
+var oldBadge = new Badge { Code = "ab", Level = 1 };
+var badgeTarget = new Widget { Name = "x", DisplayName = "xx", Badge = oldBadge, MergedBadge = new Badge { Code = "ab", Level = 1 } };
+var badgePatch = ${patchType}.FromJson("""{"badge":{"code":"cd"},"mergedBadge":{"code":"cd"}}""", web);
+Check(badgePatch.TryPatch(badgeTarget, out var badgeRejected), $"a replace and a merge must both apply; rejected [{string.Join(", ", badgeRejected)}]");
+Check(badgeTarget.Badge is { Code: "cd", Level: null } && !ReferenceEquals(badgeTarget.Badge, oldBadge), $"a replaced model must be a new value without the omitted members; got {badgeTarget.Badge?.Code}/{badgeTarget.Badge?.Level}");
+Check(badgeTarget.MergedBadge is { Code: "cd", Level: 1 }, $"a merged model must keep the omitted members; got {badgeTarget.MergedBadge?.Code}/{badgeTarget.MergedBadge?.Level}");
+
+// Messages name the property as it is declared, not split into words.
+string[] emptyDisplayName = ["'DisplayName' must not be empty.", "The length of 'DisplayName' must be at least 2 characters. You entered 0 characters."];
+Check(PostErrors("""{"displayName":""}""")?.Select(e => e.ErrorMessage).SequenceEqual(emptyDisplayName) == true, $"POST must name DisplayName as declared; got {Describe(PostErrors("""{"displayName":""}""") ?? new())}");
+Check(PatchErrors("""{"displayName":""}""").Select(e => e.ErrorMessage).SequenceEqual(emptyDisplayName), $"PATCH must name DisplayName as declared; got {Describe(PatchErrors("""{"displayName":""}"""))}");
+Check(PostErrors("""{"seatCount":0}""") is [{ ErrorMessage: "'SeatCount' must be greater than or equal to '1'." }], $"POST range rules must name SeatCount as declared; got {Describe(PostErrors("""{"seatCount":0}""") ?? new())}");
 
 // A number POST reads from a string is held to the same bounds in PATCH, and reported once.
 foreach (var (json, property) in new[]
@@ -672,7 +717,7 @@ foreach (var json in new[]
 {
     var errors = PatchErrors(json);
     Check(errors.Count == 0, $"PATCH must accept {json}; got {Describe(errors)}");
-    var target = new Widget { Name = "x", Scores = new Dictionary<string, int> { ["b"] = 1 }, Gadget = new Gadget(), Pet = new Dog() };
+    var target = new Widget { Name = "x", DisplayName = "xx", Scores = new Dictionary<string, int> { ["b"] = 1 }, Gadget = new Gadget(), Pet = new Dog() };
     var applied = ${patchType}.FromJson(json, web).TryPatch(target, out var rejected, web);
     Check(applied && rejected.Count == 0, $"an accepted patch {json} must apply; rejected [{string.Join(", ", rejected)}]");
 }
@@ -686,7 +731,7 @@ var strict = new JsonSerializerOptions(web) { NumberHandling = System.Text.Json.
 var strictErrors = patchValidator.Validate(${patchType}.FromJson("""{"count":"12"}""", strict)).Errors;
 Check(strictErrors.Count == 1 && strictErrors[0].PropertyName == "Count", $"a patch read with strict number handling must reject a number in a string; got {Describe(strictErrors)}");
 // A property's own [JsonNumberHandling] and [JsonConverter] apply on top of the options, as they do for POST.
-Check(JsonSerializer.Deserialize<Widget>("""{"name":"ok","serial":"12","active":"true"}""", strict) is { Serial: 12, Active: true }, "POST reads @encode(string) values with strict options");
+Check(JsonSerializer.Deserialize<Widget>("""{"name":"ok","displayName":"ok","serial":"12","active":"true"}""", strict) is { Serial: 12, Active: true }, "POST reads @encode(string) values with strict options");
 var encodedErrors = patchValidator.Validate(${patchType}.FromJson("""{"serial":"12","active":"true"}""", strict)).Errors;
 Check(encodedErrors.Count == 0, $"a patch read with strict options must accept @encode(string) values; got {Describe(encodedErrors)}");
 var strictRank = patchValidator.Validate(${patchType}.FromJson("""{"rank":"5"}""", strict)).Errors;
@@ -701,6 +746,14 @@ var webPetErrors = animalValidator.Validate(${animalPatchType}.FromJson("""{"kin
 Check(webPetErrors.Count == 0, $"a derived patch read with web options must accept a number in a string; got {Describe(webPetErrors)}");
 var strictPetErrors = animalValidator.Validate(${animalPatchType}.FromJson("""{"kind":"dog","weight":"3"}""", strict)).Errors;
 Check(strictPetErrors.Count == 1 && strictPetErrors[0].PropertyName == "Weight", $"a derived patch read with strict options must reject a number in a string; got {Describe(strictPetErrors)}");
+// Reading a value back uses the options the patch was read with, as the type check does.
+var webCount = ${patchType}.FromJson("""{"count":"12"}""", web);
+Check(webCount.ReadOptions == web, "a patch must expose the options it was read with");
+Check(webCount.TryGetValue("count", out int? typedCount) && typedCount == 12, $"TryGetValue must read with the patch's options; got {typedCount}");
+Check(webCount.TryGetPropertyValue("count", out var boxedCount) && boxedCount is 12, $"TryGetPropertyValue must read with the patch's options; got {boxedCount}");
+Check(!webCount.TryGetValue("count", out int? strictCount, strict), $"options passed to TryGetValue must win over the patch's options; got {strictCount}");
+var countTarget = new Widget { Name = "x", DisplayName = "xx" };
+Check(webCount.TryPatch(countTarget, out var countRejected) && countTarget.Count == 12, $"TryPatch must apply with the patch's options; rejected [{string.Join(", ", countRejected)}]");
 var unread = new ${patchType} { Properties = { ["count"] = JsonDocument.Parse("12").RootElement } };
 Check(patchValidator.Validate(unread).Errors.Count == 0, "a patch built in code must use the default options");
 
@@ -741,10 +794,44 @@ if (failures.Count > 0)
 `;
 }
 
+/** Hand-written validator parts that implement both `ExtendRules` overloads. */
+const EXTEND_RULES_SOURCE = `using FluentValidation;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Demo.Validators;
+
+public sealed record ReservedNames(string Name);
+
+public partial class WidgetValidator
+{
+    partial void ExtendRules()
+    {
+        RuleFor(x => x.Name).NotEqual("reserved-by-rule").WithMessage("ExtendRules() rejected the name.");
+    }
+
+    partial void ExtendRules(System.IServiceProvider services)
+    {
+        var reserved = services.GetRequiredService<ReservedNames>();
+        RuleFor(x => x.Name).NotEqual(reserved.Name).WithMessage("ExtendRules(services) rejected the name.");
+    }
+}
+
+public partial class FolderRefValidator
+{
+    partial void ExtendRules(System.IServiceProvider services)
+    {
+        var reserved = services.GetRequiredService<ReservedNames>();
+        RuleFor(x => x.Label).NotEqual(reserved.Name).WithMessage("ExtendRules(services) rejected the label.");
+    }
+}
+`;
+
 describe("MergePatch validation matches POST", { skip: !hasDotnet }, () => {
   for (const style of ["generic", "typed"] as const) {
     it(`rejects the values POST rejects and accepts every RFC 7396 patch, with ${style} helpers`, async () => {
       const files = await emit(VALUE_PARITY_SPEC, {
+        // The spec imports this library, whose namespace would otherwise change the inferred root.
+        "root-namespace": "Demo",
         "merge-patch-style": style,
         "emit-controllers": false,
         "emit-services": false,
@@ -769,6 +856,11 @@ describe("MergePatch validation matches POST", { skip: !hasDotnet }, () => {
         await writeFile(
           join(directory, "Program.cs"),
           valueParityProgram(style),
+          "utf8",
+        );
+        await writeFile(
+          join(directory, "Extensions.cs"),
+          EXTEND_RULES_SOURCE,
           "utf8",
         );
 

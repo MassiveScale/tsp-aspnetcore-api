@@ -10,10 +10,16 @@ import type {
   Model,
   ModelProperty,
   Program,
+  Type,
 } from "@typespec/compiler";
+import { isMergePatch } from "@typespec/http/experimental/merge-patch";
 import { $lib, reportDiagnostic } from "./lib.js";
 
 const serverNameKey = $lib.createStateSymbol("serverName");
+const patchStrategyKey = $lib.createStateSymbol("patchStrategy");
+
+/** What a JSON Merge Patch body does with an object sent for a model property. */
+export type PatchStrategy = "merge" | "replace";
 
 /**
  * Regular expression for a valid C# identifier.
@@ -139,6 +145,38 @@ function serverNameImpl(
   context.program.stateMap(serverNameKey).set(target, name);
 }
 
+function patchStrategyImpl(
+  context: DecoratorContext,
+  target: ModelProperty,
+  strategy: PatchStrategy,
+): void {
+  // Checked in $onValidate, once every copy of the property exists.
+  context.program.stateMap(patchStrategyKey).set(target, strategy);
+}
+
+/**
+ * Warns about each `@patchStrategy` on a property that does not hold a single
+ * model. Copies of a property (`is`, spread, or the `MergePatchUpdate<T>`
+ * transform, whose copies hold a different type) carry the decorator too, so a
+ * declaration is reported once, and properties of MergePatch models are skipped.
+ */
+export function validatePatchStrategies(program: Program): void {
+  const reported = new Set<unknown>();
+  for (const property of program.stateMap(patchStrategyKey).keys()) {
+    const target = property as ModelProperty;
+    if (holdsSingleModel(target.type)) continue;
+    if (target.model && isMergePatch(program, target.model)) continue;
+    const declaration = target.node ?? target;
+    if (reported.has(declaration)) continue;
+    reported.add(declaration);
+    reportDiagnostic(program, {
+      code: "patch-strategy-ignored",
+      target,
+      format: { property: target.name },
+    });
+  }
+}
+
 /**
  * Namespaced decorator export consumed by the TypeSpec compiler.
  * Binding via `$decorators` (rather than a bare `$serverName`) keeps the
@@ -148,8 +186,50 @@ function serverNameImpl(
 export const $decorators: DecoratorImplementations = {
   "MassiveScale.AspNetCoreApi": {
     serverName: serverNameImpl,
+    patchStrategy: patchStrategyImpl,
   },
 };
+
+/**
+ * Returns `true` when `type` is a single user-defined model, optionally in a
+ * nullable union: not a scalar, array, record, or built-in TypeSpec model.
+ * Only such a property is merged into or replaced by a JSON Merge Patch.
+ */
+export function holdsSingleModel(type: Type): boolean {
+  let candidate: Type | undefined = type;
+  if (candidate.kind === "Union") {
+    const variants = [...candidate.variants.values()]
+      .map((variant) => variant.type)
+      .filter(
+        (variant) => !(variant.kind === "Intrinsic" && variant.name === "null"),
+      );
+    candidate = variants.length === 1 ? variants[0] : undefined;
+  }
+  if (candidate?.kind !== "Model" || !candidate.name) return false;
+  if (candidate.indexer !== undefined) return false;
+  for (let ns = candidate.namespace; ns; ns = ns.namespace) {
+    if (ns.name === "TypeSpec") return false;
+  }
+  return true;
+}
+
+/**
+ * Returns `true` when a JSON Merge Patch body replaces the model held by
+ * `property` instead of merging into it: `@patchStrategy("replace")`, or no
+ * `@patchStrategy` and the `merge-patch-nested-models` option set to
+ * `"replace"`. Always `false` for a property that does not hold a single model.
+ */
+export function replacesOnPatch(
+  program: Program,
+  property: ModelProperty,
+  options: { mergePatchNestedModels: PatchStrategy },
+): boolean {
+  if (!holdsSingleModel(property.type)) return false;
+  const strategy =
+    (program.stateMap(patchStrategyKey).get(property) as
+      PatchStrategy | undefined) ?? options.mergePatchNestedModels;
+  return strategy === "replace";
+}
 
 /**
  * Returns the `@serverName` override for a model or model

@@ -45,6 +45,7 @@ this.RuleFor(x => x)
 this.RuleFor(x => x.GetString("{{{jsonName}}}"))
     .NotEmpty()
     .OverridePropertyName("{{{name}}}")
+    .WithName("{{{name}}}")
     .When(x => x.IsString("{{{jsonName}}}"));
 
 {{/if}}
@@ -53,6 +54,7 @@ this.RuleFor(x => x.GetString("{{{jsonName}}}"))
 this.RuleFor(x => x.GetString("{{{jsonName}}}"))
     .MinimumLength({{minLength}})
     .OverridePropertyName("{{{name}}}")
+    .WithName("{{{name}}}")
     .When(x => x.IsString("{{{jsonName}}}"));
 
 {{/if}}
@@ -62,6 +64,7 @@ this.RuleFor(x => x.GetString("{{{jsonName}}}"))
 this.RuleFor(x => x.GetString("{{{jsonName}}}"))
     .MaximumLength({{maxLength}})
     .OverridePropertyName("{{{name}}}")
+    .WithName("{{{name}}}")
     .When(x => x.IsString("{{{jsonName}}}"));
 
 {{/if}}
@@ -71,6 +74,7 @@ this.RuleFor(x => x.GetString("{{{jsonName}}}"))
     .Must(value => IsMatch({{{patternField}}}, value))
     .WithMessage("'{PropertyName}' is not in the correct format.")
     .OverridePropertyName("{{{name}}}")
+    .WithName("{{{name}}}")
     .When(x => x.IsString("{{{jsonName}}}"));
 
 {{/if}}
@@ -79,6 +83,7 @@ this.RuleFor(x => x.GetString("{{{jsonName}}}"))
 this.RuleFor(x => x.GetString("{{{jsonName}}}"))
     .EmailAddress()
     .OverridePropertyName("{{{name}}}")
+    .WithName("{{{name}}}")
     .When(x => x.IsString("{{{jsonName}}}"));
 
 {{/if}}

@@ -145,6 +145,8 @@ export interface ResolvedOptions {
     "earliest" | "latest" | "per-version" | "version-aware" | undefined;
   /** Whether to emit a shared generic helper or per-entity typed classes for MergePatch support. */
   mergePatchStyle: "generic" | "typed";
+  /** Default for `@patchStrategy`: whether a MergePatch body merges into or replaces a nested model. */
+  mergePatchNestedModels: "merge" | "replace";
 }
 
 /**
@@ -472,6 +474,7 @@ function resolveOptions(context: EmitContext<EmitterOptions>): ResolvedOptions {
     validatorsTypes: raw["validators"] ?? "both",
     validatorsVersionStrategy: raw["validators-version-strategy"],
     mergePatchStyle: raw["merge-patch-style"] ?? "generic",
+    mergePatchNestedModels: raw["merge-patch-nested-models"] ?? "merge",
   };
 }
 

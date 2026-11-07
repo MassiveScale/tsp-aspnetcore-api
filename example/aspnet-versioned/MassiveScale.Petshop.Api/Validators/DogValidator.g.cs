@@ -33,28 +33,28 @@ public partial class DogValidator : AbstractValidator<Dog>
         _httpContextAccessor = httpContextAccessor;
 
         // Id is read-only and must not be set on creation
-        RuleFor(x => x.Id).Null();
+        RuleFor(x => x.Id).Null().WithName("Id");
 
         // CreatedDateTime is read-only and must not be set on creation
-        RuleFor(x => x.CreatedDateTime).Null();
+        RuleFor(x => x.CreatedDateTime).Null().WithName("CreatedDateTime");
 
         // LastModifiedDateTime is read-only and must not be set on creation
-        RuleFor(x => x.LastModifiedDateTime).Null();
+        RuleFor(x => x.LastModifiedDateTime).Null().WithName("LastModifiedDateTime");
 
         // PhotoUrls is required
-        RuleFor(x => x.PhotoUrls).NotNull();
+        RuleFor(x => x.PhotoUrls).NotNull().WithName("PhotoUrls");
 
         // PhotoUrls cannot contain more than 5 items
-        RuleFor(x => x.PhotoUrls).Must(value => value is null || value.Count <= 5).WithMessage("'{PropertyName}' must not contain more than 5 items.");
+        RuleFor(x => x.PhotoUrls).Must(value => value is null || value.Count <= 5).WithMessage("'{PropertyName}' must not contain more than 5 items.").WithName("PhotoUrls");
 
         // IsBarker is required
-        RuleFor(x => x.IsBarker).NotNull();
+        RuleFor(x => x.IsBarker).NotNull().WithName("IsBarker");
 
         // Rules for v2.0 and later
         When(_ => IsVersionInRange("v2.0", null), () =>
         {
             // Tags cannot contain more than 10 items
-            RuleFor(x => x.Tags).Must(value => value is null || value.Count <= 10).WithMessage("'{PropertyName}' must not contain more than 10 items.");
+            RuleFor(x => x.Tags).Must(value => value is null || value.Count <= 10).WithMessage("'{PropertyName}' must not contain more than 10 items.").WithName("Tags");
 
             // Tags items are validated recursively when not null
             RuleForEach(x => x.Tags!).SetValidator(tagValidator).When(x => x.Tags is not null);
@@ -62,6 +62,17 @@ public partial class DogValidator : AbstractValidator<Dog>
         });
 
         ExtendRules();
+    }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="DogValidator"/> with the auto-generated rules,
+    /// then the custom rules of both <c>ExtendRules</c> methods. Dependency injection uses this
+    /// constructor, so <c>ExtendRules(IServiceProvider)</c> can resolve the services it needs.
+    /// </summary>
+    public DogValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<Tag> tagValidator, System.IServiceProvider services)
+        : this(httpContextAccessor, tagValidator)
+    {
+        ExtendRules(services);
     }
 
     /// <summary>
@@ -119,6 +130,16 @@ public partial class DogValidator : AbstractValidator<Dog>
     /// the compiler removes both this declaration and the call to it.
     /// </summary>
     partial void ExtendRules();
+
+    /// <summary>
+    /// Implement this partial method in a hand-written part of this class to add custom
+    /// validation rules that need services, such as another validator or a repository.
+    /// It runs after <c>ExtendRules()</c> whenever the validator is created with an
+    /// <see cref="System.IServiceProvider"/>, as dependency injection does. When no
+    /// implementation exists, the compiler removes both this declaration and the calls to it.
+    /// </summary>
+    /// <param name="services">The service provider the validator was resolved from.</param>
+    partial void ExtendRules(System.IServiceProvider services);
 }
 
 #pragma warning restore CS0612 // Type or member is obsolete

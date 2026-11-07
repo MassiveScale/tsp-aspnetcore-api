@@ -118,13 +118,16 @@ String rules use the same FluentValidation validators as the POST validator, on 
 this.RuleFor(x => x.GetString("name"))
     .NotEmpty()
     .OverridePropertyName("Name")
+    .WithName("Name")
     .When(x => x.IsString("name"));
 ```
+
+Every generated rule, POST or PATCH, sets `WithName` to the C# property name, so messages name a property as it is declared: `'DisplayName' must not be empty.`, not FluentValidation's default `'Display Name' must not be empty.`
 
 **Plain model body.** When the `@patch` operation takes an ordinary model instead, the body is a plain POCO with no `IsDefined`/`GetString`/`IsNull` members, so rules use typed property access guarded on null:
 
 ```csharp
-RuleFor(x => x.Target).GreaterThanOrEqualTo(0).When(x => x.Target is not null);
+RuleFor(x => x.Target).GreaterThanOrEqualTo(0).WithName("Target").When(x => x.Target is not null);
 ```
 
 A plain POCO cannot distinguish an omitted field from one explicitly set to `null`, so a `null` value is treated as "not supplied" and the rule is skipped. Required-ness therefore can't be enforced on a plain PATCH body. If you need true absent-vs-null semantics, use a `MergePatchUpdate<T>` body.
@@ -136,6 +139,7 @@ Nested-model rules account for property nullability so the generated code compil
 - The property access uses the null-forgiving operator (`x.Prop!`) so the emitted `IValidator<T>` type argument matches, avoiding a nullable-reference-type build warning.
 - The rule adds `.When(x => x.Prop is not null)` so it is skipped at runtime when the property is `null`. This applies to POST validators and to PATCH validators over a plain body.
 - PATCH validators over a `MergePatchUpdate<T>` body inspect the raw JSON value. A supplied nested object is passed to its injected child PATCH validator, and child failures are prefixed with the parent path (for example, `Appearance.Theme`). Non-object values are rejected at the parent property. Nested validators recurse to further model levels and keep their own constraints, required-null checks, enum checks, and read-only/create-only rules.
+- A model property marked `@patchStrategy("replace")` (or every model property, with `merge-patch-nested-models: replace`) replaces the current value instead of merging into it. The supplied object is deserialized as a whole with the request's JSON options and validated as a complete model by its injected POST validator, so a required member it leaves out is rejected. A value that doesn't deserialize fails with `'Targeting' is not a valid value.`, and a non-object value with `'Targeting' must be an object.` See [Replacing a nested model](merge-patch.md#replacing-a-nested-model).
 - A `Record<Model>` in a MergePatch body is merged key by key, so each supplied value is validated as a nested patch with failures such as `Labels[key].Name`. A `null` value removes that key and isn't validated.
 - A model array in a MergePatch body is a whole-value replacement under RFC 7396. Every supplied element must be an object and is validated as a complete model using its injected POST validator; failures use paths such as `Items[0].Name`. Arrays are not interpreted as collections of partial item patches. An element that can't be deserialized, for example an item of an abstract `@discriminator` base type sent without its discriminator, fails validation with "The array item could not be deserialized." instead of throwing.
 
@@ -196,6 +200,51 @@ public partial class WidgetValidator
 ```
 
 Write it exactly as `partial void ExtendRules()`, with no access modifier. Do not use `override`: C# does not allow one part of a partial class to override a member declared in another part of the same class, so `protected override void ExtendRules()` fails with CS0111 (duplicate member) and CS0115 (no method to override). Your file needs `using FluentValidation;` for the `RuleFor` extension methods, because `using` directives in the generated part don't carry over. Implementing it is optional. If no hand-written part implements it, the compiler removes both the declaration and the call.
+
+### Rules that need services
+
+A rule that needs another service, such as a repository or another validator, implements the second partial method, `ExtendRules(IServiceProvider services)`. It runs after `ExtendRules()`, with the provider the validator was resolved from, so scoped services are available:
+
+```csharp
+using FluentValidation;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Demo.Validators;
+
+public partial class WidgetValidator
+{
+    partial void ExtendRules(System.IServiceProvider services)
+    {
+        var catalog = services.GetRequiredService<ICatalog>();
+        RuleFor(x => x.Sku).Must(catalog.Exists).WithMessage("'Sku' is not in the catalog.");
+    }
+}
+```
+
+Each validator has a second constructor that takes the generated parameters plus `System.IServiceProvider services`. Dependency injection picks it, because it is the longest constructor it can satisfy. Code that creates a validator with the first constructor gets only the `ExtendRules()` rules. A validator that already takes `serviceProvider`, to break a [loop of validators](#recursive-models), has a single constructor and passes that provider to `ExtendRules(IServiceProvider)`.
+
+### Custom rules on a MergePatch body
+
+A MergePatch validator sees the raw JSON, so the generated rules check that each supplied value fits its type. Run a custom rule only on a value they accept, so that one mistake is reported once, and read the value with `TryGetValue`, which uses the JSON options the request body was read with (`ReadOptions`):
+
+```csharp
+public partial class QuotaGroupPatchValidator
+{
+    partial void ExtendRules()
+    {
+        RuleFor(x => x)
+            .Must(x => x.TryGetValue("communityKeys", out IList<string>? keys)
+                && keys!.All(key => !string.IsNullOrWhiteSpace(key)))
+            .When(x => x.IsDefined("communityKeys")
+                && !x.IsNull("communityKeys")
+                && x.IsValidPropertyValue("communityKeys"))
+            .WithName("CommunityKeys")
+            .WithMessage("'CommunityKeys' must not contain empty keys.");
+    }
+}
+```
+
+Don't copy a deserialization exception's message into a validation failure. It names .NET types and internal paths, which then reach the caller.
 
 ## Version strategies
 
@@ -262,7 +311,7 @@ Every validator checks the properties a model inherits as well as its own, so `D
 ```csharp
 When(x => !_derivedTypes.Contains(x.GetType()), () =>
 {
-    RuleFor(x => x.Name).MaximumLength(10);
+    RuleFor(x => x.Name).MaximumLength(10).WithName("Name");
 });
 ```
 

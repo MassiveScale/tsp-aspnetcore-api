@@ -92,6 +92,7 @@ export async function emitHelpers(
       program,
       services,
       models,
+      options,
     );
     if (patchRouteModels?.patchModels.size) {
       await emitEntityMergePatches(

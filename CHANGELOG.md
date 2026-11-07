@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-07
+
+### Added
+
+- `@patchStrategy("merge" | "replace")` on a property that holds a model, and the `merge-patch-nested-models` emitter option that sets the default (`"merge"`). A replaced property is validated as a complete model by its POST validator and replaced as a whole by `Patch` and `TryPatch`, instead of being merged as RFC 7396 says. The generated model marks it `[JsonObjectCreationHandling(JsonObjectCreationHandling.Replace)]`. On any other property the decorator has no effect and the compiler warns (`patch-strategy-ignored`). See [Decorators — @patchStrategy](docs/decorators.md#patchstrategy).
+- `partial void ExtendRules(System.IServiceProvider services)` in every generated validator, for custom rules that need services. It runs after `ExtendRules()`. Each validator gets a second constructor that adds an `IServiceProvider` parameter, which dependency injection uses; the existing constructor is unchanged. See [Validators — Rules that need services](docs/validators.md#rules-that-need-services).
+- `ReadOptions` on `MergePatch<T>` and `{Model}MergePatchUpdate` is public (`{ get; init; }`), so custom rules can read a value with the JSON options the request body was read with.
+
+### Fixed
+
+- Validation messages name a property as it is declared, such as `'DisplayName' must not be empty.`, in POST and PATCH validators alike. POST rules, and MergePatch string rules since 1.2.1, used FluentValidation's default display name, which splits the name into words (`'Display Name'`). Every generated rule now sets `WithName` to the C# property name, as the other PATCH rules already did. Error keys (`PropertyName`) are unchanged. See [Validators — PATCH body shapes](docs/validators.md#patch-body-shapes).
+- `TryGetValue`, `TryGetPropertyValue`, `Patch`, `PatchAsync` and `TryPatch` read a patch with the JSON options it was read with (`ReadOptions`) when no options are passed, as `IsValidPropertyValue` already did. Previously they used the `System.Text.Json` defaults, so a value the validator accepted, such as `"12"` for an `int32` under the ASP.NET Core web defaults, read back as missing or was rejected when the patch was applied.
+
+### Changed
+
+- Custom validator templates from before 1.3.0 keep working but don't call `ExtendRules(IServiceProvider)`; see [Custom templates — Upgrading custom templates](docs/custom-templates.md#upgrading-custom-templates).
+
 ## [1.2.2] - 2026-11-06
 
 ### Fixed

@@ -10,7 +10,10 @@
   name                          — Wire/C# property name (e.g. "Appearance")
   isCollectionReference         — True for an array of models
   isRecordReference             — True for a Record of models
-  referencedQualifiedModelName  — Item model type used to deserialize array items
+  isReplacedReference           — True for a model the patch replaces instead of
+                                  merging into (`@patchStrategy("replace")`)
+  referencedQualifiedModelName  — Model type used to deserialize array items and
+                                  replaced values
   mergePatchValidatorExpression — C# expression for the nested validator: a
                                   constructor parameter, `this`, or a lazy lookup
   mergePatchFactoryTypeName     — Patch type whose FromJson builds the nested patch
@@ -92,6 +95,36 @@ this.RuleFor(x => x).Custom((patch, context) =>
         foreach (var failure in nestedResult.Errors)
             context.AddFailure($"{{{name}}}[{entry.Name}].{failure.PropertyName}", failure.ErrorMessage);
     }
+});
+{{else if isReplacedReference}}
+// {{{name}}} replaces the existing value, so it is validated as a complete model
+this.RuleFor(x => x).Custom((patch, context) =>
+{
+    if (!patch.Properties.TryGetValue("{{{jsonName}}}", out var element) || element.ValueKind == System.Text.Json.JsonValueKind.Null) return;
+    if (element.ValueKind != System.Text.Json.JsonValueKind.Object)
+    {
+        context.AddFailure("{{{name}}}", "'{{{name}}}' must be an object.");
+        return;
+    }
+    {{{referencedQualifiedModelName}}}? nestedModel;
+    try
+    {
+        nestedModel = System.Text.Json.JsonSerializer.Deserialize<{{{referencedQualifiedModelName}}}>(element.GetRawText(), jsonSerializerOptions);
+    }
+    catch (System.Exception ex) when (ex is System.Text.Json.JsonException or System.NotSupportedException or System.InvalidOperationException)
+    {
+        // NotSupportedException: an abstract or polymorphic value sent without its type discriminator.
+        context.AddFailure("{{{name}}}", "'{{{name}}}' is not a valid value.");
+        return;
+    }
+    if (nestedModel is null)
+    {
+        context.AddFailure("{{{name}}}", "'{{{name}}}' must be an object.");
+        return;
+    }
+    var nestedResult = {{{mergePatchValidatorExpression}}}.Validate(nestedModel);
+    foreach (var failure in nestedResult.Errors)
+        context.AddFailure($"{{{name}}}.{failure.PropertyName}", failure.ErrorMessage);
 });
 {{else}}
 // {{{name}}} is merged into the existing value, so it is validated as a nested patch

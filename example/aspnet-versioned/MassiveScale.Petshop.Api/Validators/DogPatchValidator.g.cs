@@ -162,6 +162,17 @@ public partial class DogPatchValidator : AbstractValidator<MergePatch<Dog>>
     }
 
     /// <summary>
+    /// Initializes a new instance of <see cref="DogPatchValidator"/> with the auto-generated rules,
+    /// then the custom rules of both <c>ExtendRules</c> methods. Dependency injection uses this
+    /// constructor, so <c>ExtendRules(IServiceProvider)</c> can resolve the services it needs.
+    /// </summary>
+    public DogPatchValidator(IHttpContextAccessor httpContextAccessor, Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions> jsonOptions, AbstractValidator<Tag> tagValidator, System.IServiceProvider services)
+        : this(httpContextAccessor, jsonOptions, tagValidator)
+    {
+        ExtendRules(services);
+    }
+
+    /// <summary>
     /// Returns <see langword="true"/> when the request's API version is <paramref name="since"/>
     /// or later, and earlier than <paramref name="until"/> when it is set.
     /// </summary>
@@ -216,6 +227,16 @@ public partial class DogPatchValidator : AbstractValidator<MergePatch<Dog>>
     /// the compiler removes both this declaration and the call to it.
     /// </summary>
     partial void ExtendRules();
+
+    /// <summary>
+    /// Implement this partial method in a hand-written part of this class to add custom
+    /// validation rules that need services, such as another validator or a repository.
+    /// It runs after <c>ExtendRules()</c> whenever the validator is created with an
+    /// <see cref="System.IServiceProvider"/>, as dependency injection does. When no
+    /// implementation exists, the compiler removes both this declaration and the calls to it.
+    /// </summary>
+    /// <param name="services">The service provider the validator was resolved from.</param>
+    partial void ExtendRules(System.IServiceProvider services);
 }
 
 #pragma warning restore CS0612 // Type or member is obsolete
