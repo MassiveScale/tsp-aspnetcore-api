@@ -59,6 +59,7 @@ import {
   propertyIdentifier,
   qualifyTypeName,
 } from "./naming.js";
+import { type PatchStrategy, replacesOnPatch } from "./decorators.js";
 import { emitFile } from "./output.js";
 import { Renderer, ValidatorTemplateName } from "./renderer.js";
 import { classProperties, emittedBaseModel } from "./payloads.js";
@@ -168,6 +169,12 @@ interface PropertyData {
   isCollectionReference?: boolean;
   /** True for a `Record<Model>`; each value is validated. */
   isRecordReference?: boolean;
+  /**
+   * True for a model property that a MergePatch body replaces instead of merging
+   * into (`@patchStrategy("replace")` or `merge-patch-nested-models: replace`): the
+   * supplied object is validated as a complete model by its POST validator.
+   */
+  isReplacedReference?: boolean;
   /**
    * C# expression for the child validator in POST and plain PATCH validators:
    * the constructor parameter, `this` for a self-reference, or a lazy lookup
@@ -818,11 +825,13 @@ function buildSinglePropertyData(
   const referencedQualifiedModelName = modelRef
     ? computeModelTypeName(program, modelRef.model, options)
     : undefined;
-  // Array items replace the whole array, so they are validated as complete
-  // models. Objects and record values are merged, so they are validated as
-  // nested patches.
+  // Array items replace the whole array, and a replaced object replaces the
+  // current value, so both are validated as complete models. Other objects and
+  // record values are merged, so they are validated as nested patches.
+  const isReplacedReference =
+    modelRef?.kind === "object" && replacesOnPatch(program, prop, options);
   const mergePatchValidator = modelRef
-    ? modelRef.kind === "array"
+    ? modelRef.kind === "array" || isReplacedReference
       ? {
           typeName: referencedQualifiedModelName!,
           paramName: `${camelFirst(referencedModelName!)}Validator`,
@@ -892,6 +901,7 @@ function buildSinglePropertyData(
       : undefined,
     isCollectionReference: modelRef?.kind === "array" || undefined,
     isRecordReference: modelRef?.kind === "record" || undefined,
+    isReplacedReference: isReplacedReference || undefined,
     mergePatchValidatorTypeName: mergePatchValidator?.typeName,
     mergePatchValidatorParamName: mergePatchValidator?.paramName,
     mergePatchFactoryTypeName: mergePatchValidator?.factoryTypeName,
@@ -1427,6 +1437,7 @@ export function collectValidatorModelsFromRoutes(
   program: Program,
   services: readonly HttpService[],
   allModels: Model[],
+  options: { mergePatchNestedModels: PatchStrategy },
 ): ValidatorRouteModels | undefined {
   const hasAnyOperations = services.some((s) => s.operations.length > 0);
   if (!hasAnyOperations) return undefined;
@@ -1477,7 +1488,13 @@ export function collectValidatorModelsFromRoutes(
         for (const prop of validatorProperties(program, current)) {
           const reference = getValidatorModelReference(prop.type);
           if (!reference) continue;
-          if (!isMergePatchBody || reference.kind === "array") {
+          // A replaced value, like an array item, is validated as a complete model.
+          if (
+            !isMergePatchBody ||
+            reference.kind === "array" ||
+            (reference.kind === "object" &&
+              replacesOnPatch(program, prop, options))
+          ) {
             nestedPostModels.add(reference.model);
             continue;
           }
@@ -2377,6 +2394,7 @@ export async function emitValidators(
     program,
     services,
     allModels,
+    options,
   );
 
   const lifecycle = getLifecycleVisibilityEnum(program);

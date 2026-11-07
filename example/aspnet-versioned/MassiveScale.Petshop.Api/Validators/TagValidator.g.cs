@@ -33,12 +33,23 @@ public partial class TagValidator : AbstractValidator<Tag>
         _httpContextAccessor = httpContextAccessor;
 
         // Id is required
-        RuleFor(x => x.Id).NotNull();
+        RuleFor(x => x.Id).NotNull().WithName("Id");
 
         // Name is required
-        RuleFor(x => x.Name).NotEmpty();
+        RuleFor(x => x.Name).NotEmpty().WithName("Name");
 
         ExtendRules();
+    }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="TagValidator"/> with the auto-generated rules,
+    /// then the custom rules of both <c>ExtendRules</c> methods. Dependency injection uses this
+    /// constructor, so <c>ExtendRules(IServiceProvider)</c> can resolve the services it needs.
+    /// </summary>
+    public TagValidator(IHttpContextAccessor httpContextAccessor, System.IServiceProvider services)
+        : this(httpContextAccessor)
+    {
+        ExtendRules(services);
     }
 
     /// <summary>
@@ -96,6 +107,16 @@ public partial class TagValidator : AbstractValidator<Tag>
     /// the compiler removes both this declaration and the call to it.
     /// </summary>
     partial void ExtendRules();
+
+    /// <summary>
+    /// Implement this partial method in a hand-written part of this class to add custom
+    /// validation rules that need services, such as another validator or a repository.
+    /// It runs after <c>ExtendRules()</c> whenever the validator is created with an
+    /// <see cref="System.IServiceProvider"/>, as dependency injection does. When no
+    /// implementation exists, the compiler removes both this declaration and the calls to it.
+    /// </summary>
+    /// <param name="services">The service provider the validator was resolved from.</param>
+    partial void ExtendRules(System.IServiceProvider services);
 }
 
 #pragma warning restore CS0612 // Type or member is obsolete

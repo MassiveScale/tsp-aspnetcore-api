@@ -33,25 +33,25 @@ public partial class StoreValidator : AbstractValidator<Store>
         _httpContextAccessor = httpContextAccessor;
 
         // Id is read-only and must not be set on creation
-        RuleFor(x => x.Id).Null();
+        RuleFor(x => x.Id).Null().WithName("Id");
 
         // CreatedDateTime is read-only and must not be set on creation
-        RuleFor(x => x.CreatedDateTime).Null();
+        RuleFor(x => x.CreatedDateTime).Null().WithName("CreatedDateTime");
 
         // LastModifiedDateTime is read-only and must not be set on creation
-        RuleFor(x => x.LastModifiedDateTime).Null();
+        RuleFor(x => x.LastModifiedDateTime).Null().WithName("LastModifiedDateTime");
 
         // Name is required
-        RuleFor(x => x.Name).NotEmpty();
+        RuleFor(x => x.Name).NotEmpty().WithName("Name");
 
         // Name cannot exceed a MaxLength of 100
-        RuleFor(x => x.Name).MaximumLength(100);
+        RuleFor(x => x.Name).MaximumLength(100).WithName("Name");
 
         // PhoneNumber is required
-        RuleFor(x => x.PhoneNumber).NotEmpty();
+        RuleFor(x => x.PhoneNumber).NotEmpty().WithName("PhoneNumber");
 
         // Pets is required
-        RuleFor(x => x.Pets).NotNull();
+        RuleFor(x => x.Pets).NotNull().WithName("Pets");
 
         // Pets items are validated recursively when not null
         RuleForEach(x => x.Pets!).SetValidator(petValidator).When(x => x.Pets is not null);
@@ -60,17 +60,28 @@ public partial class StoreValidator : AbstractValidator<Store>
         When(_ => IsVersionInRange("v2.0", null), () =>
         {
             // Email is required
-            RuleFor(x => x.Email).NotEmpty();
+            RuleFor(x => x.Email).NotEmpty().WithName("Email");
 
             // Email cannot exceed a MaxLength of 255
-            RuleFor(x => x.Email).MaximumLength(255);
+            RuleFor(x => x.Email).MaximumLength(255).WithName("Email");
 
             // Email must be a valid email address
-            RuleFor(x => x.Email).EmailAddress();
+            RuleFor(x => x.Email).EmailAddress().WithName("Email");
 
         });
 
         ExtendRules();
+    }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="StoreValidator"/> with the auto-generated rules,
+    /// then the custom rules of both <c>ExtendRules</c> methods. Dependency injection uses this
+    /// constructor, so <c>ExtendRules(IServiceProvider)</c> can resolve the services it needs.
+    /// </summary>
+    public StoreValidator(IHttpContextAccessor httpContextAccessor, AbstractValidator<Pet> petValidator, System.IServiceProvider services)
+        : this(httpContextAccessor, petValidator)
+    {
+        ExtendRules(services);
     }
 
     /// <summary>
@@ -128,6 +139,16 @@ public partial class StoreValidator : AbstractValidator<Store>
     /// the compiler removes both this declaration and the call to it.
     /// </summary>
     partial void ExtendRules();
+
+    /// <summary>
+    /// Implement this partial method in a hand-written part of this class to add custom
+    /// validation rules that need services, such as another validator or a repository.
+    /// It runs after <c>ExtendRules()</c> whenever the validator is created with an
+    /// <see cref="System.IServiceProvider"/>, as dependency injection does. When no
+    /// implementation exists, the compiler removes both this declaration and the calls to it.
+    /// </summary>
+    /// <param name="services">The service provider the validator was resolved from.</param>
+    partial void ExtendRules(System.IServiceProvider services);
 }
 
 #pragma warning restore CS0612 // Type or member is obsolete

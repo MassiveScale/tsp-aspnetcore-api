@@ -57,8 +57,11 @@ public class MergePatch<T>
     [JsonExtensionData]
     public Dictionary<string, JsonElement> Properties { get; init; }
 
-    // The serializer options the patch was read with (internal; see below).
-    internal JsonSerializerOptions? ReadOptions { get; set; }
+    // The serializer options the patch was read with: the application's MVC JSON
+    // options when ASP.NET Core binds the body, null for a patch built in code.
+    // TryGetValue, TryGetPropertyValue, IsValidPropertyValue, Patch and TryPatch
+    // use them whenever no options are passed.
+    public JsonSerializerOptions? ReadOptions { get; init; }
 
     // True when the property was present in the JSON payload (even if null).
     public bool IsDefined(string propertyName);
@@ -73,7 +76,8 @@ public class MergePatch<T>
     // True when the property is present and its value is a JSON string.
     public bool IsString(string propertyName);
 
-    // Attempts to deserialize a property to TValue.
+    // Attempts to deserialize a property to TValue, with options when given,
+    // otherwise with ReadOptions.
     // Returns true when the property is present (even if its value is null).
     public bool TryGetValue<TValue>(string propertyName, out TValue? value,
         JsonSerializerOptions? options = null);
@@ -152,7 +156,7 @@ await body.PatchAsync(entity, cancellationToken: cancellationToken);
 await repository.SaveAsync(entity);
 ```
 
-Both methods use reflection to match each JSON property name to a writable property of the entity's runtime type. The lookup checks `[JsonPropertyName]` first, then falls back to the CLR property name (case-insensitive), so properties renamed via `@serverName` or an explicit `[JsonPropertyName]` attribute are resolved correctly. Because members come from the runtime type, a `MergePatch<Pet>` applied to a `Dog` also updates the properties only `Dog` declares (such as `barks`).
+Without `options`, both methods read and write with the options the patch body was read with (`ReadOptions`), so a value the validator accepted, such as a number sent as a string under the ASP.NET Core web defaults, is applied the same way. Both methods use reflection to match each JSON property name to a writable property of the entity's runtime type. The lookup checks `[JsonPropertyName]` first, then falls back to the CLR property name (case-insensitive), so properties renamed via `@serverName` or an explicit `[JsonPropertyName]` attribute are resolved correctly. Because members come from the runtime type, a `MergePatch<Pet>` applied to a `Dog` also updates the properties only `Dog` declares (such as `barks`).
 
 Object values merge recursively. When the property already holds a model instance and its subtype is unchanged, the object is merged into that same instance, so other references to it stay valid and members that aren't serialized (`[JsonIgnore]` properties, for example) keep their values. A discriminator selecting a different subtype replaces the value as described under [Polymorphic values](#polymorphic-values). A missing object is created. Arrays and all other non-object values replace the current value. An explicit `null` removes that JSON member before deserialization, so a generated property initializer restores its default (or the property's normal null/default value is used when there is no initializer).
 
@@ -175,6 +179,26 @@ An unknown, null, non-string, or incompatible tag rejects the **entire affected 
 For a null model property or a new `Record<Pet>` entry, a recognized tag selects the concrete class to create. Existing dictionary entries resolve their subtype from their serialized discriminator, so derived-only fields are retained and updated rather than treated as unknown base members. Dictionary entry deletion with `null` is unchanged.
 
 Always validate before applying and use `TryPatch` to check application errors. A raw-patch validator selects rules from the supplied tag; it has no existing entity and does not check the complete merged state. Applying a patch does not itself enforce FluentValidation constraints.
+
+#### Replacing a nested model
+
+RFC 7396 merges an object into the current value, which suits a model the client edits field by field. Some models only make sense as a whole, such as a set of targeting rules the client always sends complete. Mark such a property with [`@patchStrategy("replace")`](decorators.md#patchstrategy), or set the `merge-patch-nested-models` emitter option to `"replace"` to make it the default for every property that holds a model:
+
+```typespec
+model QuotaGroup {
+  @patchStrategy("replace")
+  targeting: Targeting;
+}
+```
+
+| Request                                  | `"merge"` (default)                             | `"replace"`                                                        |
+| ---------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------ |
+| `{"targeting":{"all":[...]}}`            | Sets `All`; `Any` and `None` keep their values  | Sets `All`; `Any` and `None` are cleared                           |
+| Validation of the object                 | A partial patch, by `TargetingPatchValidator`   | A complete model, by `TargetingValidator`                          |
+| A required member left out of the object | Accepted                                        | Rejected, as in POST                                               |
+| A value that doesn't fit the model       | Reported on the member, such as `Targeting.All` | Reported once on the property: `'Targeting' is not a valid value.` |
+
+A replaced value is deserialized as a whole, so the model's own `[JsonConverter]` reads it, as it would in a POST body. An explicit `null` still removes the value. The generated model marks a replaced property with `[JsonObjectCreationHandling(JsonObjectCreationHandling.Replace)]`, which is how `Patch`, `TryPatch` and `IsValidPropertyValue` recognize it.
 
 `PatchAsync` returns a `ValueTask` (no allocation on the hot path) and checks the cancellation token before starting work. The patch application itself is synchronous — `PatchAsync` exists for seamless composition in async controller actions.
 
@@ -250,6 +274,7 @@ this.RuleFor(x => x)
 this.RuleFor(x => x.GetString("name"))
     .NotEmpty()
     .OverridePropertyName("Name")
+    .WithName("Name")
     .When(x => x.IsString("name"));
 ```
 

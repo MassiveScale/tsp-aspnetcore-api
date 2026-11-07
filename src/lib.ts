@@ -289,6 +289,15 @@ export interface EmitterOptions {
   "merge-patch-style"?: "generic" | "typed";
 
   /**
+   * Controls what a MergePatch body does with an object sent for a property that holds a model.
+   * - `"merge"` (default) — RFC 7396: the object is merged into the current value, so it is
+   *   validated as a partial patch.
+   * - `"replace"` — the object replaces the current value, so it is validated as a complete model.
+   * `@patchStrategy` on a property overrides this default.
+   */
+  "merge-patch-nested-models"?: "merge" | "replace";
+
+  /**
    * Controls how versioning affects validator generation when the TypeSpec spec
    * uses `@versioned`.
    * - `"earliest"` — emits validators based on the earliest version only.
@@ -526,6 +535,13 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
       description:
         'How MergePatch support is emitted: "generic" (one shared MergePatch<T> helper) or "typed" (one {Model}MergePatchUpdate class per entity). Defaults to "generic".',
     },
+    "merge-patch-nested-models": {
+      type: "string",
+      enum: ["merge", "replace"],
+      nullable: true,
+      description:
+        'What a MergePatch body does with an object sent for a property that holds a model: "merge" it into the current value (RFC 7396) or "replace" the current value. Defaults to "merge"; @patchStrategy overrides it per property.',
+    },
   },
   required: [],
 };
@@ -553,6 +569,12 @@ export const $lib = createTypeSpecLibrary({
       severity: "error",
       messages: {
         default: paramMessage`@serverName value "${"name"}" is not a valid C# identifier. Use only letters, digits, and underscores, starting with a letter or underscore (optionally prefixed with @). Reserved keywords must be prefixed with @ (e.g. "@class").`,
+      },
+    },
+    "patch-strategy-ignored": {
+      severity: "warning",
+      messages: {
+        default: paramMessage`@patchStrategy has no effect on "${"property"}": only a property that holds a single model can be merged or replaced. An array is always replaced, and a record is always merged key by key.`,
       },
     },
     "duplicate-model-name": {

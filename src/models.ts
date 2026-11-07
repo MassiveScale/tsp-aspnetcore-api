@@ -31,6 +31,7 @@ import {
   resolveEncodedName,
   resolvePath,
 } from "@typespec/compiler";
+import { replacesOnPatch } from "./decorators.js";
 import { emitFile } from "./output.js";
 import {
   getMergePatchSource,
@@ -821,7 +822,14 @@ function buildPropertyViews(
         name,
         jsonName: resolveEncodedName(program, prop, "application/json"),
         nullable: type.endsWith("?"),
-        attributes: encoding.attributes,
+        // The generated MergePatch helpers read this attribute to replace the
+        // value instead of merging into it; for plain deserialization it is the default.
+        attributes: replacesOnPatch(program, prop, options)
+          ? [
+              ...encoding.attributes,
+              "[JsonObjectCreationHandling(JsonObjectCreationHandling.Replace)]",
+            ]
+          : encoding.attributes,
         initializer: resolveInitializer(
           prop.defaultValue,
           type,
