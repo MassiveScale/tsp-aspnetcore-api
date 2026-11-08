@@ -61,10 +61,11 @@ public partial class CustomerPatchValidator : AbstractValidator<MergePatch<Custo
 
         // FirstName must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => x.IsValidPropertyValue("firstName"))
-            .When(x => x.IsDefined("firstName") && !x.IsNull("firstName"))
-            .WithName("FirstName")
-            .WithMessage("'FirstName' is not a valid value.");
+            .Custom((patch, context) =>
+            {
+                if (patch.TryGetValueError("firstName", "FirstName", out var path, out var message)) context.AddFailure(path, message);
+            })
+            .When(x => x.IsDefined("firstName") && !x.IsNull("firstName"));
 
         // FirstName must not be empty when provided
         this.RuleFor(x => x.GetString("firstName"))
@@ -89,10 +90,11 @@ public partial class CustomerPatchValidator : AbstractValidator<MergePatch<Custo
 
         // LastName must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => x.IsValidPropertyValue("lastName"))
-            .When(x => x.IsDefined("lastName") && !x.IsNull("lastName"))
-            .WithName("LastName")
-            .WithMessage("'LastName' is not a valid value.");
+            .Custom((patch, context) =>
+            {
+                if (patch.TryGetValueError("lastName", "LastName", out var path, out var message)) context.AddFailure(path, message);
+            })
+            .When(x => x.IsDefined("lastName") && !x.IsNull("lastName"));
 
         // LastName must not be empty when provided
         this.RuleFor(x => x.GetString("lastName"))
@@ -110,10 +112,11 @@ public partial class CustomerPatchValidator : AbstractValidator<MergePatch<Custo
 
         // Email must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => x.IsValidPropertyValue("email"))
-            .When(x => x.IsDefined("email") && !x.IsNull("email"))
-            .WithName("Email")
-            .WithMessage("'Email' is not a valid value.");
+            .Custom((patch, context) =>
+            {
+                if (patch.TryGetValueError("email", "Email", out var path, out var message)) context.AddFailure(path, message);
+            })
+            .When(x => x.IsDefined("email") && !x.IsNull("email"));
 
         // Email cannot exceed a MaxLength of 255 when provided
         this.RuleFor(x => x.GetString("email"))
@@ -131,10 +134,11 @@ public partial class CustomerPatchValidator : AbstractValidator<MergePatch<Custo
 
         // PhoneNumber must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => x.IsValidPropertyValue("phoneNumber"))
-            .When(x => x.IsDefined("phoneNumber") && !x.IsNull("phoneNumber"))
-            .WithName("PhoneNumber")
-            .WithMessage("'PhoneNumber' is not a valid value.");
+            .Custom((patch, context) =>
+            {
+                if (patch.TryGetValueError("phoneNumber", "PhoneNumber", out var path, out var message)) context.AddFailure(path, message);
+            })
+            .When(x => x.IsDefined("phoneNumber") && !x.IsNull("phoneNumber"));
 
         // PhoneNumber cannot exceed a MaxLength of 20 when provided
         this.RuleFor(x => x.GetString("phoneNumber"))

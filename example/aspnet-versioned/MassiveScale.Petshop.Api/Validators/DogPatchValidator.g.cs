@@ -55,10 +55,11 @@ public partial class DogPatchValidator : AbstractValidator<MergePatch<Dog>>
 
         // Name must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => x.IsValidPropertyValue("name"))
-            .When(x => x.IsDefined("name") && !x.IsNull("name"))
-            .WithName("Name")
-            .WithMessage("'Name' is not a valid value.");
+            .Custom((patch, context) =>
+            {
+                if (patch.TryGetValueError("name", "Name", out var path, out var message)) context.AddFailure(path, message);
+            })
+            .When(x => x.IsDefined("name") && !x.IsNull("name"));
 
         // PhotoUrls is required and cannot be removed
         this.RuleFor(x => x)
@@ -69,10 +70,11 @@ public partial class DogPatchValidator : AbstractValidator<MergePatch<Dog>>
 
         // PhotoUrls must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => x.IsValidPropertyValue("photoUrls"))
-            .When(x => x.IsDefined("photoUrls") && !x.IsNull("photoUrls"))
-            .WithName("PhotoUrls")
-            .WithMessage("'PhotoUrls' is not a valid value.");
+            .Custom((patch, context) =>
+            {
+                if (patch.TryGetValueError("photoUrls", "PhotoUrls", out var path, out var message)) context.AddFailure(path, message);
+            })
+            .When(x => x.IsDefined("photoUrls") && !x.IsNull("photoUrls"));
 
         // PhotoUrls cannot contain more than 5 items when provided
         this.RuleFor(x => x)
@@ -83,10 +85,11 @@ public partial class DogPatchValidator : AbstractValidator<MergePatch<Dog>>
 
         // Status must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => x.IsValidPropertyValue("status"))
-            .When(x => x.IsDefined("status") && !x.IsNull("status"))
-            .WithName("Status")
-            .WithMessage("'Status' is not a valid value.");
+            .Custom((patch, context) =>
+            {
+                if (patch.TryGetValueError("status", "Status", out var path, out var message)) context.AddFailure(path, message);
+            })
+            .When(x => x.IsDefined("status") && !x.IsNull("status"));
 
         // IsBarker is required and cannot be removed
         this.RuleFor(x => x)
@@ -97,10 +100,11 @@ public partial class DogPatchValidator : AbstractValidator<MergePatch<Dog>>
 
         // IsBarker must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => x.IsValidPropertyValue("isBarker"))
-            .When(x => x.IsDefined("isBarker") && !x.IsNull("isBarker"))
-            .WithName("IsBarker")
-            .WithMessage("'IsBarker' is not a valid value.");
+            .Custom((patch, context) =>
+            {
+                if (patch.TryGetValueError("isBarker", "IsBarker", out var path, out var message)) context.AddFailure(path, message);
+            })
+            .When(x => x.IsDefined("isBarker") && !x.IsNull("isBarker"));
 
         // Rules for v2.0 and later
         When(_ => IsVersionInRange("v2.0", null), () =>
@@ -130,15 +134,10 @@ public partial class DogPatchValidator : AbstractValidator<MergePatch<Dog>>
                         index++;
                         continue;
                     }
-                    Tag? nestedModel;
-                    try
+                    // A failure names the member, item or entry that did not fit, such as Tags[0].Code.
+                    if (!patch.TryReadValue<Tag>(item, $"Tags[{index}]", out var nestedModel, out var errorPath, out var errorMessage, jsonSerializerOptions))
                     {
-                        nestedModel = System.Text.Json.JsonSerializer.Deserialize<Tag>(item.GetRawText(), jsonSerializerOptions);
-                    }
-                    catch (System.Exception ex) when (ex is System.Text.Json.JsonException or System.NotSupportedException or System.InvalidOperationException)
-                    {
-                        // NotSupportedException: an abstract or polymorphic item sent without its type discriminator.
-                        context.AddFailure($"Tags[{index}]", "The array item could not be deserialized.");
+                        context.AddFailure(errorPath, errorMessage);
                         index++;
                         continue;
                     }

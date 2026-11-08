@@ -93,22 +93,45 @@ PATCH validators emit one of two rule shapes, chosen by the body type of the `@p
 ```csharp
 this.RuleFor(x => x)
     .Must(x => TryGetNumber(x, "target", out var n) && n >= 0m)
-    .When(x => x.IsDefined("target") && !x.IsNull("target") && x.IsValidPropertyValue("target"))
+    .When(x => x.IsDefined("target") && !x.IsNull("target") && (x.Properties["target"].ValueKind == System.Text.Json.JsonValueKind.Number || x.IsValidPropertyValue("target")))
     .WithName("Target")
     .WithMessage("'Target' must be a number greater than or equal to 0.");
 ```
 
-Every rule has a message. Numeric bounds accept any JSON number, including exponent notation such as `1e2`. A number in a JSON string, such as `"50"`, is held to the same bounds whenever POST would read it: with the ASP.NET Core web defaults, or on a property with `@encode(string)`. A bound runs only on a value the type rule accepts, so a value that isn't a number is reported once, as `'Target' is not a valid value.`
+Every rule has a message. Numeric bounds accept any JSON number, including exponent notation such as `1e2`. A number in a JSON string, such as `"50"`, is held to the same bounds whenever POST would read it: with the ASP.NET Core web defaults, or on a property with `@encode(string)`.
 
 A POST body is deserialized into the model before its validator runs, so a value of the wrong type never reaches the validator. A MergePatch body keeps the raw JSON, so its validator checks the type itself. Every writable property that doesn't hold a model gets a rule that reads the supplied value as the property's declared C# type, with the [JSON options](#json-options) the body was read with:
 
 ```csharp
 this.RuleFor(x => x)
-    .Must(x => x.IsValidPropertyValue("count"))
-    .When(x => x.IsDefined("count") && !x.IsNull("count"))
-    .WithName("Count")
-    .WithMessage("'Count' is not a valid value.");
+    .Custom((patch, context) =>
+    {
+        if (patch.TryGetValueError("target", "Target", out var path, out var message)) context.AddFailure(path, message);
+    })
+    .When(x => x.IsDefined("target") && !x.IsNull("target") && !(x.Properties["target"].ValueKind == System.Text.Json.JsonValueKind.Number && (TryGetNumber(x, "target", out var number) && (number < 0m))));
 ```
+
+The message names the type the value must be, and the error is reported on the member, array item or dictionary entry that failed:
+
+| Request                          | Error                                                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `{"target":"abc"}` (`int32`)     | `Target`: `'Target' must be a whole number.`                                                                  |
+| `{"target":1.5}` (`int32`)       | `Target`: `'Target' must be a whole number.`                                                                  |
+| `{"target":3000000000}`          | `Target`: `'Target' must be a whole number between -2147483648 and 2147483647.`                               |
+| `{"target":5.0}` (`int32`)       | `Target`: `'Target' must be a whole number without a decimal point or exponent.`                              |
+| `{"target":"5"}`, strict options | `Target`: `'Target' must be a whole number, not a string.`                                                    |
+| `{"price":1e29}` (`decimal`)     | `Price`: `'Price' must be a number between -79228162514264337593543950335 and 79228162514264337593543950335.` |
+| `{"name":123}`                   | `Name`: `'Name' must be a string.`                                                                            |
+| `{"active":"yes"}`               | `Active`: `'Active' must be true or false.`                                                                   |
+| `{"status":"lost"}`              | `Status`: `'Status' must be one of: available, sold.`                                                         |
+| `{"createdOn":"soon"}`           | `CreatedOn`: `'CreatedOn' must be a date and time.`                                                           |
+| `{"tags":["a",1]}`               | `Tags[1]`: `'Tags[1]' must be a string.`                                                                      |
+| `{"scores":{"b":"x"}}`           | `Scores[b]`: `'Scores[b]' must be a whole number.`                                                            |
+| `{"targeting":{"all":[{...}]}}`  | `Targeting.All[0]`: the converter's own message                                                               |
+
+When a [JSON converter](#json-options) rejects a value by throwing a `JsonException` with a message of its own, that message is reported as it is, at the path the converter failed. The messages `System.Text.Json` writes itself name .NET types, so they are replaced by the messages above, as are those of the enum and boolean converters this library generates.
+
+A number outside a bound is reported once, by the bound, even when it isn't a whole number either: `{"target":-1.5}` with `@minValue(0)` fails with `'Target' must be a number greater than or equal to 0.` A value that isn't a number is reported once, by the type rule.
 
 It rejects `"abc"` for an `int32`, `123` for a `string`, `"yes"` for a `boolean`, and a value that is not a member of an enum or a string-literal union (`"available" | "sold"`). An object merged into a `Record<T>` or free-form value is checked key by key, so a `null` value, which removes that key, is accepted. Model values are checked by their [nested validators](#patch-body-shapes) instead.
 
@@ -139,9 +162,9 @@ Nested-model rules account for property nullability so the generated code compil
 - The property access uses the null-forgiving operator (`x.Prop!`) so the emitted `IValidator<T>` type argument matches, avoiding a nullable-reference-type build warning.
 - The rule adds `.When(x => x.Prop is not null)` so it is skipped at runtime when the property is `null`. This applies to POST validators and to PATCH validators over a plain body.
 - PATCH validators over a `MergePatchUpdate<T>` body inspect the raw JSON value. A supplied nested object is passed to its injected child PATCH validator, and child failures are prefixed with the parent path (for example, `Appearance.Theme`). Non-object values are rejected at the parent property. Nested validators recurse to further model levels and keep their own constraints, required-null checks, enum checks, and read-only/create-only rules.
-- A model property marked `@patchStrategy("replace")` (or every model property, with `merge-patch-nested-models: replace`) replaces the current value instead of merging into it. The supplied object is deserialized as a whole with the request's JSON options and validated as a complete model by its injected POST validator, so a required member it leaves out is rejected. A value that doesn't deserialize fails with `'Targeting' is not a valid value.`, and a non-object value with `'Targeting' must be an object.` See [Replacing a nested model](merge-patch.md#replacing-a-nested-model).
+- A model property marked `@patchStrategy("replace")` (or every model property, with `merge-patch-nested-models: replace`) replaces the current value instead of merging into it. The supplied object is deserialized as a whole with the request's JSON options and validated as a complete model by its injected POST validator, so a required member it leaves out is rejected. A value that doesn't deserialize is reported on the member that failed, such as `Targeting.All[0]`, with the converter's own message or one naming the expected type, and a non-object value fails with `'Targeting' must be an object.` See [Replacing a nested model](merge-patch.md#replacing-a-nested-model).
 - A `Record<Model>` in a MergePatch body is merged key by key, so each supplied value is validated as a nested patch with failures such as `Labels[key].Name`. A `null` value removes that key and isn't validated.
-- A model array in a MergePatch body is a whole-value replacement under RFC 7396. Every supplied element must be an object and is validated as a complete model using its injected POST validator; failures use paths such as `Items[0].Name`. Arrays are not interpreted as collections of partial item patches. An element that can't be deserialized, for example an item of an abstract `@discriminator` base type sent without its discriminator, fails validation with "The array item could not be deserialized." instead of throwing.
+- A model array in a MergePatch body is a whole-value replacement under RFC 7396. Every supplied element must be an object and is validated as a complete model using its injected POST validator; failures use paths such as `Items[0].Name`. Arrays are not interpreted as collections of partial item patches. An element that can't be deserialized fails validation instead of throwing, on the member that failed, such as `Items[1].Count` with `'Items[1].Count' must be a whole number.`, or with the converter's own message. An item of an abstract `@discriminator` base type sent without its discriminator fails with `'Items[0]' is not a valid value.`
 
 Nested-only validators are emitted and registered when reachable through a PATCH body's model properties, including properties that only a derived model declares. Derived models of a nested `@discriminator` base get POST validators too, because the base validator injects them. Arbitrarily deep model shapes are supported, including [recursive ones](#recursive-models).
 

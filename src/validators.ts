@@ -125,6 +125,13 @@ interface PropertyData {
    * does. Model values are checked by their nested validators instead.
    */
   validatesValueType?: boolean;
+  /**
+   * C# condition over a MergePatch body `x` that holds when the property's JSON
+   * number is outside one of its numeric bounds. The type rule skips such a
+   * value, so a number such as `-1.5` for an `int32` with `@minValue(0)` is
+   * reported once, by the bound, instead of as a type error.
+   */
+  outOfRangeCondition?: string;
   /** True when the property is read-only (not writable for the target lifecycle). */
   isReadOnly?: boolean;
   /**
@@ -626,6 +633,32 @@ function numericRule(
 }
 
 /**
+ * Builds the C# condition that holds when the JSON number of the MergePatch
+ * property `jsonName` breaks one of `bounds`, each a rule and the comparison
+ * that breaks it (`<` for a minimum). Bounds read with the same helper share
+ * one variable. Returns `undefined` when the property has no numeric bound.
+ */
+function outOfRangeCondition(
+  jsonName: string,
+  bounds: readonly [NumericRule | undefined, "<" | "<=" | ">" | ">="][],
+): string | undefined {
+  const byReader = new Map<NumericRule["patchReader"], string[]>();
+  for (const [rule, breaks] of bounds) {
+    if (!rule) continue;
+    const variable = rule.patchReader === "TryGetDouble" ? "real" : "number";
+    const checks = byReader.get(rule.patchReader) ?? [];
+    checks.push(`${variable} ${breaks} ${rule.patchLiteral}`);
+    byReader.set(rule.patchReader, checks);
+  }
+  if (byReader.size === 0) return undefined;
+  const clauses = [...byReader].map(([reader, checks]) => {
+    const variable = reader === "TryGetDouble" ? "real" : "number";
+    return `(${reader}(x, "${jsonName}", out var ${variable}) && (${checks.join(" || ")}))`;
+  });
+  return `x.Properties["${jsonName}"].ValueKind == System.Text.Json.JsonValueKind.Number && (${clauses.join(" || ")})`;
+}
+
+/**
  * Returns true if the model should be excluded from validator emission:
  * anonymous models, generic template declarations, template instances,
  * or models from TypeSpec built-in / external package namespaces.
@@ -891,6 +924,12 @@ function buildSinglePropertyData(
     maxValue,
     minValueExclusive,
     maxValueExclusive,
+    outOfRangeCondition: outOfRangeCondition(jsonName, [
+      [minValue, "<"],
+      [minValueExclusive, "<="],
+      [maxValue, ">"],
+      [maxValueExclusive, ">="],
+    ]),
     minItems,
     maxItems,
     referencedModelName,

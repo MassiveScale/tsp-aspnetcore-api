@@ -2,7 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.4.0] - 2026-11-07
+
+### Fixed
+
+- A MergePatch value of the wrong type is reported with a message that names the type it must be, such as `'Target' must be a whole number.`, `'Target' must be a whole number between -2147483648 and 2147483647.`, `'Target' must be a whole number without a decimal point or exponent.`, `'Name' must be a string.`, `'Active' must be true or false.` or `'Status' must be one of: available, sold.`, instead of `'Target' is not a valid value.` See [Validators — PATCH body shapes](docs/validators.md#patch-body-shapes).
+- A MergePatch value that fails inside an array, a dictionary or a model is reported on the item, entry or member that failed, such as `Tags[1]`, `Scores[b]`, `Badge.Level` or `Targeting.All[0]`, instead of on the whole property. A member that only a derived `@discriminator` type declares is found through the discriminator. When a JSON converter rejects the value by throwing a `JsonException` with its own message, that message is reported, and when the converter reads an item with a nested `Deserialize`, whose path starts at that item, the item that failed is found. The messages `System.Text.Json` writes itself name .NET types, so they are still replaced. This covers the type rule, the items of a model array (which reported "The array item could not be deserialized.") and a model replaced by `@patchStrategy("replace")` (which reported `'Targeting' is not a valid value.`).
+- A MergePatch number outside a `@minValue`, `@maxValue`, `@minValueExclusive` or `@maxValueExclusive` bound is reported by the bound, even when it doesn't fit the property's type either. `{"target":-1.5}` for an `int32` with `@minValue(0)` failed with `'Target' is not a valid value.` and now fails with `'Target' must be a number greater than or equal to 0.`
+
+### Added
+
+- `TryGetValueError` and `TryReadValue` on `MergePatch<T>` and `{Model}MergePatchUpdate`, which describe the value that doesn't fit its type with a path and a message. See [Merge patch — the helper API](docs/merge-patch.md).
+- The `mergePatchValueErrors` partial and the `outOfRangeCondition` property view model, for custom templates. See [Custom templates](docs/custom-templates.md).
+
+### Changed
+
+- The MergePatch type rule is a `Custom` rule that adds its failure at the path that failed, so its `ErrorCode` is no longer `PredicateValidator`, and the `PropertyName` of a failure inside an array or dictionary carries the index or key (`Tags[1]` instead of `Tags`).
+- A custom MergePatch helper template from before 1.4.0 needs `{{> mergePatchValueErrors}}`; see [Custom templates](docs/custom-templates.md).
 
 ## [1.3.0] - 2026-11-07
 

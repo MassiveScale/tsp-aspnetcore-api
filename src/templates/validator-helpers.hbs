@@ -33,8 +33,9 @@ private static bool IsMatch(System.Text.RegularExpressions.Regex pattern, string
 /// number in a JSON string. Returns <see langword="false"/> when the value is absent
 /// or is not a number. A JSON number outside the <see cref="decimal"/> range is
 /// clamped to it, which keeps every comparison with a bound correct.
-/// Range rules call this only after the type rule accepts the value, so a string
-/// is read only when the JSON options or the property's attributes allow it.
+/// Range rules call this for a JSON number, or for a string only after the type rule
+/// accepts it, so a string is read only when the JSON options or the property's
+/// attributes allow it.
 /// </summary>
 private static bool TryGetNumber({{{qualifiedPatchBodyTypeName}}} patch, string name, out decimal value)
 {
@@ -58,8 +59,9 @@ private static bool TryGetNumber({{{qualifiedPatchBodyTypeName}}} patch, string 
 /// string. Returns <see langword="false"/> when the value is absent or is not a number.
 /// A JSON number outside the <see cref="double"/> range is clamped to it, which keeps
 /// every comparison with a bound correct.
-/// Range rules call this only after the type rule accepts the value, so a string
-/// is read only when the JSON options or the property's attributes allow it.
+/// Range rules call this for a JSON number, or for a string only after the type rule
+/// accepts it, so a string is read only when the JSON options or the property's
+/// attributes allow it.
 /// </summary>
 private static bool TryGetDouble({{{qualifiedPatchBodyTypeName}}} patch, string name, out double value)
 {

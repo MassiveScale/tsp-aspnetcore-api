@@ -1,0 +1,431 @@
+{{!--
+  merge-patch-value-errors.hbs — partial registered as `mergePatchValueErrors`.
+
+  The members of a MergePatch helper class that check a patch value against
+  its declared type and describe the value that failed: `IsValidPropertyValue`,
+  `TryGetValueError` and `TryReadValue`. Shared by `merge-patch.hbs` and
+  `entity-merge-patch.hbs`; it relies on their `Properties`, `ReadOptions`,
+  `FindProperty`, `FindMember`, `GetOpenObjectValueType`, `IsModelType`,
+  `ReplacesOnPatch` and `PropertyReadOptions` members. Include it at column 0
+  inside the class body.
+--}}
+    /// <summary>
+    /// Returns <see langword="true"/> when the patch value of <paramref name="propertyName"/>
+    /// fits the declared type of that property on the patched model, the same way a request
+    /// body must deserialize before it is validated. An object merged into a model or a
+    /// dictionary is checked member by member, so a partial object is valid, and a
+    /// <see langword="null"/> member, which removes that member, is always valid.
+    /// Also returns <see langword="true"/> when the property is absent, its value is
+    /// <see langword="null"/>, or the patched model declares no such property.
+    /// Values are read with <paramref name="options"/> when given, otherwise with the
+    /// options this patch was deserialized with, plus the property's own
+    /// <c>[JsonConverter]</c> or <c>[JsonNumberHandling]</c>.
+    /// </summary>
+    public bool IsValidPropertyValue(string propertyName, JsonSerializerOptions? options = null) =>
+        !TryGetValueError(propertyName, propertyName, out _, out _, options);
+
+    /// <summary>
+    /// Finds the first value in the patch value of <paramref name="propertyName"/> that does not
+    /// fit its declared type, checked the way <see cref="IsValidPropertyValue"/> checks it.
+    /// <paramref name="path"/> starts with <paramref name="displayName"/> and names the member,
+    /// array item or dictionary entry that failed, such as <c>Tags[1]</c>, <c>Scores[b]</c> or
+    /// <c>Badge.Level</c>. <paramref name="message"/> is the message of the converter that
+    /// rejected the value, or one that names the expected type, such as
+    /// <c>'Tags[1]' must be a string.</c> Messages the serializer writes itself name .NET types,
+    /// so they are never returned.
+    /// Returns <see langword="false"/> when the value fits, is absent or <see langword="null"/>,
+    /// or the patched model declares no such property.
+    /// </summary>
+    /// <param name="propertyName">The JSON name of the property in the patch.</param>
+    /// <param name="displayName">The name the error path and message start with, such as the C# property name.</param>
+    /// <param name="path">The path of the value that failed.</param>
+    /// <param name="message">The validation message for the value that failed.</param>
+    /// <param name="options">The options to read with; defaults to <see cref="ReadOptions"/>.</param>
+    public bool TryGetValueError(string propertyName, string displayName, out string path, out string message, JsonSerializerOptions? options = null)
+    {
+        path = displayName;
+        message = string.Empty;
+        if (!Properties.TryGetValue(propertyName, out var element)) return false;
+        var property = FindProperty(propertyName);
+        if (property is null) return false;
+        if (FindValueError(element, property.PropertyType, property, options ?? ReadOptions, displayName) is not { } error) return false;
+        (path, message) = error;
+        return true;
+    }
+
+    /// <summary>
+    /// Deserializes <paramref name="value"/> as <typeparamref name="TValue"/>, such as an item of
+    /// a model array or a model the patch replaces. When that fails, <paramref name="errorPath"/>
+    /// and <paramref name="errorMessage"/> describe the value that failed, starting at
+    /// <paramref name="path"/>, as <see cref="TryGetValueError"/> does.
+    /// </summary>
+    /// <param name="value">The JSON value to read.</param>
+    /// <param name="path">The path of <paramref name="value"/>, such as <c>Items[2]</c>.</param>
+    /// <param name="result">The value read, when reading succeeds.</param>
+    /// <param name="errorPath">The path of the value that failed.</param>
+    /// <param name="errorMessage">The validation message for the value that failed.</param>
+    /// <param name="options">The options to read with; defaults to <see cref="ReadOptions"/>.</param>
+    public bool TryReadValue<TValue>(JsonElement value, string path, out TValue? result, out string errorPath, out string errorMessage, JsonSerializerOptions? options = null)
+    {
+        result = default;
+        errorPath = path;
+        errorMessage = string.Empty;
+        options ??= ReadOptions;
+        try
+        {
+            result = JsonSerializer.Deserialize<TValue>(value, options);
+            return true;
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
+        {
+            (errorPath, errorMessage) = DescribeReadError(value, typeof(TValue), ex, options, path);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Returns the path and message of the first value in <paramref name="value"/> that cannot
+    /// be merged into a value of <paramref name="type"/>, held by <paramref name="property"/>
+    /// when it is a model or dictionary member, or <see langword="null"/> when every value fits;
+    /// see <see cref="IsValidPropertyValue"/>.
+    /// </summary>
+    private static (string Path, string Message)? FindValueError(JsonElement value, Type type, PropertyInfo? property, JsonSerializerOptions? options, string path)
+    {
+        if (value.ValueKind == JsonValueKind.Null) return null;
+        var openValueType = GetOpenObjectValueType(type);
+        // A merged object is checked member by member; a replaced one must deserialize as a whole.
+        if (value.ValueKind == JsonValueKind.Object && (openValueType is not null || IsModelType(type)) && !(property is not null && ReplacesOnPatch(property)))
+        {
+            foreach (var member in value.EnumerateObject())
+            {
+                if (openValueType is not null)
+                {
+                    // A dictionary's values share the dictionary property's JSON attributes, as they do when deserializing.
+                    if (FindValueError(member.Value, openValueType, property, options, $"{path}[{member.Name}]") is { } entryError) return entryError;
+                    continue;
+                }
+                // Unknown members are not a type error; TryPatch reports them when applying.
+                if (FindMember(type, member.Name) is not { } known) continue;
+                if (FindValueError(member.Value, known.Property.PropertyType, known.Property, options, $"{path}.{known.Property.Name}") is { } memberError) return memberError;
+            }
+            return null;
+        }
+        var readOptions = property is null ? options : PropertyReadOptions(property, options);
+        try
+        {
+            JsonSerializer.Deserialize(value, type, readOptions);
+            return null;
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
+        {
+            return DescribeReadError(value, type, ex, readOptions, path);
+        }
+    }
+
+    /// <summary>
+    /// Describes why <paramref name="value"/> could not be read as <paramref name="type"/>: the
+    /// path of the member, item or entry the serializer stopped at, appended to
+    /// <paramref name="path"/>, and the converter's own message or one naming the expected type.
+    /// </summary>
+    private static (string Path, string Message) DescribeReadError(JsonElement value, Type type, Exception exception, JsonSerializerOptions? options, string path)
+    {
+        var (failedPath, failedType, failedValue, followed) = ResolveFailedValue(value, type, (exception as JsonException)?.Path, path);
+        // A converter that reads an item with a nested Deserialize reports a path relative to
+        // that item, which doesn't lead anywhere from here; find the item that fails instead.
+        if (!followed && FindFailingEntry(value, type, options, path) is { } entry) return entry;
+        var message = IsConverterMessage(exception)
+            ? exception.Message
+            : $"'{failedPath}' {DescribeExpectedValue(failedType, failedValue, options)}.";
+        return (failedPath, message);
+    }
+
+    /// <summary>
+    /// Reads each item of an array, each value of a dictionary, or each member of a model on its
+    /// own and describes the first one that fails. Returns <see langword="null"/> when
+    /// <paramref name="value"/> is none of these, or every part reads on its own.
+    /// </summary>
+    private static (string Path, string Message)? FindFailingEntry(JsonElement value, Type type, JsonSerializerOptions? options, string path)
+    {
+        if (value.ValueKind == JsonValueKind.Array && GetItemType(type) is { } itemType)
+        {
+            var index = 0;
+            foreach (var item in value.EnumerateArray())
+            {
+                var itemPath = $"{path}[{index.ToString(System.Globalization.CultureInfo.InvariantCulture)}]";
+                try
+                {
+                    JsonSerializer.Deserialize(item, itemType, options);
+                }
+                catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
+                {
+                    return DescribeReadError(item, itemType, ex, options, itemPath);
+                }
+                index++;
+            }
+        }
+        else if (value.ValueKind == JsonValueKind.Object && GetOpenObjectValueType(type) is { } entryType && entryType != typeof(object))
+        {
+            foreach (var member in value.EnumerateObject())
+            {
+                try
+                {
+                    JsonSerializer.Deserialize(member.Value, entryType, options);
+                }
+                catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
+                {
+                    return DescribeReadError(member.Value, entryType, ex, options, $"{path}[{member.Name}]");
+                }
+            }
+        }
+        else if (value.ValueKind == JsonValueKind.Object && IsModelType(type))
+        {
+            foreach (var member in value.EnumerateObject())
+            {
+                if (FindMember(ResolveDerivedType(type, value), member.Name) is not { } known) continue;
+                var memberOptions = PropertyReadOptions(known.Property, options);
+                try
+                {
+                    JsonSerializer.Deserialize(member.Value, known.Property.PropertyType, memberOptions);
+                }
+                catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
+                {
+                    return DescribeReadError(member.Value, known.Property.PropertyType, ex, memberOptions, $"{path}.{known.Property.Name}");
+                }
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> for a <see cref="JsonException"/> a converter threw with a
+    /// message of its own, such as <c>Unsupported condition kind 'x'.</c> The serializer's own
+    /// messages, and those of the converters this library generates, name .NET types instead
+    /// of the property, so the value is described instead.
+    /// </summary>
+    private static bool IsConverterMessage(Exception exception)
+    {
+        if (exception is not JsonException { Message.Length: > 0 } json) return false;
+        // The serializer appends the position to the messages it writes.
+        if (json.Message.Contains(" | LineNumber: ", StringComparison.Ordinal)) return false;
+        var thrower = json.TargetSite?.DeclaringType;
+        if (thrower is null || thrower.Assembly == typeof(JsonSerializer).Assembly) return false;
+        for (var type = thrower; type is not null; type = type.DeclaringType)
+        {
+            if (type.Name == "BooleanStringJsonConverter" || type.Name.StartsWith("EnumMemberConverter", StringComparison.Ordinal)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Follows <paramref name="jsonPath"/>, the serializer's path within <paramref name="value"/>
+    /// such as <c>$[1].level</c>, and returns the path that failed, named the way validation paths
+    /// are (<c>Badges[1].Level</c>, <c>Scores[b]</c>), with the declared type and the JSON value
+    /// found there. A step whose member is not declared keeps its JSON name and has no known type.
+    /// <c>Followed</c> is <see langword="false"/> when a step is not in the JSON, so the path did
+    /// not start at <paramref name="value"/>.
+    /// </summary>
+    private static (string Path, Type? Type, JsonElement? Value, bool Followed) ResolveFailedValue(JsonElement value, Type type, string? jsonPath, string path)
+    {
+        Type? currentType = type;
+        JsonElement? current = value;
+        if (string.IsNullOrEmpty(jsonPath) || jsonPath[0] != '$') return (path, currentType, current, true);
+        var builder = new System.Text.StringBuilder(path);
+        var position = 1;
+        while (position < jsonPath.Length)
+        {
+            string name;
+            if (jsonPath[position] == '.')
+            {
+                var end = position + 1;
+                while (end < jsonPath.Length && jsonPath[end] != '.' && jsonPath[end] != '[') end++;
+                name = jsonPath[(position + 1)..end];
+                position = end;
+            }
+            else if (string.CompareOrdinal(jsonPath, position, "['", 0, 2) == 0)
+            {
+                var end = jsonPath.IndexOf("']", position + 2, StringComparison.Ordinal);
+                if (end < 0) return (builder.ToString(), currentType, current, false);
+                name = jsonPath[(position + 2)..end];
+                position = end + 2;
+            }
+            else if (jsonPath[position] == '[')
+            {
+                var end = jsonPath.IndexOf(']', position + 1);
+                if (end < 0 || !int.TryParse(jsonPath.AsSpan(position + 1, end - position - 1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var index)) return (builder.ToString(), currentType, current, false);
+                if (current is not { ValueKind: JsonValueKind.Array } array || index >= array.GetArrayLength()
+                    || (currentType is not null && IsSetType(currentType))) return (builder.ToString(), currentType, current, false);
+                builder.Append('[').Append(index.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(']');
+                currentType = currentType is null ? null : GetItemType(currentType);
+                current = array[index];
+                position = end + 1;
+                continue;
+            }
+            else
+            {
+                return (builder.ToString(), currentType, current, false);
+            }
+            if (current is not { ValueKind: JsonValueKind.Object } container || FindJsonMember(container, name) is not { } child) return (builder.ToString(), currentType, current, false);
+
+            var openValueType = currentType is null ? null : GetOpenObjectValueType(currentType);
+            if (openValueType is not null)
+            {
+                builder.Append('[').Append(name).Append(']');
+                currentType = openValueType;
+            }
+            else
+            {
+                var member = currentType is null ? null : FindMember(ResolveDerivedType(Nullable.GetUnderlyingType(currentType) ?? currentType, container), name);
+                builder.Append('.').Append(member?.Property.Name ?? name);
+                currentType = member?.Property.PropertyType;
+            }
+            current = child;
+        }
+        return (builder.ToString(), currentType, current, true);
+    }
+
+    /// <summary>Returns the member of <paramref name="container"/> named <paramref name="name"/>, matched exactly first.</summary>
+    private static JsonElement? FindJsonMember(JsonElement container, string name)
+    {
+        if (container.TryGetProperty(name, out var exact)) return exact;
+        foreach (var member in container.EnumerateObject())
+        {
+            if (string.Equals(member.Name, name, StringComparison.OrdinalIgnoreCase)) return member.Value;
+        }
+        return null;
+    }
+
+    /// <summary>Returns the item type of an array or collection type, or <see langword="null"/>.</summary>
+    private static Type? GetItemType(Type type)
+    {
+        if (type.IsArray) return type.GetElementType();
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>)) return type.GetGenericArguments()[0];
+        foreach (var candidate in type.GetInterfaces())
+        {
+            if (candidate.IsGenericType && candidate.GetGenericTypeDefinition() == typeof(IEnumerable<>)) return candidate.GetGenericArguments()[0];
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Returns what a value of <paramref name="type"/> must be, to follow the quoted path in a
+    /// validation message: <c>must be a whole number</c>, <c>must be one of: light, dark</c>, or
+    /// <c>is not a valid value</c> when <paramref name="value"/> already has the expected shape.
+    /// </summary>
+    private static string DescribeExpectedValue(Type? type, JsonElement? value, JsonSerializerOptions? options)
+    {
+        const string Invalid = "is not a valid value";
+        if (type is null) return Invalid;
+        type = Nullable.GetUnderlyingType(type) ?? type;
+        if (type.IsEnum) return EnumWireValues(type, options) is { } values ? $"must be one of: {values}" : Invalid;
+        if (type == typeof(string)) return value is { ValueKind: JsonValueKind.String } ? Invalid : "must be a string";
+        if (type == typeof(bool)) return "must be true or false";
+        if (IntegerRange(type) is { } range)
+        {
+            // A number in a string counts too, as the web defaults and @encode(string) read it.
+            if (!TryReadAmount(value, out var amount) || amount != Math.Floor(amount)) return "must be a whole number";
+            if (amount < (double)range.Min || amount > (double)range.Max)
+                return $"must be a whole number between {range.Min.ToString(System.Globalization.CultureInfo.InvariantCulture)} and {range.Max.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+            // A whole number in range was refused for how it is written: as a string, or as 5.0 or 1e2.
+            return value is { ValueKind: JsonValueKind.String }
+                ? "must be a whole number, not a string"
+                : "must be a whole number without a decimal point or exponent";
+        }
+        if (type == typeof(decimal) && value is { ValueKind: JsonValueKind.Number } large && !large.TryGetDecimal(out _))
+            return $"must be a number between {decimal.MinValue.ToString(System.Globalization.CultureInfo.InvariantCulture)} and {decimal.MaxValue.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        if (type == typeof(double) || type == typeof(float) || type == typeof(decimal) || type == typeof(Half)) return "must be a number";
+        if (type == typeof(DateTimeOffset) || type == typeof(DateTime)) return "must be a date and time";
+        if (type == typeof(DateOnly)) return "must be a date";
+        if (type == typeof(TimeOnly)) return "must be a time";
+        if (type == typeof(TimeSpan)) return "must be a duration";
+        if (type == typeof(Guid)) return "must be a UUID";
+        if (type == typeof(byte[])) return "must be a base64-encoded string";
+        if (GetOpenObjectValueType(type) is not null || IsModelType(type)) return value is { ValueKind: JsonValueKind.Object } ? Invalid : "must be an object";
+        if (typeof(System.Collections.IEnumerable).IsAssignableFrom(type)) return value is { ValueKind: JsonValueKind.Array } ? Invalid : "must be an array";
+        return Invalid;
+    }
+
+    /// <summary>
+    /// Reads <paramref name="value"/> as a finite number, from a JSON number or a number in a
+    /// JSON string. Returns <see langword="false"/> for any other value.
+    /// </summary>
+    private static bool TryReadAmount(JsonElement? value, out double amount)
+    {
+        amount = 0d;
+        var read = value switch
+        {
+            { ValueKind: JsonValueKind.Number } number => number.TryGetDouble(out amount),
+            { ValueKind: JsonValueKind.String } text => double.TryParse(text.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out amount),
+            _ => false,
+        };
+        return read && double.IsFinite(amount);
+    }
+
+    /// <summary>
+    /// Returns the type <paramref name="value"/> selects through the discriminator of a
+    /// polymorphic <paramref name="type"/>, or <paramref name="type"/> itself, so a member only
+    /// a derived type declares can be found.
+    /// </summary>
+    private static Type ResolveDerivedType(Type type, JsonElement value)
+    {
+        for (Type? current = type; current is not null; current = current.BaseType)
+        {
+            var polymorphic = current.GetCustomAttribute<JsonPolymorphicAttribute>(inherit: false);
+            if (polymorphic is null) continue;
+            if (FindJsonMember(value, polymorphic.TypeDiscriminatorPropertyName ?? "$type") is not { ValueKind: JsonValueKind.String } tag) return type;
+            var name = tag.GetString();
+            foreach (var derived in current.GetCustomAttributes<JsonDerivedTypeAttribute>(inherit: false))
+            {
+                if (derived.TypeDiscriminator is string discriminator && discriminator == name && type.IsAssignableFrom(derived.DerivedType)) return derived.DerivedType;
+            }
+            return type;
+        }
+        return type;
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> for a set, whose serializer path counts the items it kept
+    /// rather than giving the position of the item in the JSON.
+    /// </summary>
+    private static bool IsSetType(Type type)
+    {
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ISet<>)) return true;
+        foreach (var candidate in type.GetInterfaces())
+        {
+            if (candidate.IsGenericType && candidate.GetGenericTypeDefinition() == typeof(ISet<>)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Returns the smallest and largest value of an integer type, or <see langword="null"/> for any other type.</summary>
+    private static (decimal Min, decimal Max)? IntegerRange(Type type) =>
+        type == typeof(int) ? ((decimal)int.MinValue, (decimal)int.MaxValue)
+        : type == typeof(long) ? ((decimal)long.MinValue, (decimal)long.MaxValue)
+        : type == typeof(short) ? ((decimal)short.MinValue, (decimal)short.MaxValue)
+        : type == typeof(sbyte) ? ((decimal)sbyte.MinValue, (decimal)sbyte.MaxValue)
+        : type == typeof(byte) ? ((decimal)byte.MinValue, (decimal)byte.MaxValue)
+        : type == typeof(ushort) ? ((decimal)ushort.MinValue, (decimal)ushort.MaxValue)
+        : type == typeof(uint) ? ((decimal)uint.MinValue, (decimal)uint.MaxValue)
+        : type == typeof(ulong) ? ((decimal)ulong.MinValue, (decimal)ulong.MaxValue)
+        : null;
+
+    /// <summary>
+    /// Returns the values of <paramref name="type"/> as <paramref name="options"/> write them,
+    /// such as <c>light, dark</c>, or <see langword="null"/> when a value cannot be written.
+    /// </summary>
+    private static string? EnumWireValues(Type type, JsonSerializerOptions? options)
+    {
+        var values = new List<string>();
+        try
+        {
+            foreach (var member in Enum.GetValues(type))
+            {
+                var written = JsonSerializer.SerializeToElement(member, type, options);
+                values.Add(written.ValueKind == JsonValueKind.String ? written.GetString()! : written.GetRawText());
+            }
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
+        {
+            return null;
+        }
+        return values.Count == 0 ? null : string.Join(", ", values);
+    }

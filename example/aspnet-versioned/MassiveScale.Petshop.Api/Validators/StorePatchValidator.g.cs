@@ -62,10 +62,11 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
 
         // Name must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => x.IsValidPropertyValue("name"))
-            .When(x => x.IsDefined("name") && !x.IsNull("name"))
-            .WithName("Name")
-            .WithMessage("'Name' is not a valid value.");
+            .Custom((patch, context) =>
+            {
+                if (patch.TryGetValueError("name", "Name", out var path, out var message)) context.AddFailure(path, message);
+            })
+            .When(x => x.IsDefined("name") && !x.IsNull("name"));
 
         // Name must not be empty when provided
         this.RuleFor(x => x.GetString("name"))
@@ -90,10 +91,11 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
 
         // PhoneNumber must hold a value of its declared type when provided
         this.RuleFor(x => x)
-            .Must(x => x.IsValidPropertyValue("phoneNumber"))
-            .When(x => x.IsDefined("phoneNumber") && !x.IsNull("phoneNumber"))
-            .WithName("PhoneNumber")
-            .WithMessage("'PhoneNumber' is not a valid value.");
+            .Custom((patch, context) =>
+            {
+                if (patch.TryGetValueError("phoneNumber", "PhoneNumber", out var path, out var message)) context.AddFailure(path, message);
+            })
+            .When(x => x.IsDefined("phoneNumber") && !x.IsNull("phoneNumber"));
 
         // PhoneNumber must not be empty when provided
         this.RuleFor(x => x.GetString("phoneNumber"))
@@ -127,15 +129,10 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
                     index++;
                     continue;
                 }
-                Pet? nestedModel;
-                try
+                // A failure names the member, item or entry that did not fit, such as Pets[0].Code.
+                if (!patch.TryReadValue<Pet>(item, $"Pets[{index}]", out var nestedModel, out var errorPath, out var errorMessage, jsonSerializerOptions))
                 {
-                    nestedModel = System.Text.Json.JsonSerializer.Deserialize<Pet>(item.GetRawText(), jsonSerializerOptions);
-                }
-                catch (System.Exception ex) when (ex is System.Text.Json.JsonException or System.NotSupportedException or System.InvalidOperationException)
-                {
-                    // NotSupportedException: an abstract or polymorphic item sent without its type discriminator.
-                    context.AddFailure($"Pets[{index}]", "The array item could not be deserialized.");
+                    context.AddFailure(errorPath, errorMessage);
                     index++;
                     continue;
                 }
@@ -165,10 +162,11 @@ public partial class StorePatchValidator : AbstractValidator<MergePatch<Store>>
 
             // Email must hold a value of its declared type when provided
             this.RuleFor(x => x)
-                .Must(x => x.IsValidPropertyValue("email"))
-                .When(x => x.IsDefined("email") && !x.IsNull("email"))
-                .WithName("Email")
-                .WithMessage("'Email' is not a valid value.");
+                .Custom((patch, context) =>
+                {
+                    if (patch.TryGetValueError("email", "Email", out var path, out var message)) context.AddFailure(path, message);
+                })
+                .When(x => x.IsDefined("email") && !x.IsNull("email"));
 
             // Email must not be empty when provided
             this.RuleFor(x => x.GetString("email"))
