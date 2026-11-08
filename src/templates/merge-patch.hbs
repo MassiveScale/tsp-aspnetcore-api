@@ -145,57 +145,7 @@ public class MergePatch<T>
         }
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> when the patch value of <paramref name="propertyName"/>
-    /// fits the declared property type on <typeparamref name="T"/>, the same way a request
-    /// body must deserialize before it is validated. An object merged into a model or a
-    /// dictionary is checked member by member, so a partial object is valid, and a
-    /// <see langword="null"/> member, which removes that member, is always valid.
-    /// Also returns <see langword="true"/> when the property is absent, its value is
-    /// <see langword="null"/>, or <typeparamref name="T"/> declares no such property.
-    /// Values are read with <paramref name="options"/> when given, otherwise with the
-    /// options this patch was deserialized with, plus the property's own
-    /// <c>[JsonConverter]</c> or <c>[JsonNumberHandling]</c>.
-    /// </summary>
-    public bool IsValidPropertyValue(string propertyName, JsonSerializerOptions? options = null)
-    {
-        if (!Properties.TryGetValue(propertyName, out var element)) return true;
-        var prop = FindProperty(propertyName);
-        return prop is null || IsValidPatchValue(element, prop.PropertyType, prop, options ?? ReadOptions);
-    }
-
-    /// <summary>
-    /// Returns <see langword="true"/> when <paramref name="value"/> can be merged into a value
-    /// of <paramref name="type"/>, held by <paramref name="property"/> when it is a model or
-    /// dictionary member; see <see cref="IsValidPropertyValue"/>.
-    /// </summary>
-    private static bool IsValidPatchValue(JsonElement value, Type type, PropertyInfo? property, JsonSerializerOptions? options)
-    {
-        if (value.ValueKind == JsonValueKind.Null) return true;
-        var openValueType = GetOpenObjectValueType(type);
-        // A merged object is checked member by member; a replaced one must deserialize as a whole.
-        if (value.ValueKind == JsonValueKind.Object && (openValueType is not null || IsModelType(type)) && !(property is not null && ReplacesOnPatch(property)))
-        {
-            foreach (var member in value.EnumerateObject())
-            {
-                // A dictionary's values share the dictionary property's JSON attributes, as they do when deserializing.
-                var memberProperty = openValueType is null ? FindMember(type, member.Name)?.Property : property;
-                var memberType = openValueType ?? memberProperty?.PropertyType;
-                // Unknown members are not a type error; TryPatch reports them when applying.
-                if (memberType is not null && !IsValidPatchValue(member.Value, memberType, memberProperty, options)) return false;
-            }
-            return true;
-        }
-        try
-        {
-            JsonSerializer.Deserialize(value, type, property is null ? options : PropertyReadOptions(property, options));
-            return true;
-        }
-        catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
-        {
-            return false;
-        }
-    }
+{{> mergePatchValueErrors}}
 
     /// <summary>
     /// The options for each serializer options instance and property, built once because creating

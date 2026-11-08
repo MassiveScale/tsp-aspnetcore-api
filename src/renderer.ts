@@ -70,6 +70,7 @@ const VALIDATOR_TEMPLATE_NAMES: readonly ValidatorTemplateName[] = [
  */
 const VALIDATOR_PARTIALS: Readonly<Record<string, string>> = {
   mergePatchPolymorphism: "merge-patch-polymorphism.hbs",
+  mergePatchValueErrors: "merge-patch-value-errors.hbs",
   mergePatchNestedRules: "validator-merge-patch-nested.hbs",
   mergePatchPropertyRules: "validator-merge-patch-property-rules.hbs",
   typedPropertyRules: "validator-typed-property-rules.hbs",

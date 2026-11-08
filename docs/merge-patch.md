@@ -108,6 +108,24 @@ public class MergePatch<T>
     public bool IsValidPropertyValue(string propertyName,
         JsonSerializerOptions? options = null);
 
+    // Finds the first value in the property's patch value that doesn't fit its
+    // type, checked as IsValidPropertyValue checks it. path starts with
+    // displayName and names the member, item or entry that failed, such as
+    // "Tags[1]" or "Badge.Level". message is the message of the converter that
+    // rejected the value, or one naming the expected type, such as
+    // "'Tags[1]' must be a string.". The serializer's own messages, which name
+    // .NET types, are never returned.
+    public bool TryGetValueError(string propertyName, string displayName,
+        out string path, out string message,
+        JsonSerializerOptions? options = null);
+
+    // Deserializes a JSON value, such as an item of a model array, as TValue.
+    // On failure, errorPath and errorMessage describe the value that failed,
+    // starting at path, as TryGetValueError does.
+    public bool TryReadValue<TValue>(JsonElement value, string path,
+        out TValue? result, out string errorPath, out string errorMessage,
+        JsonSerializerOptions? options = null);
+
     // Serializes value and stores it as a patch entry for the named property.
     // Pass null to mark the field for clearing (RFC 7396 semantics).
     // Returns false when serialization fails.
@@ -191,12 +209,12 @@ model QuotaGroup {
 }
 ```
 
-| Request                                  | `"merge"` (default)                             | `"replace"`                                                        |
-| ---------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------ |
-| `{"targeting":{"all":[...]}}`            | Sets `All`; `Any` and `None` keep their values  | Sets `All`; `Any` and `None` are cleared                           |
-| Validation of the object                 | A partial patch, by `TargetingPatchValidator`   | A complete model, by `TargetingValidator`                          |
-| A required member left out of the object | Accepted                                        | Rejected, as in POST                                               |
-| A value that doesn't fit the model       | Reported on the member, such as `Targeting.All` | Reported once on the property: `'Targeting' is not a valid value.` |
+| Request                                  | `"merge"` (default)                                  | `"replace"`                                          |
+| ---------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------- |
+| `{"targeting":{"all":[...]}}`            | Sets `All`; `Any` and `None` keep their values       | Sets `All`; `Any` and `None` are cleared             |
+| Validation of the object                 | A partial patch, by `TargetingPatchValidator`        | A complete model, by `TargetingValidator`            |
+| A required member left out of the object | Accepted                                             | Rejected, as in POST                                 |
+| A value that doesn't fit the model       | Reported where it failed, such as `Targeting.All[0]` | Reported where it failed, such as `Targeting.All[0]` |
 
 A replaced value is deserialized as a whole, so the model's own `[JsonConverter]` reads it, as it would in a POST body. An explicit `null` still removes the value. The generated model marks a replaced property with `[JsonObjectCreationHandling(JsonObjectCreationHandling.Replace)]`, which is how `Patch`, `TryPatch` and `IsValidPropertyValue` recognize it.
 
@@ -265,10 +283,11 @@ this.RuleFor(x => x)
 
 // Supplied value: must fit the declared type, as a POST body must deserialize
 this.RuleFor(x => x)
-    .Must(x => x.IsValidPropertyValue("name"))
-    .When(x => x.IsDefined("name") && !x.IsNull("name"))
-    .WithName("Name")
-    .WithMessage("'Name' is not a valid value.");
+    .Custom((patch, context) =>
+    {
+        if (patch.TryGetValueError("name", "Name", out var path, out var message)) context.AddFailure(path, message);
+    })
+    .When(x => x.IsDefined("name") && !x.IsNull("name"));
 
 // String constraint: the same FluentValidation validator as POST, on a string value only
 this.RuleFor(x => x.GetString("name"))
@@ -278,7 +297,7 @@ this.RuleFor(x => x.GetString("name"))
     .When(x => x.IsString("name"));
 ```
 
-Numeric bounds read the raw JSON number, so exponent notation (`1e2`) is accepted. A number in a JSON string is held to the same bounds whenever POST would read it, and a value that isn't a number is reported once, by the type rule. See [Validators — PATCH body shapes](validators.md#patch-body-shapes) for every rule shape.
+A value of the wrong type is reported with a message that names the type it must be, such as `'Name' must be a string.`, at the member, array item or dictionary entry that failed, such as `Tags[1]`. Numeric bounds read the raw JSON number, so exponent notation (`1e2`) is accepted. A number in a JSON string is held to the same bounds whenever POST would read it. A number outside a bound is reported once, by the bound, and a value that isn't a number is reported once, by the type rule. See [Validators — PATCH body shapes](validators.md#patch-body-shapes) for every rule shape.
 
 ## Choosing a style: `merge-patch-style`
 

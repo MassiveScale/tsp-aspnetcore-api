@@ -530,8 +530,16 @@ const VALUE_PARITY_SPEC = `
     folder?: Folder;
     @patchStrategy("replace") badge?: Badge;
     mergedBadge?: Badge;
+    badges?: Badge[];
+    @patchStrategy("replace") sticker?: Sticker;
+    stickers?: Sticker[];
+    @patchStrategy("replace") album?: Album;
+    pets?: Animal[];
+    price?: decimal;
   }
+  model Album { title?: string; stickers?: Sticker[]; }
   model Badge { @maxLength(4) code: string; level?: int32; }
+  model Sticker { kind: string; }
   model Folder { title?: string; parent?: FolderRef; }
   model FolderRef { label?: string; folder?: Folder; }
 
@@ -565,15 +573,17 @@ void Check(bool condition, string message)
     if (!condition) failures.Add(message);
 }
 
+var mvcJsonOptions = new Microsoft.AspNetCore.Mvc.JsonOptions();
+mvcJsonOptions.JsonSerializerOptions.Converters.Add(new StickerConverter());
 var services = new ServiceCollection();
-services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new Microsoft.AspNetCore.Mvc.JsonOptions()));
+services.AddSingleton(Microsoft.Extensions.Options.Options.Create(mvcJsonOptions));
 services.AddSingleton(new ReservedNames("reserved-by-service"));
 services.AddGeneratedValidators();
 using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
 using var scope = provider.CreateScope();
 var postValidator = scope.ServiceProvider.GetRequiredService<WidgetValidator>();
 var patchValidator = scope.ServiceProvider.GetRequiredService<WidgetPatchValidator>();
-var web = new Microsoft.AspNetCore.Mvc.JsonOptions().JsonSerializerOptions;
+var web = mvcJsonOptions.JsonSerializerOptions;
 
 string Describe(IEnumerable<ValidationFailure> errors) =>
     "[" + string.Join("; ", errors.Select(e => e.PropertyName + ": " + e.ErrorMessage)) + "]";
@@ -619,8 +629,8 @@ foreach (var (json, property) in new[]
     ("""{"serial":"abc"}""", "Serial"),
     ("""{"createdOn":"not a date"}""", "CreatedOn"),
     ("""{"tags":"x"}""", "Tags"),
-    ("""{"tags":[1]}""", "Tags"),
-    ("""{"scores":{"a":"x"}}""", "Scores"),
+    ("""{"tags":[1]}""", "Tags[0]"),
+    ("""{"scores":{"a":"x"}}""", "Scores[a]"),
     ("""{"scores":[1]}""", "Scores"),
 })
 {
@@ -663,7 +673,7 @@ Check(replacedLong is [{ PropertyName: "Badge.Code" }], $"a replaced object keep
 var replacedShape = PatchErrors("""{"badge":"x"}""");
 Check(replacedShape is [{ PropertyName: "Badge", ErrorMessage: "'Badge' must be an object." }], $"a replaced value must be an object; got {Describe(replacedShape)}");
 var replacedType = PatchErrors("""{"badge":{"code":"ab","level":"x"}}""");
-Check(replacedType is [{ PropertyName: "Badge", ErrorMessage: "'Badge' is not a valid value." }], $"a replaced value that does not deserialize is reported once; got {Describe(replacedType)}");
+Check(replacedType is [{ PropertyName: "Badge.Level", ErrorMessage: "'Badge.Level' must be a whole number." }], $"a replaced value that does not deserialize is reported once, at the member that failed; got {Describe(replacedType)}");
 var oldBadge = new Badge { Code = "ab", Level = 1 };
 var badgeTarget = new Widget { Name = "x", DisplayName = "xx", Badge = oldBadge, MergedBadge = new Badge { Code = "ab", Level = 1 } };
 var badgePatch = ${patchType}.FromJson("""{"badge":{"code":"cd"},"mergedBadge":{"code":"cd"}}""", web);
@@ -739,7 +749,61 @@ Check(strictRank.Count == 0, $"an @encode(string) number in range must pass its 
 var strictLowRank = patchValidator.Validate(${patchType}.FromJson("""{"rank":"0"}""", strict)).Errors;
 Check(strictLowRank.Count == 1 && strictLowRank[0].PropertyName == "Rank", $"an @encode(string) number out of range must fail its bounds once with strict options; got {Describe(strictLowRank)}");
 var strictLevel = patchValidator.Validate(${patchType}.FromJson("""{"level":"3"}""", strict)).Errors;
-Check(strictLevel.Count == 1 && strictLevel[0].PropertyName == "Level" && strictLevel[0].ErrorMessage == "'Level' is not a valid value.", $"a number in a string that strict options reject must be reported once, as a type error; got {Describe(strictLevel)}");
+Check(strictLevel.Count == 1 && strictLevel[0].PropertyName == "Level" && strictLevel[0].ErrorMessage == "'Level' must be a whole number, not a string.", $"a number in a string that strict options reject must be reported once, as a type error; got {Describe(strictLevel)}");
+
+// A value of the wrong type names the type it must be, at the exact path that failed. A number
+// outside a bound reports the bound, even when it is also not a whole number.
+foreach (var (json, property, message) in new[]
+{
+    ("""{"count":"abc"}""", "Count", "'Count' must be a whole number."),
+    ("""{"count":1.5}""", "Count", "'Count' must be a whole number."),
+    ("""{"count":true}""", "Count", "'Count' must be a whole number."),
+    ("""{"count":3000000000}""", "Count", "'Count' must be a whole number between -2147483648 and 2147483647."),
+    ("""{"seatCount":1e30}""", "SeatCount", "'SeatCount' must be a whole number between -2147483648 and 2147483647."),
+    ("""{"seatCount":2.5}""", "SeatCount", "'SeatCount' must be a whole number."),
+    ("""{"seatCount":-1.5}""", "SeatCount", "'SeatCount' must be a number greater than or equal to 1."),
+    ("""{"seatCount":-1e30}""", "SeatCount", "'SeatCount' must be a number greater than or equal to 1."),
+    ("""{"level":5.5}""", "Level", "'Level' must be a whole number."),
+    ("""{"level":1e30}""", "Level", "'Level' must be a number less than or equal to 10."),
+    ("""{"level":"abc"}""", "Level", "'Level' must be a whole number."),
+    ("""{"ratio":"x"}""", "Ratio", "'Ratio' must be a number."),
+    ("""{"name":123}""", "Name", "'Name' must be a string."),
+    ("""{"flag":"yes"}""", "Flag", "'Flag' must be true or false."),
+    ("""{"theme":"neon"}""", "Theme", "'Theme' must be one of: light, dark."),
+    ("""{"status":"bogus"}""", "Status", "'Status' must be one of: active, retired."),
+    ("""{"createdOn":"not a date"}""", "CreatedOn", "'CreatedOn' must be a date and time."),
+    ("""{"tags":"x"}""", "Tags", "'Tags' must be an array."),
+    ("""{"tags":["a",1]}""", "Tags[1]", "'Tags[1]' must be a string."),
+    ("""{"scores":{"a":1,"b":"x"}}""", "Scores[b]", "'Scores[b]' must be a whole number."),
+    ("""{"scores":[1]}""", "Scores", "'Scores' must be an object."),
+    ("""{"gadget":{"label":5}}""", "Gadget.Label", "'Label' must be a string."),
+    ("""{"badges":[{"code":"ab"},{"code":"ab","level":"x"}]}""", "Badges[1].Level", "'Badges[1].Level' must be a whole number."),
+    ("""{"sticker":{"kind":"moon"}}""", "Sticker", "Unsupported sticker kind 'moon'."),
+    ("""{"stickers":[{"kind":"star"},{"kind":"moon"}]}""", "Stickers[1]", "Unsupported sticker kind 'moon'."),
+    // A converter's nested Deserialize reports a path relative to the item; the item that failed is found instead.
+    ("""{"stickers":[{"kind":"star"},{"kind":"star","points":"many"}]}""", "Stickers[1].points", "'Stickers[1].points' is not a valid value."),
+    ("""{"album":{"title":"a","stickers":[{"kind":"star","points":3},{"kind":"star","points":"many"}]}}""", "Album.Stickers[1].points", "'Album.Stickers[1].points' is not a valid value."),
+    ("""{"album":{"stickers":[{"kind":"moon"}]}}""", "Album.Stickers[0]", "Unsupported sticker kind 'moon'."),
+    // A member only a derived type declares is found through the discriminator.
+    ("""{"pets":[{"kind":"dog","legs":"x"}]}""", "Pets[0].Legs", "'Pets[0].Legs' must be a whole number."),
+    // A whole number the integer reader refuses, or one sent as a string outside the range.
+    ("""{"count":5.0}""", "Count", "'Count' must be a whole number without a decimal point or exponent."),
+    ("""{"count":1e2}""", "Count", "'Count' must be a whole number without a decimal point or exponent."),
+    ("""{"count":"99999999999"}""", "Count", "'Count' must be a whole number between -2147483648 and 2147483647."),
+    ("""{"price":1e29}""", "Price", "'Price' must be a number between -79228162514264337593543950335 and 79228162514264337593543950335."),
+    // The generated boolean converter's message names no property, so the value is described instead.
+    ("""{"active":"maybe"}""", "Active", "'Active' must be true or false."),
+})
+{
+    var errors = PatchErrors(json);
+    Check(errors.Count == 1 && errors[0].PropertyName == property && errors[0].ErrorMessage == message, $"PATCH {json} must report [{property}: {message}]; got {Describe(errors)}");
+}
+// A converter's own message is passed on at the path it failed; the serializer's own messages, which name .NET types, are not.
+var oddOnly = new JsonSerializerOptions(web);
+oddOnly.Converters.Add(new OddNumberConverter());
+var converterErrors = patchValidator.Validate(${patchType}.FromJson("""{"scores":{"a":1,"b":2}}""", oddOnly)).Errors;
+Check(converterErrors is [{ PropertyName: "Scores[b]", ErrorMessage: "Values must be odd." }], $"a converter's message must be reported at its path; got {Describe(converterErrors)}");
+Check(PatchErrors("""{"stickers":[{"kind":5}]}""").All(e => !e.ErrorMessage.Contains("Demo.")), "messages must not name .NET types");
 // A derived patch keeps the options the base patch was read with.
 var animalValidator = scope.ServiceProvider.GetRequiredService<AnimalPatchValidator>();
 var webPetErrors = animalValidator.Validate(${animalPatchType}.FromJson("""{"kind":"dog","weight":"3"}""", web)).Errors;
@@ -793,6 +857,53 @@ if (failures.Count > 0)
 }
 `;
 }
+
+/**
+ * Converters registered by the value-parity program: one that throws its own
+ * message for an unsupported value, and one that throws a message-less
+ * exception, which the serializer replaces with a message naming the .NET type.
+ */
+const PARITY_CONVERTERS_SOURCE = `using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
+using Demo.Models;
+
+public sealed class StickerConverter : JsonConverter<Sticker>
+{
+    public override Sticker Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var node = JsonNode.Parse(ref reader) as JsonObject ?? throw new JsonException();
+        if (node["kind"] is not JsonValue kindValue || !kindValue.TryGetValue<string>(out var kind)) throw new JsonException();
+        if (kind != "star") throw new JsonException($"Unsupported sticker kind '{kind}'.");
+        // A nested Deserialize reports its failure with a path relative to the sticker, not to the patch.
+        node.Deserialize<StarShape>(options);
+        return new Sticker { Kind = kind };
+    }
+
+    public override void Write(Utf8JsonWriter writer, Sticker value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("kind", value.Kind);
+        writer.WriteEndObject();
+    }
+}
+
+public sealed class StarShape
+{
+    public int Points { get; set; }
+}
+
+public sealed class OddNumberConverter : JsonConverter<int>
+{
+    public override int Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var value = reader.GetInt32();
+        return value % 2 == 1 ? value : throw new JsonException("Values must be odd.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, int value, JsonSerializerOptions options) => writer.WriteNumberValue(value);
+}
+`;
 
 /** Hand-written validator parts that implement both `ExtendRules` overloads. */
 const EXTEND_RULES_SOURCE = `using FluentValidation;
@@ -861,6 +972,11 @@ describe("MergePatch validation matches POST", { skip: !hasDotnet }, () => {
         await writeFile(
           join(directory, "Extensions.cs"),
           EXTEND_RULES_SOURCE,
+          "utf8",
+        );
+        await writeFile(
+          join(directory, "Converters.cs"),
+          PARITY_CONVERTERS_SOURCE,
           "utf8",
         );
 

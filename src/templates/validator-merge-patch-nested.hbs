@@ -39,15 +39,10 @@ this.RuleFor(x => x).Custom((patch, context) =>
             index++;
             continue;
         }
-        {{{referencedQualifiedModelName}}}? nestedModel;
-        try
+        // A failure names the member, item or entry that did not fit, such as {{{name}}}[0].Code.
+        if (!patch.TryReadValue<{{{referencedQualifiedModelName}}}>(item, $"{{{name}}}[{index}]", out var nestedModel, out var errorPath, out var errorMessage, jsonSerializerOptions))
         {
-            nestedModel = System.Text.Json.JsonSerializer.Deserialize<{{{referencedQualifiedModelName}}}>(item.GetRawText(), jsonSerializerOptions);
-        }
-        catch (System.Exception ex) when (ex is System.Text.Json.JsonException or System.NotSupportedException or System.InvalidOperationException)
-        {
-            // NotSupportedException: an abstract or polymorphic item sent without its type discriminator.
-            context.AddFailure($"{{{name}}}[{index}]", "The array item could not be deserialized.");
+            context.AddFailure(errorPath, errorMessage);
             index++;
             continue;
         }
@@ -106,15 +101,10 @@ this.RuleFor(x => x).Custom((patch, context) =>
         context.AddFailure("{{{name}}}", "'{{{name}}}' must be an object.");
         return;
     }
-    {{{referencedQualifiedModelName}}}? nestedModel;
-    try
+    // A failure names the member that did not fit, such as {{{name}}}.Code, or {{{name}}} itself.
+    if (!patch.TryReadValue<{{{referencedQualifiedModelName}}}>(element, "{{{name}}}", out var nestedModel, out var errorPath, out var errorMessage, jsonSerializerOptions))
     {
-        nestedModel = System.Text.Json.JsonSerializer.Deserialize<{{{referencedQualifiedModelName}}}>(element.GetRawText(), jsonSerializerOptions);
-    }
-    catch (System.Exception ex) when (ex is System.Text.Json.JsonException or System.NotSupportedException or System.InvalidOperationException)
-    {
-        // NotSupportedException: an abstract or polymorphic value sent without its type discriminator.
-        context.AddFailure("{{{name}}}", "'{{{name}}}' is not a valid value.");
+        context.AddFailure(errorPath, errorMessage);
         return;
     }
     if (nestedModel is null)

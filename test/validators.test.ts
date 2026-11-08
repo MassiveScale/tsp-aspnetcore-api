@@ -542,7 +542,7 @@ describe("csharp emitter - validators", () => {
       );
       ok(
         patchValidator.includes(
-          "JsonSerializer.Deserialize<Tag>(item.GetRawText(), jsonSerializerOptions)",
+          'patch.TryReadValue<Tag>(item, $"Tags[{index}]", out var nestedModel, out var errorPath, out var errorMessage, jsonSerializerOptions)',
         ) && patchValidator.includes('$"Tags[{index}].{failure.PropertyName}"'),
         `expected full-model array-item validation in:\n${patchValidator}`,
       );
@@ -576,12 +576,14 @@ describe("csharp emitter - validators", () => {
       ok(
         authorPatch.includes("public AuthorPatchValidator()") &&
           !authorPatch.includes("jsonOptions") &&
-          authorPatch.includes('x.IsValidPropertyValue("name")'),
+          authorPatch.includes(
+            'patch.TryGetValueError("name", "Name", out var path, out var message)',
+          ),
         `expected validators without nested values to keep a parameterless constructor:\n${authorPatch}`,
       );
     });
 
-    it("turns array-item deserialization failures into validation failures", async () => {
+    it("turns array-item deserialization failures into validation failures at the path that failed", async () => {
       const results = await emit(NESTED_MODEL_SOURCE, {
         "emit-validators": true,
         "emit-controllers": false,
@@ -591,12 +593,13 @@ describe("csharp emitter - validators", () => {
       const patchValidator = results["Validators/BookPatchValidator.g.cs"];
       ok(
         patchValidator.includes(
-          "catch (System.Exception ex) when (ex is System.Text.Json.JsonException or System.NotSupportedException or System.InvalidOperationException)",
+          'if (!patch.TryReadValue<Tag>(item, $"Tags[{index}]",',
         ) &&
           patchValidator.includes(
-            '"The array item could not be deserialized."',
-          ),
-        `expected abstract-item failures to be caught in:\n${patchValidator}`,
+            "context.AddFailure(errorPath, errorMessage);",
+          ) &&
+          !patchValidator.includes("could not be deserialized"),
+        `expected item failures to be reported at the path that failed in:\n${patchValidator}`,
       );
     });
 
@@ -615,7 +618,9 @@ describe("csharp emitter - validators", () => {
       );
       ok(
         lines
-          .filter((line) => line.includes(".Custom((patch, context) =>"))
+          .filter((line) =>
+            line.includes("this.RuleFor(x => x).Custom((patch, context) =>"),
+          )
           .every((line) => line.startsWith("        this.RuleFor")),
         "expected nested rules at the 8-space statement indent",
       );
@@ -679,7 +684,9 @@ describe("csharp emitter - validators", () => {
           appearancePatch.includes("Leaf.{failure.PropertyName}") &&
             appearancePatch.includes("'Leaf' must be an object.") &&
             appearancePatch.includes('IsNull("label")') &&
-            appearancePatch.includes('x.IsValidPropertyValue("theme")'),
+            appearancePatch.includes(
+              'patch.TryGetValueError("theme", "Theme",',
+            ),
           `expected second-level object validation in ${style} child patch:\n${appearancePatch}`,
         );
         ok(
@@ -815,7 +822,7 @@ describe("csharp emitter - validators", () => {
         patchValidator.includes("authorPatchValidator") &&
           patchValidator.includes("tagValidator") &&
           patchValidator.includes("Rules for v2.0 and later") &&
-          patchValidator.includes("JsonSerializer.Deserialize<Tag>"),
+          patchValidator.includes("patch.TryReadValue<Tag>"),
         `expected nested model and array validators in base and version-aware MergePatch groups:\n${patchValidator}`,
       );
     });
@@ -1393,6 +1400,8 @@ describe("csharp emitter - validators", () => {
       "IsNull(",
       "IsString(",
       "IsValidPropertyValue(",
+      "TryGetValueError(",
+      "TryReadValue<",
       "TryGetValue<",
     ];
 
@@ -1658,7 +1667,7 @@ describe("csharp emitter - validators", () => {
       );
       ok(
         validator.includes(
-          '.When(x => x.IsDefined("target") && !x.IsNull("target"))',
+          '.When(x => x.IsDefined("target") && !x.IsNull("target")',
         ) && validator.includes('x.GetString("name")'),
         `expected MergePatch bodies to keep the string-keyed rule shape in:\n${validator}`,
       );
@@ -2238,12 +2247,12 @@ describe("csharp emitter - validators", () => {
         `expected a patch validator, got ${Object.keys(results).join(", ")}`,
       );
       ok(
-        patch.includes('x.IsValidPropertyValue("pet_color")') &&
+        patch.includes('patch.TryGetValueError("pet_color", "PetColor",') &&
           patch.includes('TryGetNumber(x, "pet_count", out var n)'),
         `expected wire-name value reads in:\n${patch}`,
       );
       ok(
-        !patch.includes('IsValidPropertyValue("PetColor"') &&
+        !patch.includes('TryGetValueError("PetColor"') &&
           !patch.includes('TryGetNumber(x, "PetCount"'),
         `expected no C#-name value reads in:\n${patch}`,
       );
@@ -2433,7 +2442,10 @@ describe("csharp emitter - validators", () => {
           "private static bool TryGetNumber(MergePatch<Measure> patch, string name, out decimal value)",
           "element.ValueKind != System.Text.Json.JsonValueKind.Number",
           "element.TryGetDecimal(out value)",
-          '.When(x => x.IsDefined("count") && !x.IsNull("count") && x.IsValidPropertyValue("count"))',
+          '.When(x => x.IsDefined("count") && !x.IsNull("count") && (x.Properties["count"].ValueKind == System.Text.Json.JsonValueKind.Number || x.IsValidPropertyValue("count")))',
+          '.When(x => x.IsDefined("count") && !x.IsNull("count") && !(x.Properties["count"].ValueKind == System.Text.Json.JsonValueKind.Number && ((TryGetNumber(x, "count", out var number) && (number < 1m || number > 9m)))));',
+          '(TryGetNumber(x, "open", out var number) && (number <= 0m || number >= 10m))',
+          '(TryGetDouble(x, "weight", out var real) && (real < 0.25d))',
           "decimal.TryParse(element.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value)",
         ],
       );
@@ -2757,18 +2769,21 @@ describe("csharp emitter - validators", () => {
         `.WithMessage("'{PropertyName}' is not in the correct format.")`,
         `.WithMessage("'Count' must be a number greater than or equal to 1.");`,
         `.WithMessage("'Count' must be a number less than or equal to 9.");`,
-        `.WithMessage("'Color' is not a valid value.");`,
-        `.WithMessage("'Name' is not a valid value.");`,
+        `if (patch.TryGetValueError("color", "Color", out var path, out var message)) context.AddFailure(path, message);`,
+        `if (patch.TryGetValueError("name", "Name", out var path, out var message)) context.AddFailure(path, message);`,
       ]);
       // String rules use FluentValidation's own validators, whose default
-      // messages match the POST validator; every other rule sets a message.
+      // messages match the POST validator; the type rule adds the message
+      // TryGetValueError describes; every other rule sets a message.
       const builtInMessage =
         /\.(NotEmpty|MinimumLength|MaximumLength|EmailAddress)\(/;
       const rules = patch.split("this.RuleFor(").slice(1);
       ok(rules.length > 0, patch);
       for (const rule of rules) {
         ok(
-          rule.includes(".WithMessage(") || builtInMessage.test(rule),
+          rule.includes(".WithMessage(") ||
+            builtInMessage.test(rule) ||
+            rule.includes("context.AddFailure(path, message);"),
           `expected a message for rule:\nthis.RuleFor(${rule}`,
         );
       }
@@ -2928,7 +2943,8 @@ describe("csharp emitter - validators", () => {
         "private static bool TryGetDouble(MergePatch<Measure> patch, string name, out double value)",
         "private static bool TryGetNumber(MergePatch<Measure> patch, string name, out decimal value)",
         "double.TryParse(element.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value)",
-        '.When(x => x.IsDefined("ratio") && !x.IsNull("ratio") && x.IsValidPropertyValue("ratio"))',
+        '.When(x => x.IsDefined("ratio") && !x.IsNull("ratio") && (x.Properties["ratio"].ValueKind == System.Text.Json.JsonValueKind.Number || x.IsValidPropertyValue("ratio")))',
+        '(TryGetDouble(x, "ratio", out var real) && (real < 0.5d))',
       ]);
       expectNone(patch, "MeasurePatchValidator", [
         "1e+30m",
@@ -3154,10 +3170,11 @@ describe("csharp emitter - validators", () => {
         const typeRule = (jsonName: string, name: string): string =>
           [
             `        this.RuleFor(x => x)`,
-            `            .Must(x => x.IsValidPropertyValue("${jsonName}"))`,
-            `            .When(x => x.IsDefined("${jsonName}") && !x.IsNull("${jsonName}"))`,
-            `            .WithName("${name}")`,
-            `            .WithMessage("'${name}' is not a valid value.");`,
+            `            .Custom((patch, context) =>`,
+            `            {`,
+            `                if (patch.TryGetValueError("${jsonName}", "${name}", out var path, out var message)) context.AddFailure(path, message);`,
+            `            })`,
+            `            .When(x => x.IsDefined("${jsonName}") && !x.IsNull("${jsonName}"));`,
           ].join("\n");
         expectAll(
           patch,
@@ -3176,9 +3193,9 @@ describe("csharp emitter - validators", () => {
           ].map(([jsonName, name]) => typeRule(jsonName, name)),
         );
         expectNone(patch, "WidgetPatchValidator", [
-          'IsValidPropertyValue("id"',
-          'IsValidPropertyValue("gadget"',
-          'IsValidPropertyValue("gadgets"',
+          'TryGetValueError("id"',
+          'TryGetValueError("gadget"',
+          'TryGetValueError("gadgets"',
           "TryGetValue<Theme?>",
         ]);
       });
@@ -3194,7 +3211,7 @@ describe("csharp emitter - validators", () => {
         expectAll(gadget, "GadgetPatchValidator", [
           "public GadgetPatchValidator()",
           `AbstractValidator<${patchType}>`,
-          'x.IsValidPropertyValue("label")',
+          'patch.TryGetValueError("label", "Label", out var path, out var message)',
         ]);
         expectNone(gadget, "GadgetPatchValidator", [
           "jsonOptions",
@@ -3213,7 +3230,9 @@ describe("csharp emitter - validators", () => {
             : results["Models/WidgetMergePatchUpdate.g.cs"];
         expectAll(helper, `${style} patch helper`, [
           "public bool IsString(string propertyName) =>",
-          "public bool IsValidPropertyValue(string propertyName, JsonSerializerOptions? options = null)",
+          "public bool IsValidPropertyValue(string propertyName, JsonSerializerOptions? options = null) =>",
+          "public bool TryGetValueError(string propertyName, string displayName, out string path, out string message, JsonSerializerOptions? options = null)",
+          "public bool TryReadValue<TValue>(JsonElement value, string path, out TValue? result, out string errorPath, out string errorMessage, JsonSerializerOptions? options = null)",
         ]);
       });
 
@@ -3236,8 +3255,9 @@ describe("csharp emitter - validators", () => {
           "JsonSerializer.Deserialize<TValue>(element.GetRawText(), options ?? ReadOptions)",
           "JsonSerializer.Deserialize(element.GetRawText(), prop.PropertyType, options ?? ReadOptions)",
           "PatchObject(original, original.GetType(), Properties, rejected, string.Empty, options ?? ReadOptions)",
-          "IsValidPatchValue(element, prop.PropertyType, prop, options ?? ReadOptions)",
-          "JsonSerializer.Deserialize(value, type, property is null ? options : PropertyReadOptions(property, options))",
+          "FindValueError(element, property.PropertyType, property, options ?? ReadOptions, displayName)",
+          "var readOptions = property is null ? options : PropertyReadOptions(property, options);",
+          "JsonSerializer.Deserialize(value, type, readOptions);",
         ]);
       });
     }
@@ -3268,8 +3288,8 @@ describe("csharp emitter - validators", () => {
       const patch = results["Validators/WidgetPatchValidator.g.cs"];
       expectAll(patch, "WidgetPatchValidator", [
         "public WidgetPatchValidator(IHttpContextAccessor httpContextAccessor)",
-        '.Must(x => x.IsValidPropertyValue("count"))',
-        '                .Must(x => x.IsValidPropertyValue("flag"))',
+        'if (patch.TryGetValueError("count", "Count", out var path, out var message))',
+        '                    if (patch.TryGetValueError("flag", "Flag", out var path, out var message))',
       ]);
       expectNone(patch, "WidgetPatchValidator", ["jsonOptions"]);
     });
@@ -3349,7 +3369,7 @@ describe("csharp emitter - validators", () => {
           "replaces the existing value, so it is validated as a complete model",
         ) &&
           replaced.includes(
-            "System.Text.Json.JsonSerializer.Deserialize<Badge>(element.GetRawText(), jsonSerializerOptions)",
+            'patch.TryReadValue<Badge>(element, "Badge", out var nestedModel, out var errorPath, out var errorMessage, jsonSerializerOptions)',
           ) &&
           replaced.includes("badgeValidator.Validate(nestedModel)"),
         replaced,
